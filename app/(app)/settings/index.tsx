@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
@@ -8,7 +8,8 @@ import { InputField, KeyboardAwareScrollView, SelectField, Toggle } from '@/comp
 import { BrandMark, BrandWordmark, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { APP_FOOTER_TEXT, BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BusinessType } from '@/types';
-import { cancelAllNotifications, scheduleDailySummaryNotification } from '@/lib/notifications';
+import { getAppSettings, getTimeParts, isValidTimeInput, saveAppSettings } from '@/lib/appSettings';
+import { cancelDailySummaryNotification, scheduleDailySummaryNotification } from '@/lib/notifications';
 import Toast from 'react-native-toast-message';
 
 export default function SettingsScreen() {
@@ -21,9 +22,35 @@ export default function SettingsScreen() {
   const [bizAddress, setBizAddress] = useState(currentBusiness?.address ?? '');
   const [taxRate, setTaxRate] = useState(String(currentBusiness?.tax_rate ?? '0'));
   const [saving, setSaving] = useState(false);
+  const [dailyCloseSaving, setDailyCloseSaving] = useState(false);
+  const [inventorySaving, setInventorySaving] = useState(false);
 
   const [dailySummaryEnabled, setDailySummaryEnabled] = useState(true);
-  const [summaryHour, setSummaryHour] = useState('20');
+  const [dailySummaryTime, setDailySummaryTime] = useState('20:00');
+  const [autoCloseEnabled, setAutoCloseEnabled] = useState(false);
+  const [autoCloseTime, setAutoCloseTime] = useState('21:00');
+  const [inventoryPurchaseSyncEnabled, setInventoryPurchaseSyncEnabled] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadSettings = async () => {
+      const settings = await getAppSettings();
+      if (!active) return;
+
+      setDailySummaryEnabled(settings.dailySummaryEnabled);
+      setDailySummaryTime(settings.dailySummaryTime);
+      setAutoCloseEnabled(settings.autoCloseEnabled);
+      setAutoCloseTime(settings.autoCloseTime);
+      setInventoryPurchaseSyncEnabled(settings.inventoryPurchaseSyncEnabled);
+    };
+
+    loadSettings();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleSaveBusiness = async () => {
     if (!currentBusiness) return;
@@ -52,22 +79,68 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleSaveNotifications = async () => {
+  const handleSaveDailyCloseSettings = async () => {
+    if (dailySummaryEnabled && !isValidTimeInput(dailySummaryTime)) {
+      Alert.alert('Invalid time', 'Enter the reminder time as HH:MM in 24-hour format.');
+      return;
+    }
+
+    if (autoCloseEnabled && !isValidTimeInput(autoCloseTime)) {
+      Alert.alert('Invalid time', 'Enter the auto-close time as HH:MM in 24-hour format.');
+      return;
+    }
+
+    setDailyCloseSaving(true);
     try {
+      const reminder = getTimeParts(dailySummaryTime, '20:00');
+      const autoClose = getTimeParts(autoCloseTime, '21:00');
+
+      await saveAppSettings({
+        dailySummaryEnabled,
+        dailySummaryTime: reminder.normalized,
+        autoCloseEnabled,
+        autoCloseTime: autoClose.normalized,
+      });
+
       if (dailySummaryEnabled) {
-        const hour = parseInt(summaryHour, 10) || 20;
-        await scheduleDailySummaryNotification(Math.min(23, Math.max(0, hour)), 0);
-        Toast.show({
-          type: 'success',
-          text1: 'Notifications updated',
-          text2: `Daily summary scheduled for ${hour}:00`,
-        });
+        await scheduleDailySummaryNotification(reminder.hour, reminder.minute);
       } else {
-        await cancelAllNotifications();
-        Toast.show({ type: 'success', text1: 'Notifications disabled' });
+        await cancelDailySummaryNotification();
       }
+
+      setDailySummaryTime(reminder.normalized);
+      setAutoCloseTime(autoClose.normalized);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Daily close settings saved',
+        text2: autoCloseEnabled
+          ? `Reminder ${reminder.normalized} - auto-close ${autoClose.normalized}`
+          : `Reminder ${reminder.normalized}`,
+      });
     } catch (err: any) {
       Alert.alert('Error', err.message);
+    } finally {
+      setDailyCloseSaving(false);
+    }
+  };
+
+  const handleSaveInventorySettings = async () => {
+    setInventorySaving(true);
+    try {
+      await saveAppSettings({
+        inventoryPurchaseSyncEnabled,
+      });
+
+      Toast.show({
+        type: 'success',
+        text1: 'Inventory settings saved',
+        text2: inventoryPurchaseSyncEnabled ? 'Purchase sync enabled' : 'Purchase sync disabled',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setInventorySaving(false);
     }
   };
 
@@ -144,7 +217,7 @@ export default function SettingsScreen() {
           </Card>
 
           <Card>
-            <SectionHeader title="Notifications" />
+            <SectionHeader title="Daily Close Automation" />
             <Toggle
               label="Daily Summary Reminder"
               description="Get notified every evening to close your books."
@@ -153,15 +226,52 @@ export default function SettingsScreen() {
             />
             {dailySummaryEnabled ? (
               <InputField
-                label="Reminder Time (24-hour)"
-                value={summaryHour}
-                onChangeText={setSummaryHour}
-                placeholder="20"
-                keyboardType="numeric"
-                hint="Example: 20 means 8:00 PM."
+                label="Reminder Time"
+                value={dailySummaryTime}
+                onChangeText={setDailySummaryTime}
+                placeholder="20:00"
+                hint="Use 24-hour time, for example 20:00."
               />
             ) : null}
-            <Button title="Save Notification Settings" onPress={handleSaveNotifications} variant="secondary" size="md" />
+            <Toggle
+              label="Auto Close And Balance"
+              description="Automatically close the day using expected cash if you forget. You can reopen it later to adjust."
+              value={autoCloseEnabled}
+              onChange={setAutoCloseEnabled}
+            />
+            {autoCloseEnabled ? (
+              <InputField
+                label="Auto Close Time"
+                value={autoCloseTime}
+                onChangeText={setAutoCloseTime}
+                placeholder="21:00"
+                hint="Runs while the app is open, and catches up the next time the app is opened."
+              />
+            ) : null}
+            <Button
+              title="Save Daily Close Settings"
+              onPress={handleSaveDailyCloseSettings}
+              loading={dailyCloseSaving}
+              variant="secondary"
+              size="md"
+            />
+          </Card>
+
+          <Card>
+            <SectionHeader title="Inventory & Purchase Settings" />
+            <Toggle
+              label="Inventory Purchase Sync"
+              description="When stock is added or increased from inventory, open a prefilled supplier purchase entry. Turn this off if you do not want inventory updates to feed purchase history."
+              value={inventoryPurchaseSyncEnabled}
+              onChange={setInventoryPurchaseSyncEnabled}
+            />
+            <Button
+              title="Save Inventory Settings"
+              onPress={handleSaveInventorySettings}
+              loading={inventorySaving}
+              variant="secondary"
+              size="md"
+            />
           </Card>
 
           <Card style={{ backgroundColor: '#F9FAFB' }}>

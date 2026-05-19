@@ -38,7 +38,7 @@ export default function AboutScreen() {
             { icon: 'shopping-cart', text: 'Record sales quickly with cart, quantity, and discount control.' },
             { icon: 'credit-card', text: 'Track customer debts and convert settled debts into sales records.' },
             { icon: 'bar-chart-2', text: 'Understand trends with analytics, daily balance, and summaries.' },
-            { icon: 'truck', text: 'Record purchases and keep stock movement history clean.' },
+            { icon: 'truck', text: 'Track suppliers, goods bought, and balances in one place.' },
           ].map((feature) => (
             <View key={feature.text} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 10 }}>
               <IconBox icon={feature.icon as keyof typeof Feather.glyphMap} bg={COLORS.surface2} color={COLORS.text.secondary} size={13} />

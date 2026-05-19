@@ -40,6 +40,8 @@ const fmt = (n: number) =>
       ? `${CURRENCY_SYMBOL}${(n / 1_000).toFixed(0)}k`
       : `${CURRENCY_SYMBOL}${n.toFixed(0)}`;
 
+const fmtCount = (n: number) => n.toLocaleString();
+
 export default function AnalyticsScreen() {
   const { currentBusiness, currentBranch } = useAuthStore();
   const {
@@ -252,8 +254,8 @@ export default function AnalyticsScreen() {
               ) : (
                 <View style={{ gap: 12 }}>
                   {topProducts.map((product, index) => {
-                    const maxRevenue = topProducts[0].total_revenue;
-                    const pct = maxRevenue > 0 ? product.total_revenue / maxRevenue : 0;
+                    const maxQty = topProducts[0].total_qty;
+                    const pct = maxQty > 0 ? product.total_qty / maxQty : 0;
 
                     return (
                       <View key={product.product_id}>
@@ -279,9 +281,11 @@ export default function AnalyticsScreen() {
                           </View>
                           <View style={{ alignItems: 'flex-end' }}>
                             <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                              {fmt(product.total_revenue)}
+                              {fmtCount(product.total_qty)} sold
                             </Text>
-                            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{product.total_qty} sold</Text>
+                            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
+                              {fmt(product.total_revenue)} revenue
+                            </Text>
                           </View>
                         </View>
                         <View style={{ height: 6, backgroundColor: '#F3F4F6' }}>
@@ -319,9 +323,11 @@ export default function AnalyticsScreen() {
                       </Text>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
-                          {fmt(product.total_revenue)}
+                          {fmtCount(product.total_qty)} sold
                         </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{product.total_qty} sold</Text>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
+                          {fmt(product.total_revenue)} revenue
+                        </Text>
                       </View>
                     </View>
                   ))}

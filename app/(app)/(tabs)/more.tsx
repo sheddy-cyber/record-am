@@ -61,14 +61,6 @@ export default function MoreScreen() {
           iconColor: COLORS.warning,
         },
         {
-          icon: 'truck',
-          label: 'Purchases',
-          subtitle: 'Record restocks and review purchase history',
-          onPress: () => router.push('/(app)/purchases'),
-          iconBg: COLORS.successLight,
-          iconColor: COLORS.success,
-        },
-        {
           icon: 'list',
           label: 'Stock History',
           subtitle: 'Inventory movement audit trail',
@@ -92,7 +84,7 @@ export default function MoreScreen() {
         {
           icon: 'package',
           label: 'Suppliers',
-          subtitle: 'Contacts and purchase history',
+          subtitle: 'Contacts, goods bought, and balances',
           onPress: () => router.push('/(app)/suppliers'),
           iconBg: COLORS.warningLight,
           iconColor: COLORS.warning,

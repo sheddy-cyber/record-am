@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated } from 'react-native';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, startOfDay, endOfDay } from 'date-fns';
@@ -28,6 +28,7 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, profile } = useAuthStore();
   const { getLowStockProducts } = useBusinessStore();
+  const navigation = useNavigation();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentActivities, setRecentActivities] = useState<RevenueActivity[]>([]);
@@ -56,7 +57,7 @@ export default function DashboardScreen() {
       ] = await Promise.all([
         supabase
           .from('sales')
-          .select('total_amount, notes')
+          .select('amount_paid, notes')
           .eq('business_id', currentBusiness.id)
           .eq('branch_id', currentBranch.id)
           .gte('created_at', todayStart)
@@ -103,7 +104,7 @@ export default function DashboardScreen() {
 
       const totalSales = todaySalesRes.data
         ?.filter((row) => !isDebtSettlementSale(row.notes))
-        .reduce((sum, row) => sum + row.total_amount, 0) ?? 0;
+        .reduce((sum, row) => sum + row.amount_paid, 0) ?? 0;
       const totalRepayments = todayRepaymentsRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
       const totalExpenses = todayExpensesRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
       const totalDebts = debtsRes.data?.reduce((sum, row) => sum + row.balance, 0) ?? 0;
@@ -132,6 +133,13 @@ export default function DashboardScreen() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchData();
+    });
+    return unsubscribe;
+  }, [navigation, fetchData]);
 
   useRealtimeRefresh({
     channelName: `dashboard-${currentBranch?.id ?? 'unknown'}`,

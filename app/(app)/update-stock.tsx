@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { getAppSettings } from '@/lib/appSettings';
+import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
 import { supabase } from '@/lib/supabase';
 import { Button, EmptyState, LoadingScreen } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
@@ -44,6 +46,39 @@ export default function UpdateStockScreen() {
   const [saving, setSaving] = useState(false);
 
   const closeScreen = () => router.back();
+
+  const maybeOpenPurchaseSync = async (params: {
+    productId: string;
+    productName: string;
+    productUnit: string;
+    quantity: number;
+    unitCost: number;
+  }) => {
+    const settings = await getAppSettings();
+    if (!settings.inventoryPurchaseSyncEnabled || params.quantity <= 0) {
+      return false;
+    }
+
+    router.replace({
+      pathname: '/(app)/record-purchase',
+      params: {
+        prefill: buildPurchasePrefillParam({
+          notes: 'Opened from inventory stock increase.',
+          items: [
+            {
+              productId: params.productId,
+              productName: params.productName,
+              unit: params.productUnit,
+              quantity: params.quantity,
+              unitCost: params.unitCost,
+            },
+          ],
+        }),
+      },
+    });
+
+    return true;
+  };
 
   const loadProducts = useCallback(async () => {
     if (!currentBusiness) {
@@ -209,7 +244,17 @@ export default function UpdateStockScreen() {
           : `${cleanProductName} now has ${formatCount(nextQuantity)} ${productUnit} in stock.`,
       });
 
-      closeScreen();
+      const openedPurchaseSync = await maybeOpenPurchaseSync({
+        productId: product.id,
+        productName: cleanProductName,
+        productUnit,
+        quantity: quantityDelta > 0 ? roundAmount(quantityDelta) : 0,
+        unitCost: parsedCostPrice,
+      });
+
+      if (!openedPurchaseSync) {
+        closeScreen();
+      }
     } catch (err: any) {
       Alert.alert('Error', err.message ?? 'Please try again.');
     } finally {

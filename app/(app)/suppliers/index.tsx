@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
@@ -23,9 +24,11 @@ export default function SuppliersScreen() {
     }
   }, [currentBusiness, fetchSuppliers]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const filtered = suppliers.filter(
     (supplier) =>
@@ -108,7 +111,7 @@ export default function SuppliersScreen() {
           <EmptyState
             icon="truck"
             title="No suppliers yet"
-            description="Add suppliers to track purchases and what you owe them."
+            description="Add suppliers to track goods bought from them and what you owe them."
             action={{ label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') }}
           />
         ) : (

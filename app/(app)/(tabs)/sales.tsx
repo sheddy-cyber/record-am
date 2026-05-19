@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Share, Text, TouchableOpacity, View, RefreshControl, Modal, ScrollView } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,6 +26,7 @@ const formatCurrency = (value: number) =>
 export default function SalesScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch } = useAuthStore();
+  const navigation = useNavigation();
   const [activities, setActivities] = useState<RevenueActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -59,6 +60,13 @@ export default function SalesScreen() {
   useEffect(() => {
     loadActivities();
   }, [loadActivities]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadActivities();
+    });
+    return unsubscribe;
+  }, [navigation, loadActivities]);
 
   useRealtimeRefresh({
     channelName: `sales-screen-${currentBranch?.id ?? 'unknown'}`,
@@ -98,6 +106,74 @@ export default function SalesScreen() {
       });
     } catch (err) {
       Alert.alert('Unable to generate receipt', 'The sale receipt could not be prepared right now.');
+      console.error(err);
+    } finally {
+      setGeneratingReceiptId(null);
+    }
+  };
+
+  const generateRepaymentReceipt = async (repaymentId: string) => {
+    if (!currentBusiness || !currentBranch) return;
+
+    setGeneratingReceiptId(repaymentId);
+    try {
+      const { data: repayment, error: repaymentError } = await supabase
+        .from('debt_repayments')
+        .select('*, debt:customer_debts!inner(*)')
+        .eq('id', repaymentId)
+        .single();
+
+      if (repaymentError) throw repaymentError;
+
+      const debt = Array.isArray(repayment.debt) ? repayment.debt[0] : repayment.debt;
+      if (!debt) throw new Error('No linked debt found');
+
+      let originalSale: any = null;
+      let saleItems: any[] = [];
+      if (debt.sale_id) {
+        const { data: sale } = await supabase
+          .from('sales')
+          .select('*, customer:customers(name, phone)')
+          .eq('id', debt.sale_id)
+          .single();
+        originalSale = sale;
+
+        if (sale) {
+          const { data: items } = await supabase
+            .from('sale_items')
+            .select('*, product:products(name)')
+            .eq('sale_id', debt.sale_id);
+          saleItems = items ?? [];
+        }
+      }
+
+      const synthesizedSale: any = {
+        id: repayment.id,
+        sale_number: originalSale?.sale_number ?? `PAY-${repayment.id.substring(0, 8).toUpperCase()}`,
+        created_at: repayment.created_at,
+        customer: originalSale?.customer ?? {
+          name: debt.customer_name,
+          phone: debt.customer_phone ?? undefined,
+        },
+        items: saleItems,
+        subtotal: originalSale?.subtotal ?? repayment.amount,
+        discount_amount: originalSale?.discount_amount ?? 0,
+        tax_amount: originalSale?.tax_amount ?? 0,
+        total_amount: originalSale?.total_amount ?? repayment.amount,
+        amount_paid: repayment.amount,
+        amount_owed: Math.max(0, debt.balance),
+        payment_status: debt.status === 'settled' ? 'paid' : 'partial',
+        payment_method: repayment.payment_method,
+        notes: repayment.notes ?? originalSale?.notes,
+        isRepayment: true,
+        originalTotalAmount: originalSale?.total_amount,
+        originalAmountPaid: originalSale?.amount_paid,
+        accumulatedAmountPaid: debt.amount_paid,
+      };
+
+      setPreviewSale(synthesizedSale as any as Sale);
+    } catch (err) {
+      Alert.alert('Unable to generate receipt', 'The payment receipt could not be prepared right now.');
       console.error(err);
     } finally {
       setGeneratingReceiptId(null);
@@ -241,6 +317,17 @@ export default function SalesScreen() {
                     size="sm"
                     loading={generatingReceiptId === item.sale_id}
                     disabled={Boolean(generatingReceiptId && generatingReceiptId !== item.sale_id)}
+                    style={{ flex: 1 }}
+                  />
+                ) : item.kind === 'debt_repayment' ? (
+                  <Button
+                    title={generatingReceiptId === item.id ? 'Generating...' : 'Generate Receipt'}
+                    icon="file-text"
+                    onPress={() => generateRepaymentReceipt(item.id)}
+                    variant="ghost"
+                    size="sm"
+                    loading={generatingReceiptId === item.id}
+                    disabled={Boolean(generatingReceiptId && generatingReceiptId !== item.id)}
                     style={{ flex: 1 }}
                   />
                 ) : (
@@ -501,9 +588,16 @@ function ReceiptShareCard({ sale, business, branch }: { sale: Sale; business: an
           alignItems: 'center',
         }}
       >
-        <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-          {sale.sale_number}
-        </Text>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+            {sale.sale_number}
+          </Text>
+          {(sale as any).isRepayment ? (
+            <Text style={{ fontSize: 9, fontFamily: FONT.bold, color: COLORS.warning, marginTop: 2 }}>
+              INSTALMENT REPAYMENT
+            </Text>
+          ) : null}
+        </View>
         <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
           {format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}
         </Text>
@@ -534,75 +628,124 @@ function ReceiptShareCard({ sale, business, branch }: { sale: Sale; business: an
         </View>
       </View>
 
-      <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
-        <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-          ITEMS
-        </Text>
-        <View style={{ marginTop: 6 }}>
-          {(sale.items ?? []).map((item, index) => (
-            <View
-              key={item.id ?? `${item.product_id}-${index}`}
-              style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                gap: 12,
-                paddingVertical: 10,
-                borderBottomWidth: 1,
-                borderBottomColor: '#F0EDE3',
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                  {(item.product as any)?.name ?? 'Item'}
-                </Text>
-                <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
-                  {item.quantity} × {formatCurrency(item.unit_price)}
-                  {item.discount_amount > 0 ? ` (Discount: -${formatCurrency(item.discount_amount)})` : ''}
+      {sale.items && sale.items.length > 0 ? (
+        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
+          <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
+            ITEMS
+          </Text>
+          <View style={{ marginTop: 6 }}>
+            {sale.items.map((item, index) => (
+              <View
+                key={item.id ?? `${item.product_id}-${index}`}
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  paddingVertical: 10,
+                  borderBottomWidth: 1,
+                  borderBottomColor: '#F0EDE3',
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                    {(item.product as any)?.name ?? 'Item'}
+                  </Text>
+                  <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
+                    {item.quantity} × {formatCurrency(item.unit_price)}
+                    {item.discount_amount > 0 ? ` (Discount: -${formatCurrency(item.discount_amount)})` : ''}
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                  {formatCurrency(item.total_price)}
                 </Text>
               </View>
-              <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                {formatCurrency(item.total_price)}
-              </Text>
-            </View>
-          ))}
+            ))}
+          </View>
         </View>
-      </View>
+      ) : (sale as any).isRepayment ? (
+        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
+          <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
+            PAYMENT DESCRIPTION
+          </Text>
+          <View style={{ marginTop: 6, paddingVertical: 10 }}>
+            <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+              Debt Repayment
+            </Text>
+            <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
+              Manual standalone debt settlement
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={{ paddingHorizontal: 24, paddingBottom: 20 }}>
         <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
           SUMMARY
         </Text>
         <View style={{ marginTop: 12, gap: 8 }}>
-          {sale.discount_amount > 0 ? (
+          {!(sale as any).isRepayment && sale.discount_amount > 0 ? (
             <SummaryRow label="Subtotal" value={formatCurrency(sale.subtotal)} />
           ) : null}
-          {sale.discount_amount > 0 ? (
+          {!(sale as any).isRepayment && sale.discount_amount > 0 ? (
             <SummaryRow label="Discount" value={`- ${formatCurrency(sale.discount_amount)}`} />
           ) : null}
-          {sale.tax_amount > 0 ? (
+          {!(sale as any).isRepayment && sale.tax_amount > 0 ? (
             <SummaryRow label="Tax" value={formatCurrency(sale.tax_amount)} />
           ) : null}
-          <View style={{ height: 1, backgroundColor: '#D8CEB7', marginTop: 4, marginBottom: 4 }} />
-          <SummaryRow
-            label="Total"
-            value={formatCurrency(sale.total_amount)}
-            labelStyle={{ fontFamily: FONT.bold, color: COLORS.text.primary }}
-            valueStyle={{ fontSize: 17, fontFamily: FONT.bold, color: COLORS.text.primary }}
-          />
-          <SummaryRow
-            label="Amount Paid"
-            value={formatCurrency(sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount)}
-            labelStyle={{ color: COLORS.success, fontFamily: FONT.medium }}
-            valueStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
-          />
-          {sale.amount_owed > 0 ? (
-            <SummaryRow
-              label="Balance Owed"
-              value={formatCurrency(sale.amount_owed)}
-              labelStyle={{ color: COLORS.danger, fontFamily: FONT.medium }}
-              valueStyle={{ color: COLORS.danger, fontFamily: FONT.bold }}
-            />
-          ) : null}
+          
+          {(sale as any).isRepayment ? (
+            <>
+              {sale.items && sale.items.length > 0 ? (
+                <SummaryRow
+                  label="Total Purchase"
+                  value={formatCurrency(sale.total_amount)}
+                />
+              ) : null}
+              <View style={{ height: 1, backgroundColor: '#D8CEB7', marginTop: 4, marginBottom: 4 }} />
+              <SummaryRow
+                label="This Payment"
+                value={formatCurrency(sale.amount_paid)}
+                labelStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
+                valueStyle={{ color: COLORS.success, fontFamily: FONT.bold, fontSize: 15 }}
+              />
+              <SummaryRow
+                label="Total Paid (All-time)"
+                value={formatCurrency((sale as any).accumulatedAmountPaid ?? sale.amount_paid)}
+                labelStyle={{ color: COLORS.text.secondary }}
+                valueStyle={{ color: COLORS.text.secondary }}
+              />
+              <SummaryRow
+                label="Remaining Balance"
+                value={sale.amount_owed > 0 ? formatCurrency(sale.amount_owed) : 'FULLY SETTLED'}
+                labelStyle={{ color: sale.amount_owed > 0 ? COLORS.danger : COLORS.success, fontFamily: FONT.medium }}
+                valueStyle={{ color: sale.amount_owed > 0 ? COLORS.danger : COLORS.success, fontFamily: FONT.bold }}
+              />
+            </>
+          ) : (
+            <>
+              <View style={{ height: 1, backgroundColor: '#D8CEB7', marginTop: 4, marginBottom: 4 }} />
+              <SummaryRow
+                label="Total"
+                value={formatCurrency(sale.total_amount)}
+                labelStyle={{ fontFamily: FONT.bold, color: COLORS.text.primary }}
+                valueStyle={{ fontSize: 17, fontFamily: FONT.bold, color: COLORS.text.primary }}
+              />
+              <SummaryRow
+                label="Amount Paid"
+                value={formatCurrency(sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount)}
+                labelStyle={{ color: COLORS.success, fontFamily: FONT.medium }}
+                valueStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
+              />
+              {sale.amount_owed > 0 ? (
+                <SummaryRow
+                  label="Balance Owed"
+                  value={formatCurrency(sale.amount_owed)}
+                  labelStyle={{ color: COLORS.danger, fontFamily: FONT.medium }}
+                  valueStyle={{ color: COLORS.danger, fontFamily: FONT.bold }}
+                />
+              ) : null}
+            </>
+          )}
           <SummaryRow
             label="Payment Method"
             value={sale.payment_method.replace('_', ' ').toUpperCase()}
