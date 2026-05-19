@@ -1,6 +1,6 @@
-# 📦 StockPadi — SME Business Management App
+# 📦 Record Am — SME Business Management App
 
-StockPadi is a mobile-first business management app built for Nigerian and African SMEs. It helps business owners track inventory, record sales, manage debts, log expenses, and get a clear daily picture of their business.
+Record Am is a mobile-first business management app built for Nigerian and African SMEs. It helps business owners track inventory, record sales, manage debts, log expenses, and get a clear daily picture of their business.
 
 ---
 
@@ -57,7 +57,7 @@ Install the Expo Go app on your phone:
 
 1. Go to **https://supabase.com** and create a free account
 2. Click **"New Project"** and fill in:
-   - **Project name**: StockPadi (or anything you like)
+   - **Project name**: Record Am (or anything you like)
    - **Database password**: Choose a strong password (save it somewhere)
    - **Region**: Choose closest to you (e.g. West EU or US East)
 3. Wait for the project to be created (~1 minute)
@@ -73,7 +73,7 @@ Install the Expo Go app on your phone:
 3. Open the file `lib/supabase-schema.sql` from this project
 4. Copy the entire contents and paste it into the SQL editor
 5. Click **"Run"** (green button)
-6. You should see: `StockPadi schema created successfully!` at the bottom
+6. You should see: `Record Am schema created successfully!` at the bottom
 
 This creates all 17 tables, relationships, RLS policies, indexes, and triggers.
 
@@ -157,7 +157,7 @@ npm run web
 ## 📁 Project Structure
 
 ```
-stockpadi/
+record-am/
 ├── app/
 │   ├── _layout.tsx              # Root layout (auth listener, splash screen)
 │   ├── index.tsx                # Entry redirect (auth check)
@@ -178,6 +178,10 @@ stockpadi/
 ├── components/
 │   ├── ui/
 │   │   └── index.tsx            # Button, Card, Badge, StatCard, EmptyState, etc.
+│   ├── layout/
+│   │   └── index.tsx            # ScreenShell, BrandMark, ScreenHeader, etc.
+│   ├── charts/
+│   │   └── index.tsx            # BarChart, LineChart, DonutChart, MetricCard
 │   └── forms/
 │       └── index.tsx            # InputField, SelectField, Toggle
 ├── lib/
@@ -189,7 +193,7 @@ stockpadi/
 ├── types/
 │   └── index.ts                 # All TypeScript interfaces
 ├── constants/
-│   └── index.ts                 # Business types, units, colors, etc.
+│   └── index.ts                 # Design tokens, colors, typography, etc.
 ├── .env.example                 # Template for environment variables
 ├── app.json                     # Expo config
 ├── babel.config.js
@@ -268,4 +272,4 @@ All tables have **Row Level Security (RLS)** — users can only access data from
 
 ## 📞 Support
 
-This is Phase 1 of the StockPadi project. Each subsequent phase adds more features on top of this foundation. The codebase is structured to be modular — each tab screen is self-contained and can be expanded independently.
+This is Phase 1 of the Record Am project. Each subsequent phase adds more features on top of this foundation. The codebase is structured to be modular — each tab screen is self-contained and can be expanded independently.

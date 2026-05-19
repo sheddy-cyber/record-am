@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { isDebtSettlementSale } from '@/lib/records';
 import { DailySummary } from '@/types';
 
@@ -47,8 +47,10 @@ export const useDailyBalanceStore = create<DailyBalanceState>((set, get) => ({
     const targetDate = date ?? get().selectedDate;
 
     try {
-      const dayStart = `${targetDate}T00:00:00`;
-      const dayEnd = `${targetDate}T23:59:59`;
+      const [year, month, day] = targetDate.split('-');
+      const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+      const dayStart = startOfDay(dateObj).toISOString();
+      const dayEnd = endOfDay(dateObj).toISOString();
 
       // Fetch all sales for the day
       const { data: sales } = await supabase

@@ -14,7 +14,7 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { BarChart, ChartLegend, DonutChart, LineChart, MetricCard } from '@/components/charts';
 import { Card, SectionHeader } from '@/components/ui';
 import { ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, FONT, RADIUS, SP, TYPE } from "@/constants";
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from "@/constants";
 
 const DATE_RANGES: { key: DateRange; label: string }[] = [
   { key: '7days', label: '7 Days' },
@@ -35,10 +35,10 @@ const EXPENSE_COLORS = [
 
 const fmt = (n: number) =>
   n >= 1_000_000
-    ? `\u20A6${(n / 1_000_000).toFixed(1)}M`
+    ? `${CURRENCY_SYMBOL}${(n / 1_000_000).toFixed(1)}M`
     : n >= 1_000
-      ? `\u20A6${(n / 1_000).toFixed(0)}k`
-      : `\u20A6${n.toFixed(0)}`;
+      ? `${CURRENCY_SYMBOL}${(n / 1_000).toFixed(0)}k`
+      : `${CURRENCY_SYMBOL}${n.toFixed(0)}`;
 
 export default function AnalyticsScreen() {
   const { currentBusiness, currentBranch } = useAuthStore();
@@ -96,7 +96,7 @@ export default function AnalyticsScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title="Analytics"
-        subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(' · ')}
+        subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(" \u00B7 ")}
         theme="dark"
       />
 
@@ -122,6 +122,7 @@ export default function AnalyticsScreen() {
                     paddingHorizontal: 14,
                     paddingVertical: 8,
                     borderWidth: 1,
+                    borderRadius: RADIUS.md,
                     borderColor: active ? COLORS.ink : COLORS.border,
                     backgroundColor: active ? COLORS.ink : COLORS.surface,
                   }}
@@ -150,7 +151,7 @@ export default function AnalyticsScreen() {
         {isLoading && !summary ? (
           <View style={{ alignItems: 'center', justifyContent: 'center', padding: 60 }}>
             <ActivityIndicator size="large" color={COLORS.ink} />
-            <Text style={{ marginTop: 12, color: COLORS.text.muted }}>Loading analytics...</Text>
+            <Text style={{ fontFamily: FONT.regular, marginTop: 12, color: COLORS.text.muted }}>Loading analytics...</Text>
           </View>
         ) : (
           <View style={{ padding: 20, gap: 24 }}>
@@ -194,7 +195,7 @@ export default function AnalyticsScreen() {
             <Card>
               <SectionHeader title="Revenue And Profit Trend" />
               {salesTrend.length === 0 ? (
-                <Text style={{ color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
+                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
                   No sales data for this period
                 </Text>
               ) : (
@@ -209,7 +210,7 @@ export default function AnalyticsScreen() {
                   <View style={{ flexDirection: 'row', gap: 20, marginTop: 12 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <View style={{ width: 12, height: 3, backgroundColor: COLORS.ink }} />
-                      <Text style={{ fontSize: 12, color: COLORS.text.secondary }}>Revenue</Text>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary }}>Revenue</Text>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                       <View
@@ -220,7 +221,7 @@ export default function AnalyticsScreen() {
                           borderStyle: 'dashed',
                         }}
                       />
-                      <Text style={{ fontSize: 12, color: COLORS.text.secondary }}>Profit</Text>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary }}>Profit</Text>
                     </View>
                   </View>
                 </>
@@ -230,7 +231,7 @@ export default function AnalyticsScreen() {
             <Card>
               <SectionHeader title="Daily Sales Volume" />
               {salesTrend.length === 0 ? (
-                <Text style={{ color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
+                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
                   No sales data for this period
                 </Text>
               ) : (
@@ -245,7 +246,7 @@ export default function AnalyticsScreen() {
             <Card>
               <SectionHeader title="Top Selling Products" />
               {topProducts.length === 0 ? (
-                <Text style={{ color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
+                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
                   No product sales in this period
                 </Text>
               ) : (
@@ -263,6 +264,7 @@ export default function AnalyticsScreen() {
                                 width: 24,
                                 height: 24,
                                 borderWidth: 1,
+                                borderRadius: RADIUS.md,
                                 borderColor: COLORS.border,
                                 backgroundColor: COLORS.accent + '18',
                                 alignItems: 'center',
@@ -279,7 +281,7 @@ export default function AnalyticsScreen() {
                             <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
                               {fmt(product.total_revenue)}
                             </Text>
-                            <Text style={{ fontSize: 11, color: COLORS.text.muted }}>{product.total_qty} sold</Text>
+                            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{product.total_qty} sold</Text>
                           </View>
                         </View>
                         <View style={{ height: 6, backgroundColor: '#F3F4F6' }}>
@@ -312,14 +314,14 @@ export default function AnalyticsScreen() {
                         paddingVertical: 4,
                       }}
                     >
-                      <Text style={{ fontSize: 13, color: COLORS.text.secondary, flex: 1 }} numberOfLines={1}>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary, flex: 1 }} numberOfLines={1}>
                         {product.product_name}
                       </Text>
                       <View style={{ alignItems: 'flex-end' }}>
                         <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
                           {fmt(product.total_revenue)}
                         </Text>
-                        <Text style={{ fontSize: 11, color: COLORS.text.muted }}>{product.total_qty} sold</Text>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{product.total_qty} sold</Text>
                       </View>
                     </View>
                   ))}
@@ -330,7 +332,7 @@ export default function AnalyticsScreen() {
             <Card>
               <SectionHeader title="Expense Breakdown" />
               {expenseBreakdown.length === 0 ? (
-                <Text style={{ color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
+                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
                   No expenses recorded in this period
                 </Text>
               ) : (
@@ -371,7 +373,7 @@ export default function AnalyticsScreen() {
                   ].map((metric) => (
                     <View key={metric.label}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <Text style={{ fontSize: 13, color: COLORS.text.secondary }}>{metric.label}</Text>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>{metric.label}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                           <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>{metric.value}</Text>
                           <Feather

@@ -11,7 +11,7 @@ import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { Button, Card } from '@/components/ui';
-import { InputField } from '@/components/forms';
+import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 import Toast from 'react-native-toast-message';
@@ -90,7 +90,7 @@ export default function ProfileScreen() {
           left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
         />
 
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={{ padding: 20, gap: 20 }}>
           <Card>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
               <View
@@ -98,6 +98,7 @@ export default function ProfileScreen() {
                   width: 64,
                   height: 64,
                   borderWidth: 1,
+                  borderRadius: RADIUS.md,
                   borderColor: COLORS.border,
                   backgroundColor: COLORS.surface2,
                   alignItems: 'center',
@@ -112,7 +113,7 @@ export default function ProfileScreen() {
                 <Text style={{ color: COLORS.text.primary, fontFamily: FONT.bold, fontSize: 16 }}>
                   {profile?.full_name ?? 'User'}
                 </Text>
-                <Text style={{ color: COLORS.text.muted, fontSize: 13, marginTop: 2 }}>{user?.email}</Text>
+                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, marginTop: 2 }}>{user?.email}</Text>
               </View>
             </View>
 
@@ -173,14 +174,14 @@ export default function ProfileScreen() {
                   gap: 16,
                 }}
               >
-                <Text style={{ fontSize: 13, color: COLORS.text.secondary }}>{item.label}</Text>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>{item.label}</Text>
                 <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, flex: 1, textAlign: 'right' }}>
                   {item.value}
                 </Text>
               </View>
             ))}
           </Card>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </KeyboardAvoidingView>
     </ScreenShell>
   );

@@ -1,9 +1,10 @@
 import { Share } from 'react-native';
 import { format } from 'date-fns';
+import { CURRENCY_SYMBOL } from '@/constants';
 import { Branch, Business, Sale } from '@/types';
 
 export function generateReceiptHTML(sale: Sale, business: Business, branch: Branch): string {
-  const currency = business.currency_symbol ?? '₦';
+  const currency = business.currency_symbol ?? CURRENCY_SYMBOL;
   const formatMoney = (value: number) =>
     `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -13,7 +14,10 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
       <tr>
         <td style="padding:8px 0;border-bottom:1px solid #f0ede3;">
           <div style="font-weight:600;color:#1B201D;">${(item.product as any)?.name ?? 'Item'}</div>
-          <div style="font-size:12px;color:#7D877F;">${item.quantity} × ${formatMoney(item.unit_price)}</div>
+          <div style="font-size:12px;color:#7D877F;">
+            ${item.quantity} × ${formatMoney(item.unit_price)}
+            ${item.discount_amount > 0 ? `(Discount: -${formatMoney(item.discount_amount)})` : ''}
+          </div>
         </td>
         <td style="padding:8px 0;border-bottom:1px solid #f0ede3;text-align:right;font-weight:600;color:#1B201D;">
           ${formatMoney(item.total_price)}
@@ -48,7 +52,7 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   .receipt-num { font-size: 13px; font-weight: 700; color: #14211C; }
   .receipt-date { font-size: 12px; color: #7D877F; }
   .section { padding: 20px 24px; }
-  .section-title { font-size: 11px; font-weight: 700; color: #7D877F; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+  .section-title { font-size: 11px; font-weight: 700; color: #7D877F; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
   table { width: 100%; border-collapse: collapse; }
   .customer-box { background: #f5f0e4; padding: 12px 16px; margin-bottom: 4px; border: 1px solid #d8ceb7; }
   .customer-box .name { font-size: 15px; font-weight: 700; color: #1B201D; }
@@ -135,7 +139,7 @@ export interface DailyReportData {
 }
 
 export function generateDailyReportHTML(data: DailyReportData): string {
-  const currency = data.business.currency_symbol ?? '₦';
+  const currency = data.business.currency_symbol ?? CURRENCY_SYMBOL;
   const formatMoney = (value: number) => `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
   const profitColor = data.netProfit >= 0 ? '#238B5B' : '#C44536';
   const discrepancy = data.cashActual !== undefined ? data.cashActual - data.cashExpected : 0;
@@ -219,11 +223,14 @@ export function generateDailyReportHTML(data: DailyReportData): string {
 }
 
 export async function shareReceiptViaWhatsApp(sale: Sale, business: Business, branch: Branch) {
-  const currency = business.currency_symbol ?? '₦';
+  const currency = business.currency_symbol ?? CURRENCY_SYMBOL;
   const formatMoney = (value: number) => `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
   const itemLines = (sale.items ?? [])
-    .map((item) => `- ${(item.product as any)?.name ?? 'Item'} x${item.quantity} = ${formatMoney(item.total_price)}`)
+    .map((item) => {
+      const discountText = item.discount_amount > 0 ? ` (Discount: -${formatMoney(item.discount_amount)})` : '';
+      return `- ${(item.product as any)?.name ?? 'Item'} x${item.quantity} = ${formatMoney(item.total_price)}${discountText}`;
+    })
     .join('\n');
 
   const message =
@@ -231,6 +238,7 @@ export async function shareReceiptViaWhatsApp(sale: Sale, business: Business, br
     `${business.name} (${branch.name})\n` +
     `${format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}\n\n` +
     `*ITEMS*\n${itemLines}\n\n` +
+    (sale.discount_amount > 0 ? `*SUBTOTAL:* ${formatMoney(sale.subtotal)}\n*DISCOUNT:* -${formatMoney(sale.discount_amount)}\n` : '') +
     `*TOTAL:* ${formatMoney(sale.total_amount)}\n` +
     `*PAID:* ${formatMoney(sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount)}\n` +
     (sale.amount_owed > 0 ? `*BALANCE:* ${formatMoney(sale.amount_owed)}\n` : '') +
@@ -254,7 +262,7 @@ export async function shareDebtReminderViaWhatsApp(
   businessName: string,
   dueDate?: string
 ) {
-  const formatMoney = (value: number) => `₦${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+  const formatMoney = (value: number) => `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
   const message =
     `Dear *${customerName}*,\n\n` +
@@ -276,7 +284,7 @@ export async function shareDebtReminderViaWhatsApp(
 }
 
 export async function shareDailyReport(data: DailyReportData) {
-  const currency = data.business.currency_symbol ?? '₦';
+  const currency = data.business.currency_symbol ?? CURRENCY_SYMBOL;
   const formatMoney = (value: number) => `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
   const message =

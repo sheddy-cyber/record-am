@@ -6,9 +6,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { Button, Card } from '@/components/ui';
-import { InputField, SelectField } from '@/components/forms';
+import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { BrandMark, BrandWordmark, ScreenShell } from '@/components/layout';
-import { BRAND, BUSINESS_TYPES, COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { BRAND, BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BusinessType } from '@/types';
 
 const STEPS = ['Business', 'Location', 'Ready'];
@@ -17,7 +17,7 @@ function StepBar({ step }: { step: number }) {
   return (
     <View style={{ flexDirection: 'row', gap: 6 }}>
       {STEPS.map((_, index) => (
-        <View key={index} style={{ flex: 1, height: 4, borderRadius: RADIUS.full, backgroundColor: index <= step ? COLORS.accent : 'rgba(248,250,252,0.14)' }} />
+        <View key={index} style={{ flex: 1, height: 4, borderRadius: RADIUS.full, backgroundColor: index <= step ? COLORS.accent : 'rgba(250,250,248,0.14)' }} />
       ))}
     </View>
   );
@@ -55,7 +55,7 @@ export default function OnboardingScreen() {
           phone: phone.trim() || undefined,
           address: address.trim() || undefined,
           currency: 'NGN',
-          currency_symbol: '\u20A6',
+          currency_symbol: CURRENCY_SYMBOL,
         },
         user.id
       );
@@ -82,13 +82,13 @@ export default function OnboardingScreen() {
         <BrandWordmark invert size={24} />
         <StepBar step={step} />
         <View>
-          <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(248,250,252,0.45)' }}>Step {step + 1} of {STEPS.length}</Text>
+          <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.45)' }}>Step {step + 1} of {STEPS.length}</Text>
           <Text style={{ ...TYPE.h1, color: COLORS.text.inverse, marginTop: 8 }}>
             {step === 0 && 'Set up your business'}
             {step === 1 && 'Where are you located?'}
             {step === 2 && 'You\u2019re all set'}
           </Text>
-          <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: 'rgba(248,250,252,0.5)', marginTop: 6 }}>
+          <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.5)', marginTop: 6 }}>
             {step === 0 && 'Tell us what your business is called and what you sell.'}
             {step === 1 && 'Add your location now or skip and fill it in later.'}
             {step === 2 && `${BRAND.name} is ready for your business.`}
@@ -98,7 +98,7 @@ export default function OnboardingScreen() {
 
       <View style={{ flex: 1, backgroundColor: COLORS.surface, borderTopLeftRadius: RADIUS.lg, borderTopRightRadius: RADIUS.lg }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          <ScrollView contentContainerStyle={{ padding: SP.xl, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+          <KeyboardAwareScrollView contentContainerStyle={{ padding: SP.xl, flexGrow: 1 }}>
             {step === 0 ? (
               <>
                 <InputField
@@ -159,7 +159,7 @@ export default function OnboardingScreen() {
                 {[
                   { icon: 'check-circle', label: 'Business', value: businessName, color: COLORS.success },
                   { icon: 'tag', label: 'Type', value: BUSINESS_TYPES.find((item) => item.value === businessType)?.label, color: COLORS.info },
-                  { icon: 'dollar-sign', label: 'Currency', value: 'Nigerian Naira (\u20A6)', color: COLORS.warning },
+                  { icon: 'dollar-sign', label: 'Currency', value: `Nigerian Naira (${CURRENCY_SYMBOL})`, color: COLORS.warning },
                   { icon: 'home', label: 'Branch', value: 'Main Branch (default)', color: COLORS.text.secondary },
                 ].map((item) => (
                   <Card key={item.label}>
@@ -197,7 +197,7 @@ export default function OnboardingScreen() {
                 <Button title={`Open ${BRAND.name}`} onPress={handleFinish} loading={loading} size="lg" variant="accent" />
               )}
             </View>
-          </ScrollView>
+          </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
       </View>
     </ScreenShell>

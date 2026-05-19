@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { COLORS, FONT, RADIUS, SHADOW, SP, TYPE } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 
 // ─── Button ─────────────────────────────────────────────────────────────────
 
@@ -92,11 +92,10 @@ export const Card: React.FC<CardProps> = ({ children, style, onPress, variant = 
   const bg = variant === 'muted' ? COLORS.surface2 : COLORS.card;
   const baseStyle: ViewStyle = {
     backgroundColor: bg,
-    borderRadius: RADIUS.md,
+    borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: SP.card,
-    ...SHADOW.sm,
   };
 
   if (onPress) {
@@ -154,7 +153,7 @@ export const StatCard: React.FC<StatCardProps> = ({
         style={{
           width: 36,
           height: 36,
-          borderRadius: RADIUS.sm,
+          borderRadius: RADIUS.md,
           backgroundColor: iconBg,
           alignItems: 'center',
           justifyContent: 'center',
@@ -172,11 +171,11 @@ type BadgeVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'acc
 
 const badgeColors: Record<BadgeVariant, { bg: string; text: string; border: string }> = {
   neutral: { bg: COLORS.surface2, text: COLORS.text.secondary, border: COLORS.border },
-  success: { bg: COLORS.successLight, text: '#065F46', border: '#A7F3D0' },
-  warning: { bg: COLORS.warningLight, text: '#92400E', border: '#FDE68A' },
-  danger:  { bg: COLORS.dangerLight, text: '#B91C1C', border: '#FECACA' },
-  info:    { bg: COLORS.infoLight, text: '#1E40AF', border: '#BFDBFE' },
-  accent:  { bg: COLORS.accentLight, text: COLORS.accentMuted, border: '#F5DEB3' },
+  success: { bg: COLORS.successLight, text: '#3D6948', border: '#C2DBCA' },
+  warning: { bg: COLORS.warningLight, text: '#7A5230', border: '#E8D4BF' },
+  danger:  { bg: COLORS.dangerLight, text: '#8B1A22', border: '#F2C4C8' },
+  info:    { bg: COLORS.infoLight, text: '#3D5A63', border: '#C8D8DD' },
+  accent:  { bg: COLORS.accentLight, text: COLORS.accentMuted, border: '#E8E0A0' },
   primary: { bg: COLORS.ink, text: COLORS.text.inverse, border: COLORS.ink },
 };
 
@@ -187,7 +186,7 @@ export const Badge: React.FC<{ label: string; variant?: BadgeVariant }> = ({ lab
     <View
       style={{
         backgroundColor: c.bg,
-        borderRadius: RADIUS.full,
+        borderRadius: RADIUS.sm,
         borderWidth: 1,
         borderColor: c.border,
         paddingHorizontal: 10,
@@ -306,7 +305,7 @@ export const IconBox: React.FC<{
     style={{
       width: 40,
       height: 40,
-      borderRadius: RADIUS.sm,
+      borderRadius: RADIUS.md,
       backgroundColor: bg,
       alignItems: 'center',
       justifyContent: 'center',
@@ -323,7 +322,7 @@ export const AmountDisplay: React.FC<{
   size?: 'sm' | 'md' | 'lg' | 'xl';
   color?: string;
   currency?: string;
-}> = ({ amount, size = 'md', color = COLORS.text.primary, currency = '\u20A6' }) => {
+}> = ({ amount, size = 'md', color = COLORS.text.primary, currency = CURRENCY_SYMBOL }) => {
   const sizes = { sm: 14, md: 18, lg: 24, xl: 32 };
   const formatted = Math.abs(amount).toLocaleString('en-NG', { minimumFractionDigits: 0 });
 
@@ -348,7 +347,7 @@ export const PaymentSummary: React.FC<{
   const totalColor = tone === 'sales' ? COLORS.accent : COLORS.text.primary;
   const paidColor = amountPaid > 0 ? COLORS.success : COLORS.text.muted;
   const creditColor = amountOwed > 0 ? COLORS.danger : COLORS.text.muted;
-  const fmt = (value: number) => `\u20A6${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const fmt = (value: number) => `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
   return (
     <View style={[{ minWidth: 110, alignItems: 'flex-end' }, style]}>

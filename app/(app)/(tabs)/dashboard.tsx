@@ -1,40 +1,48 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { isDebtSettlementSale } from '@/lib/records';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { useConfirmSignOut } from '@/hooks/useConfirmSignOut';
 import { Badge, Card, EmptyState, LoadingScreen, SectionHeader, StatCard, PaymentSummary } from '@/components/ui';
 import { BrandMark, ScreenShell, ScreenHeader, HeaderAction } from '@/components/layout';
-import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { CustomerDebt, DashboardStats, RevenueActivity } from '@/types';
 
-const fmt = (value: number) => `\u20A6${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+// Formats with 2 decimal places for the hero number
+const fmtFull = (value: number) =>
+  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Compact format for secondary stats
+const fmt = (value: number) =>
+  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, profile } = useAuthStore();
   const { getLowStockProducts } = useBusinessStore();
-  const confirmSignOut = useConfirmSignOut();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentActivities, setRecentActivities] = useState<RevenueActivity[]>([]);
   const [recentDebts, setRecentDebts] = useState<CustomerDebt[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [revenueVisible, setRevenueVisible] = useState(true);
 
   const fetchData = useCallback(async () => {
     if (!currentBusiness || !currentBranch) return;
 
     try {
-      const today = format(new Date(), 'yyyy-MM-dd');
+      const todayDate = format(new Date(), 'yyyy-MM-dd');
+      const todayStart = startOfDay(new Date()).toISOString();
+      const todayEnd = endOfDay(new Date()).toISOString();
 
       const [
         todaySalesRes,
@@ -51,21 +59,21 @@ export default function DashboardScreen() {
           .select('total_amount, notes')
           .eq('business_id', currentBusiness.id)
           .eq('branch_id', currentBranch.id)
-          .gte('created_at', `${today}T00:00:00`)
-          .lte('created_at', `${today}T23:59:59`),
+          .gte('created_at', todayStart)
+          .lte('created_at', todayEnd),
         supabase
           .from('debt_repayments')
           .select('amount, debt:customer_debts!inner(business_id, branch_id)')
           .eq('debt.business_id', currentBusiness.id)
           .eq('debt.branch_id', currentBranch.id)
-          .gte('created_at', `${today}T00:00:00`)
-          .lte('created_at', `${today}T23:59:59`),
+          .gte('created_at', todayStart)
+          .lte('created_at', todayEnd),
         supabase
           .from('expenses')
           .select('amount')
           .eq('business_id', currentBusiness.id)
           .eq('branch_id', currentBranch.id)
-          .eq('expense_date', today),
+          .eq('expense_date', todayDate),
         supabase
           .from('customer_debts')
           .select('balance')
@@ -149,16 +157,38 @@ export default function DashboardScreen() {
     return 'Good evening';
   };
 
+  // Derive a simple visual trend direction for profit
+  const profitPositive = (stats?.today_profit ?? 0) >= 0;
+  const profitRatio =
+    (stats?.today_sales ?? 0) > 0
+      ? Math.min(((stats?.today_profit ?? 0) / (stats?.today_sales ?? 1)) * 100, 100)
+      : 0;
+
   if (loading) return <LoadingScreen />;
 
   return (
+    <SwipeableTabScreen name="dashboard">
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title={`${greeting()}`}
-        subtitle={`${profile?.full_name?.split(' ')[0] ?? 'Boss'} \u2022 ${format(new Date(), 'EEE, MMM d')}`}
+        subtitle={`${profile?.full_name?.split(' ')[0] ?? 'Boss'} \u00B7 ${format(new Date(), 'EEE, MMM d')}`}
         theme="dark"
         left={<BrandMark size={36} />}
-        right={<HeaderAction icon="log-out" onPress={confirmSignOut} />}
+        right={
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={{
+              minHeight: 38,
+              minWidth: 38,
+              borderRadius: RADIUS.md,
+              backgroundColor: 'rgba(239,239,208,0.12)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Feather name="bell" size={18} color={COLORS.text.inverse} />
+          </TouchableOpacity>
+        }
       />
 
       <ScrollView
@@ -176,34 +206,227 @@ export default function DashboardScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Revenue Hero ──────────────────────────────────── */}
-        <Card style={{ backgroundColor: COLORS.ink, borderColor: 'rgba(201,150,59,0.2)', padding: SP.lg }}>
-          <Text style={{ ...TYPE.overline, color: 'rgba(248,250,252,0.5)' }}>Today&apos;s revenue</Text>
-          <Text style={{ ...TYPE.big, color: COLORS.accent, marginTop: 8 }}>
-            {fmt(stats?.today_sales ?? 0)}
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
-            <View style={{ flex: 1, padding: 12, borderRadius: RADIUS.sm, backgroundColor: 'rgba(248,250,252,0.06)' }}>
-              <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: 'rgba(248,250,252,0.45)' }}>Expenses</Text>
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.inverse, marginTop: 4 }}>
-                {fmt(stats?.today_expenses ?? 0)}
-              </Text>
+        {/* ── Revenue Hero ─────────────────────────────────────────────────── */}
+        {/* Deep ink card with a layered gradient effect using nested views.
+            The tangerine accent bleeds through as a colour accent strip and
+            the large number becomes the undeniable focal point. */}
+        <View
+          style={{
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: 0.15,
+            shadowRadius: 16,
+            elevation: 10,
+          }}
+        >
+          <View
+            style={{
+              borderRadius: RADIUS['2xl'],
+              overflow: 'hidden',
+              // Subtle elevation through layered border, not box shadow
+              borderWidth: 1,
+              borderColor: 'rgba(255,107,53,0.18)',
+            }}
+          >
+            {/* Deep background */}
+            <View style={{ backgroundColor: COLORS.ink, padding: SP.lg, paddingBottom: 0 }}>
+              {/* Top row: label + visibility toggle */}
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {/* Live indicator dot */}
+                  <View
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: COLORS.success,
+                    }}
+                  />
+                  <Text style={{ ...TYPE.overline, color: 'rgba(239,239,208,0.50)', letterSpacing: 1.2 }}>
+                    TODAY&apos;S REVENUE
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setRevenueVisible((v) => !v)}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: RADIUS.sm,
+                    backgroundColor: 'rgba(239,239,208,0.07)',
+                  }}
+                >
+                  <Feather
+                    name={revenueVisible ? 'eye' : 'eye-off'}
+                    size={12}
+                    color="rgba(239,239,208,0.4)"
+                  />
+                  <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: 'rgba(239,239,208,0.35)', letterSpacing: 0.5 }}>
+                    {revenueVisible ? 'HIDE' : 'SHOW'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Primary revenue number — large, commanding */}
+              {revenueVisible ? (
+                <View style={{ marginTop: 6, marginBottom: 20 }}>
+                  <Text
+                    style={{
+                      fontSize: 44,
+                      fontFamily: FONT.black,
+                      color: COLORS.accent,
+                      letterSpacing: -1.5,
+                      lineHeight: 52,
+                    }}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                  >
+                    {fmtFull(stats?.today_sales ?? 0)}
+                  </Text>
+
+                  {/* Profit trend pill */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: RADIUS.full,
+                        backgroundColor: profitPositive
+                          ? 'rgba(46,204,113,0.15)'
+                          : 'rgba(231,76,60,0.15)',
+                        borderWidth: 1,
+                        borderColor: profitPositive
+                          ? 'rgba(46,204,113,0.25)'
+                          : 'rgba(231,76,60,0.25)',
+                      }}
+                    >
+                      <Feather
+                        name={profitPositive ? 'trending-up' : 'trending-down'}
+                        size={11}
+                        color={profitPositive ? COLORS.success : COLORS.danger}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontFamily: FONT.medium,
+                          color: profitPositive ? COLORS.success : COLORS.danger,
+                        }}
+                      >
+                        {profitPositive ? '+' : ''}{profitRatio.toFixed(1)}% margin
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(239,239,208,0.35)' }}>
+                      {format(new Date(), 'MMM d, yyyy')}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ marginTop: 6, marginBottom: 20 }}>
+                  <Text
+                    style={{
+                      fontSize: 44,
+                      fontFamily: FONT.black,
+                      color: 'rgba(239,239,208,0.15)',
+                      letterSpacing: 8,
+                      lineHeight: 52,
+                    }}
+                  >
+                    ••••••••
+                  </Text>
+                  <View style={{ marginTop: 8, height: 22 }} />
+                </View>
+              )}
             </View>
-            <View style={{ flex: 1, padding: 12, borderRadius: RADIUS.sm, backgroundColor: 'rgba(248,250,252,0.06)' }}>
-              <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: 'rgba(248,250,252,0.45)' }}>Net profit</Text>
-              <Text
+
+            {/* Accent divider strip — a razor-thin tangerine line */}
+            <View
+              style={{
+                height: 2,
+                backgroundColor: COLORS.ink,
+                borderTopWidth: 1,
+                borderTopColor: 'rgba(255,107,53,0.35)',
+              }}
+            />
+
+            {/* Secondary stats row — slightly lighter ink for depth layering */}
+            <View
+              style={{
+                flexDirection: 'row',
+                backgroundColor: 'rgba(0,38,68,1)',
+                borderBottomLeftRadius: RADIUS['2xl'] - 1,
+                borderBottomRightRadius: RADIUS['2xl'] - 1,
+              }}
+            >
+              {/* Expenses */}
+              <View
                 style={{
-                  fontSize: 15,
-                  fontFamily: FONT.bold,
-                  color: (stats?.today_profit ?? 0) >= 0 ? '#4ADE80' : '#FCA5A5',
-                  marginTop: 4,
+                  flex: 1,
+                  padding: SP.md,
+                  paddingVertical: 14,
+                  borderRightWidth: 1,
+                  borderRightColor: 'rgba(255,255,255,0.06)',
+                  alignItems: 'center',
                 }}
               >
-                {fmt(stats?.today_profit ?? 0)}
-              </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 5 }}>
+                  <Feather name="arrow-down-circle" size={11} color="rgba(239,239,208,0.35)" />
+                  <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: 'rgba(239,239,208,0.35)', letterSpacing: 0.8 }}>
+                    EXPENSES
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontFamily: FONT.bold,
+                    color: revenueVisible ? 'rgba(239,239,208,0.85)' : 'rgba(239,239,208,0.2)',
+                    letterSpacing: -0.3,
+                  }}
+                >
+                  {revenueVisible ? fmt(stats?.today_expenses ?? 0) : '••••'}
+                </Text>
+              </View>
+
+              {/* Net Profit */}
+              <View
+                style={{
+                  flex: 1,
+                  padding: SP.md,
+                  paddingVertical: 14,
+                  alignItems: 'center',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 5 }}>
+                  <Feather name="bar-chart-2" size={11} color="rgba(239,239,208,0.35)" />
+                  <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: 'rgba(239,239,208,0.35)', letterSpacing: 0.8 }}>
+                    NET PROFIT
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    fontFamily: FONT.bold,
+                    letterSpacing: -0.3,
+                    color: revenueVisible
+                      ? profitPositive
+                        ? COLORS.success
+                        : COLORS.danger
+                      : 'rgba(239,239,208,0.2)',
+                  }}
+                >
+                  {revenueVisible
+                    ? `${profitPositive ? '' : '-'}${fmt(Math.abs(stats?.today_profit ?? 0))}`
+                    : '••••'}
+                </Text>
+              </View>
             </View>
           </View>
-        </Card>
+        </View>
 
         {/* ── Low stock alert ─────────────────────────────── */}
         {(stats?.low_stock_count ?? 0) > 0 ? (
@@ -216,7 +439,7 @@ export default function DashboardScreen() {
               gap: 12,
               borderWidth: 1,
               borderRadius: RADIUS.md,
-              borderColor: '#FDE68A',
+              borderColor: COLORS.warning,
               backgroundColor: COLORS.warningLight,
               padding: 14,
             }}
@@ -232,10 +455,10 @@ export default function DashboardScreen() {
         {/* ── Quick Actions ───────────────────────────────── */}
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {[
-            { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/(tabs)/sales?modal=record-sale', color: COLORS.accent },
-            { icon: 'plus-square' as const, label: 'Add Stock', route: '/(app)/(tabs)/inventory', color: COLORS.info },
-            { icon: 'minus-circle' as const, label: 'Expense', route: '/(app)/(tabs)/more?modal=expense', color: COLORS.warning },
-            { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/(tabs)/debts', color: COLORS.danger },
+            { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale', color: COLORS.accent },
+            { icon: 'plus-square' as const, label: 'Add Stock', route: '/(app)/add-stock', color: COLORS.info },
+            { icon: 'minus-circle' as const, label: 'Expense', route: '/(app)/record-expense', color: COLORS.warning },
+            { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/record-debt', color: COLORS.danger },
           ].map((action) => (
             <TouchableOpacity
               key={action.label}
@@ -243,7 +466,7 @@ export default function DashboardScreen() {
               activeOpacity={0.7}
               style={{
                 flex: 1,
-                backgroundColor: COLORS.card,
+                backgroundColor: '#F9FAFB',
                 borderWidth: 1,
                 borderColor: COLORS.border,
                 borderRadius: RADIUS.md,
@@ -274,6 +497,7 @@ export default function DashboardScreen() {
               iconColor={COLORS.info}
               iconBg={COLORS.infoLight}
               onPress={() => router.push('/(app)/(tabs)/inventory')}
+              style={{ backgroundColor: '#F9FAFB' }}
             />
             <StatCard
               label="Customers"
@@ -281,6 +505,8 @@ export default function DashboardScreen() {
               icon="users"
               iconColor={COLORS.success}
               iconBg={COLORS.successLight}
+              onPress={() => router.push('/(app)/customers')}
+              style={{ backgroundColor: '#F9FAFB' }}
             />
           </View>
           <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -291,6 +517,7 @@ export default function DashboardScreen() {
               iconColor={COLORS.warning}
               iconBg={COLORS.warningLight}
               onPress={() => router.push('/(app)/(tabs)/debts')}
+              style={{ backgroundColor: '#F9FAFB' }}
             />
             <StatCard
               label="Low Stock"
@@ -298,6 +525,8 @@ export default function DashboardScreen() {
               icon="alert-circle"
               iconColor={COLORS.danger}
               iconBg={COLORS.dangerLight}
+              onPress={() => router.push('/(app)/(tabs)/inventory')}
+              style={{ backgroundColor: '#F9FAFB' }}
             />
           </View>
         </View>
@@ -315,7 +544,7 @@ export default function DashboardScreen() {
               description="Sales and collections will appear here."
             />
           ) : (
-            <Card style={{ padding: 0 }}>
+            <Card style={{ padding: 0, backgroundColor: '#F9FAFB' }}>
               {recentActivities.map((activity, index) => (
                 <View key={`${activity.kind}-${activity.id}`}>
                   <View
@@ -330,10 +559,12 @@ export default function DashboardScreen() {
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                        {activity.kind === 'debt_repayment' ? `Payment · ${activity.customer_name}` : activity.customer_name}
+                        {activity.kind === 'debt_repayment' ? `Payment \u00B7 ${activity.customer_name}` : activity.customer_name}
                       </Text>
                       <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
-                        {activity.reference} \u2022 {format(new Date(activity.created_at), 'h:mm a')}
+                        {activity.reference}
+                        {" \u00B7 "}
+                        {format(new Date(activity.created_at), 'h:mm a')}
                       </Text>
                     </View>
                     <PaymentSummary
@@ -356,7 +587,7 @@ export default function DashboardScreen() {
         {recentDebts.length > 0 ? (
           <View>
             <SectionHeader title="Outstanding Debts" action={{ label: 'See all', onPress: () => router.push('/(app)/(tabs)/debts') }} />
-            <Card style={{ padding: 0 }}>
+            <Card style={{ padding: 0, backgroundColor: '#F9FAFB' }}>
               {recentDebts.map((debt, index) => (
                 <View key={debt.id}>
                   <View
@@ -385,5 +616,6 @@ export default function DashboardScreen() {
         ) : null}
       </ScrollView>
     </ScreenShell>
+    </SwipeableTabScreen>
   );
 }

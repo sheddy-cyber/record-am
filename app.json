@@ -9,21 +9,21 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#071018"
+      "backgroundColor": "#0F172A"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.ledgr.app"
+      "bundleIdentifier": "com.recordam.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#071018"
+        "backgroundColor": "#0F172A"
       },
-      "package": "com.ledgr.app"
+      "package": "com.recordam.app"
     },
     "web": {
       "favicon": "./assets/favicon.png",

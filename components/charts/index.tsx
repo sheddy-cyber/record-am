@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, Dimensions } from 'react-native';
 import Svg, { Rect, Line, Path, Circle, Text as SvgText, G, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { Feather } from '@expo/vector-icons';
-import { COLORS, FONT, RADIUS, SHADOW, SP } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 
 const SCREEN_W = Dimensions.get('window').width;
 
@@ -29,9 +29,9 @@ export const BarChart: React.FC<BarChartProps> = ({
   data,
   width = SCREEN_W - 48,
   height = 200,
-  color = COLORS.ink,
+  color = COLORS.accent,
   secondaryColor = COLORS.success,
-  formatValue = (v) => `₦${(v / 1000).toFixed(0)}k`,
+  formatValue = (v) => `${CURRENCY_SYMBOL}${(v / 1000).toFixed(0)}k`,
   showSecondary = false,
 }) => {
   if (!data.length) return null;
@@ -125,10 +125,10 @@ export const LineChart: React.FC<LineChartProps> = ({
   data,
   width = SCREEN_W - 48,
   height = 200,
-  color = COLORS.ink,
+  color = COLORS.accent,
   secondaryColor = COLORS.success,
   showSecondary = false,
-  formatValue = (v) => `₦${(v / 1000).toFixed(0)}k`,
+  formatValue = (v) => `${CURRENCY_SYMBOL}${(v / 1000).toFixed(0)}k`,
 }) => {
   if (!data.length) return null;
 
@@ -343,7 +343,6 @@ export const MetricCard: React.FC<MetricCardProps> = ({ label, value, growth, ic
         borderRadius: RADIUS.md,
         padding: SP.card,
         flex: 1,
-        ...SHADOW.sm,
       }}
     >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
