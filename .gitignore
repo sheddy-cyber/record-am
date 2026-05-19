@@ -30,3 +30,4 @@ build/
 *.sln.docstates
 .env
 .env.local
+supabase/.temp/
