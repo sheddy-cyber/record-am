@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Text, TextInput } from 'react-native';
+import { AppState, Text, TextInput } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
@@ -55,7 +55,7 @@ inputDefaults.defaultProps.style = [
 ];
 
 export default function RootLayout() {
-  const { setSession, initialize, currentBusiness, currentBranch } = useAuthStore();
+  const { setSession, initialize, currentBusiness, currentBranch, user } = useAuthStore();
   const [appInitialized, setAppInitialized] = useState(false);
   const [fontsLoaded, fontError] = useFonts(STERADIAN_FONT_ASSETS);
 
@@ -97,13 +97,21 @@ export default function RootLayout() {
       try {
         const {
           registerForPushNotifications,
+          cancelDailySummaryNotification,
           scheduleDailySummaryNotification,
           checkAndNotifyLowStock,
           checkAndNotifyOverdueDebts,
         } = await import('@/lib/notifications');
+        const { getAppSettings, getTimeParts } = await import('@/lib/appSettings');
+        const settings = await getAppSettings();
         const token = await registerForPushNotifications();
         if (token) {
-          await scheduleDailySummaryNotification(20, 0);
+          if (settings.dailySummaryEnabled) {
+            const reminderTime = getTimeParts(settings.dailySummaryTime, '20:00');
+            await scheduleDailySummaryNotification(reminderTime.hour, reminderTime.minute);
+          } else {
+            await cancelDailySummaryNotification();
+          }
           await checkAndNotifyLowStock(currentBusiness.id, currentBranch.id);
           await checkAndNotifyOverdueDebts(currentBusiness.id);
         }
@@ -114,6 +122,41 @@ export default function RootLayout() {
 
     setup();
   }, [currentBusiness?.id, currentBranch?.id]);
+
+  useEffect(() => {
+    if (!currentBusiness || !currentBranch || !user) return;
+
+    let active = true;
+    const runAutoCloseCheck = async () => {
+      try {
+        const { maybeAutoCloseDailyBalance } = await import('@/lib/dailyBalanceAutomation');
+        const result = await maybeAutoCloseDailyBalance(currentBusiness.id, currentBranch.id, user.id);
+        if (!active || result.status !== 'closed' || !result.summaryDate) return;
+
+        Toast.show({
+          type: 'success',
+          text1: 'Day auto-closed',
+          text2: `${result.summaryDate} was automatically balanced at the scheduled time.`,
+        });
+      } catch (err) {
+        console.log('[Record Am] Auto-close check skipped:', err);
+      }
+    };
+
+    runAutoCloseCheck();
+    const interval = setInterval(runAutoCloseCheck, 60000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        runAutoCloseCheck();
+      }
+    });
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      subscription.remove();
+    };
+  }, [currentBusiness?.id, currentBranch?.id, user?.id]);
 
   if (!appInitialized || (!fontsLoaded && !fontError)) {
     return null;

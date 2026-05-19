@@ -39,10 +39,16 @@ export default function CloseDayScreen() {
   }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate, summary]);
 
   useEffect(() => {
-    if (summary && actualCash === '') {
-      setActualCash(summary.cash_in_hand_expected.toFixed(0));
+    if (!summary) return;
+
+    if (actualCash === '') {
+      setActualCash((summary.cash_in_hand_actual ?? summary.cash_in_hand_expected).toFixed(0));
     }
-  }, [actualCash, summary]);
+
+    if (closeNotes === '' && summary.notes) {
+      setCloseNotes(summary.notes);
+    }
+  }, [actualCash, closeNotes, summary]);
 
   const repaymentEntries = useMemo(
     () => entries.filter((entry) => entry.type === 'debt_repayment'),

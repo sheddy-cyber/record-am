@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect } from 'react';
-import { RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { addDays, format, subDays } from 'date-fns';
@@ -16,7 +16,16 @@ const formatCurrency = (value: number) =>
 
 export default function DailyBalanceScreen() {
   const { currentBusiness, currentBranch } = useAuthStore();
-  const { summary, entries, isLoading, selectedDate, setSelectedDate, fetchDailyBalance } = useDailyBalanceStore();
+  const {
+    summary,
+    entries,
+    isLoading,
+    isSaving,
+    selectedDate,
+    setSelectedDate,
+    fetchDailyBalance,
+    reopenDay,
+  } = useDailyBalanceStore();
 
   const load = useCallback(() => {
     if (currentBusiness && currentBranch) {
@@ -49,6 +58,27 @@ export default function DailyBalanceScreen() {
   };
 
   const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
+
+  const handleReopenDay = () => {
+    if (!currentBusiness || !currentBranch || !summary?.is_closed) return;
+
+    Alert.alert(
+      'Reopen balance?',
+      'This will unlock the daily balance so you can make updates and close it again.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reopen',
+          onPress: async () => {
+            const success = await reopenDay(currentBusiness.id, currentBranch.id);
+            if (!success) {
+              Alert.alert('Error', 'Failed to reopen the balance. Please try again.');
+            }
+          },
+        },
+      ],
+    );
+  };
 
   if (isLoading && !summary) {
     return <LoadingScreen message="Loading daily balance..." />;
@@ -285,13 +315,24 @@ export default function DailyBalanceScreen() {
               />
             ) : null}
 
-            {isToday && !isClosed ? (
+            {!isClosed ? (
               <Button
-                title="Close and Balance Today"
+                title={isToday ? 'Close and Balance Today' : 'Close and Balance Day'}
                 icon="check-square"
                 onPress={() => router.push('/(app)/close-day')}
                 size="lg"
                 variant="primary"
+              />
+            ) : null}
+
+            {isClosed ? (
+              <Button
+                title="Reopen Balance"
+                icon="rotate-ccw"
+                onPress={handleReopenDay}
+                loading={isSaving}
+                size="lg"
+                variant="secondary"
               />
             ) : null}
 

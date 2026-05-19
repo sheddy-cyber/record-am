@@ -57,7 +57,7 @@ export default function SupplierCreateScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title="Add Supplier"
-        subtitle="Save a supplier profile for purchases and balances."
+        subtitle="Save a supplier profile for goods bought and balances."
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />

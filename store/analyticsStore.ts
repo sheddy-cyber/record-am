@@ -113,7 +113,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       // ── Current period sales ──────────────────────────────
       const { data: currentSales } = await supabase
         .from('sales')
-        .select('total_amount, created_at, notes')
+        .select('amount_paid, created_at, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('created_at', fromISO)
@@ -122,7 +122,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       // ── Previous period sales (for growth calc) ──────────
       const { data: prevSales } = await supabase
         .from('sales')
-        .select('total_amount, notes')
+        .select('amount_paid, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('created_at', prevFromISO)
@@ -173,11 +173,11 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       const revenueSales = (currentSales ?? []).filter((sale) => !isDebtSettlementSale(sale.notes));
       const previousRevenueSales = (prevSales ?? []).filter((sale) => !isDebtSettlementSale(sale.notes));
       const totalRevenue =
-        revenueSales.reduce((s, r) => s + r.total_amount, 0) +
+        revenueSales.reduce((s, r) => s + r.amount_paid, 0) +
         (currentRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
       const totalExpenses = currentExpenses?.reduce((s, r) => s + r.amount, 0) ?? 0;
       const prevRevenue =
-        previousRevenueSales.reduce((s, r) => s + r.total_amount, 0) +
+        previousRevenueSales.reduce((s, r) => s + r.amount_paid, 0) +
         (prevRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
 
       // Profit per item = (selling - cost) * qty
@@ -221,7 +221,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         const key = format(new Date(sale.created_at), 'yyyy-MM-dd');
         const existing = trendMap.get(key) ?? { revenue: 0, profit: 0, transactions: 0 };
         trendMap.set(key, {
-          revenue: existing.revenue + sale.total_amount,
+          revenue: existing.revenue + sale.amount_paid,
           profit: existing.profit,
           transactions: existing.transactions + 1,
         });
@@ -279,10 +279,14 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         });
       });
 
-      const allProducts = Array.from(productMap.values()).sort((a, b) => b.total_revenue - a.total_revenue);
+      const allProducts = Array.from(productMap.values());
       set({
-        topProducts: allProducts.slice(0, 5),
-        bottomProducts: [...allProducts].sort((a, b) => a.total_revenue - b.total_revenue).slice(0, 5),
+        topProducts: [...allProducts]
+          .sort((a, b) => b.total_qty - a.total_qty || b.total_revenue - a.total_revenue)
+          .slice(0, 5),
+        bottomProducts: [...allProducts]
+          .sort((a, b) => a.total_qty - b.total_qty || a.total_revenue - b.total_revenue)
+          .slice(0, 5),
       });
 
       // ── Expense breakdown ─────────────────────────────────

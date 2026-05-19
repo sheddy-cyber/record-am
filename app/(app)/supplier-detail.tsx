@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo } from 'react';
-import { Alert, ScrollView, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
+import { deletePurchaseRecord } from '@/lib/recordDeletion';
 import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
@@ -21,7 +23,6 @@ export default function SupplierDetailScreen() {
     suppliers,
     selectedSupplier,
     supplierPurchases,
-    supplierDebts,
     isLoading,
     fetchSuppliers,
     fetchSupplierDetail,
@@ -31,15 +32,24 @@ export default function SupplierDetailScreen() {
 
   const closeScreen = () => router.back();
 
-  useEffect(() => {
-    if (currentBusiness && !suppliers.length) {
-      fetchSuppliers(currentBusiness.id);
-    }
-  }, [currentBusiness, fetchSuppliers, suppliers.length]);
+  const load = useCallback(async () => {
+    if (!currentBusiness || !supplierId) return;
+
+    await Promise.all([
+      fetchSuppliers(currentBusiness.id),
+      fetchSupplierDetail(supplierId, currentBusiness.id),
+    ]);
+  }, [currentBusiness, fetchSupplierDetail, fetchSuppliers, supplierId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load]),
+  );
 
   const supplier = useMemo(() => {
-    if (selectedSupplier?.id === supplierId) return selectedSupplier;
-    return suppliers.find((item) => item.id === supplierId) ?? null;
+    return suppliers.find((item) => item.id === supplierId)
+      ?? (selectedSupplier?.id === supplierId ? selectedSupplier : null);
   }, [selectedSupplier, supplierId, suppliers]);
 
   useEffect(() => {
@@ -47,12 +57,6 @@ export default function SupplierDetailScreen() {
       setSelectedSupplier(supplier);
     }
   }, [setSelectedSupplier, supplier]);
-
-  useEffect(() => {
-    if (currentBusiness && supplierId) {
-      fetchSupplierDetail(supplierId, currentBusiness.id);
-    }
-  }, [currentBusiness, fetchSupplierDetail, supplierId]);
 
   const handleDelete = () => {
     if (!supplier) return;
@@ -67,6 +71,25 @@ export default function SupplierDetailScreen() {
           setSelectedSupplier(null);
           Toast.show({ type: 'success', text1: 'Supplier removed' });
           closeScreen();
+        },
+      },
+    ]);
+  };
+
+  const handleDeletePurchase = (purchaseId: string) => {
+    Alert.alert('Delete record', 'Delete this supplier goods record?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deletePurchaseRecord(purchaseId);
+            await load();
+            Toast.show({ type: 'success', text1: 'Goods record deleted' });
+          } catch (err: any) {
+            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+          }
         },
       },
     ]);
@@ -94,6 +117,12 @@ export default function SupplierDetailScreen() {
     );
   }
 
+  const openRecordGoods = () =>
+    router.push({ pathname: '/(app)/record-purchase', params: { supplierId: supplier.id } });
+
+  const openEditPurchase = (id: string) =>
+    router.push({ pathname: '/(app)/record-purchase', params: { purchaseId: id } });
+
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
@@ -105,22 +134,53 @@ export default function SupplierDetailScreen() {
       <ScrollView contentContainerStyle={{ padding: 16, gap: 20 }}>
         <Card style={{ backgroundColor: COLORS.ink }}>
           <View style={{ gap: 10 }}>
-            {supplier.phone ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Feather name="phone" size={14} color="rgba(255,253,248,0.8)" />
-                <Text style={{ fontFamily: FONT.regular, fontSize: 14, color: 'rgba(255,253,248,0.8)' }}>
-                  {supplier.phone}
-                </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+              <View style={{ flex: 1, gap: 10 }}>
+                {supplier.phone ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Feather name="phone" size={14} color="rgba(255,253,248,0.8)" />
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 14, color: 'rgba(255,253,248,0.8)' }}>
+                      {supplier.phone}
+                    </Text>
+                  </View>
+                ) : null}
+                {supplier.email ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Feather name="mail" size={14} color="rgba(255,253,248,0.8)" />
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: 'rgba(255,253,248,0.68)' }}>
+                      {supplier.email}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-            {supplier.email ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Feather name="mail" size={14} color="rgba(255,253,248,0.8)" />
-                <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: 'rgba(255,253,248,0.68)' }}>
-                  {supplier.email}
-                </Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[
+                  { icon: 'plus', onPress: openRecordGoods, color: COLORS.successLight, label: 'Record goods' },
+                  { icon: 'edit-2', onPress: () => router.push({ pathname: '/(app)/supplier-edit', params: { supplierId: supplier.id } }), color: COLORS.infoLight, label: 'Edit supplier' },
+                  { icon: 'trash-2', onPress: handleDelete, color: '#FECACA', label: 'Remove supplier' },
+                ].map((action) => (
+                  <TouchableOpacity
+                    key={action.label}
+                    onPress={action.onPress}
+                    activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel={action.label}
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: RADIUS.md,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,253,248,0.12)',
+                      backgroundColor: 'rgba(255,253,248,0.08)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name={action.icon as any} size={15} color={action.color} />
+                  </TouchableOpacity>
+                ))}
               </View>
-            ) : null}
+            </View>
             <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
               {[
                 { label: 'Total Purchased', value: formatCurrency(supplier.total_purchased ?? 0), color: COLORS.infoLight },
@@ -148,25 +208,6 @@ export default function SupplierDetailScreen() {
           </View>
         </Card>
 
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <Button
-            title="Edit"
-            icon="edit-2"
-            onPress={() => router.push({ pathname: '/(app)/supplier-edit', params: { supplierId: supplier.id } })}
-            variant="secondary"
-            size="sm"
-            style={{ flex: 1 }}
-          />
-          <Button
-            title="Remove"
-            icon="trash-2"
-            onPress={handleDelete}
-            variant="danger"
-            size="sm"
-            style={{ flex: 1 }}
-          />
-        </View>
-
         {supplier.notes ? (
           <Card style={{ backgroundColor: '#FFFAEB' }}>
             <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginBottom: 4 }}>
@@ -178,46 +219,8 @@ export default function SupplierDetailScreen() {
           </Card>
         ) : null}
 
-        {supplierDebts.filter((debt) => debt.status !== 'settled').length > 0 ? (
-          <View>
-            <SectionHeader title="What We Owe" />
-            <Card style={{ padding: 0, overflow: 'hidden' }}>
-              {supplierDebts
-                .filter((debt) => debt.status !== 'settled')
-                .map((debt, index, list) => (
-                  <View key={debt.id}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14 }}>
-                      <View style={{ flex: 1, marginRight: 12 }}>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted }}>
-                          {format(new Date(debt.created_at), 'MMM d, yyyy')}
-                        </Text>
-                        {debt.due_date ? (
-                          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.warning }}>
-                            Due: {format(new Date(debt.due_date), 'MMM d')}
-                          </Text>
-                        ) : null}
-                      </View>
-                      <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger }}>
-                          {formatCurrency(debt.balance)}
-                        </Text>
-                        <Badge
-                          label={debt.status === 'partial' ? 'Partial' : 'Outstanding'}
-                          variant={debt.status === 'partial' ? 'warning' : 'danger'}
-                        />
-                      </View>
-                    </View>
-                    {index < list.length - 1 ? (
-                      <View style={{ height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 }} />
-                    ) : null}
-                  </View>
-                ))}
-            </Card>
-          </View>
-        ) : null}
-
         <View>
-          <SectionHeader title="Purchase History" />
+          <SectionHeader title="Goods Bought" action={{ label: 'Record Goods', onPress: openRecordGoods }} />
           {supplierPurchases.length === 0 ? (
             <Card>
               <Text
@@ -229,27 +232,76 @@ export default function SupplierDetailScreen() {
                   paddingVertical: 12,
                 }}
               >
-                No purchases recorded yet
+                No goods recorded yet
               </Text>
+              <Button
+                title="Record Goods Bought"
+                icon="plus"
+                onPress={openRecordGoods}
+                variant="secondary"
+                size="sm"
+              />
             </Card>
           ) : (
             <Card style={{ padding: 0, overflow: 'hidden' }}>
               {supplierPurchases.map((purchase, index) => (
                 <View key={purchase.id}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14 }}>
-                    <View style={{ flex: 1, marginRight: 12 }}>
-                      <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                        {purchase.purchase_number}
-                      </Text>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
-                        {format(new Date(purchase.created_at), 'MMM d, yyyy')}
-                      </Text>
+                  <View style={{ padding: 14, gap: 10 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flex: 1, marginRight: 12 }}>
+                        <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                          {purchase.purchase_number}
+                        </Text>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
+                          {format(new Date(purchase.purchase_date || purchase.created_at), 'MMM d, yyyy')}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-end', gap: 8 }}>
+                        <PaymentSummary
+                          totalAmount={purchase.total_amount}
+                          amountPaid={purchase.amount_paid}
+                          amountOwed={purchase.amount_owed}
+                        />
+                        <View style={{ flexDirection: 'row', gap: 10 }}>
+                          <TouchableOpacity
+                            onPress={() => openEditPurchase(purchase.id)}
+                            activeOpacity={0.8}
+                            accessibilityRole="button"
+                            accessibilityLabel="Edit purchase"
+                          >
+                            <Feather name="edit-2" size={15} color={COLORS.text.secondary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleDeletePurchase(purchase.id)}
+                            activeOpacity={0.8}
+                            accessibilityRole="button"
+                            accessibilityLabel="Delete purchase"
+                          >
+                            <Feather name="trash-2" size={15} color={COLORS.danger} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
                     </View>
-                    <PaymentSummary
-                      totalAmount={purchase.total_amount}
-                      amountPaid={purchase.amount_paid}
-                      amountOwed={purchase.amount_owed}
-                    />
+                    {purchase.discount_amount > 0 ? (
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.danger }}>
+                        Discount: -{formatCurrency(purchase.discount_amount)}
+                      </Text>
+                    ) : null}
+                    {(purchase.items ?? []).slice(0, 3).map((item: any) => (
+                      <Text key={item.id} style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
+                        - {item.product?.name ?? 'Item'} x {item.quantity} @ {formatCurrency(item.unit_cost)}
+                      </Text>
+                    ))}
+                    {(purchase.items?.length ?? 0) > 3 ? (
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
+                        +{(purchase.items?.length ?? 0) - 3} more items
+                      </Text>
+                    ) : null}
+                    {purchase.notes ? (
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary, fontStyle: 'italic' }}>
+                        "{purchase.notes}"
+                      </Text>
+                    ) : null}
                   </View>
                   {index < supplierPurchases.length - 1 ? (
                     <View style={{ height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 }} />

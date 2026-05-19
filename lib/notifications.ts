@@ -79,7 +79,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
 export async function scheduleDailySummaryNotification(hour = 20, minute = 0) {
   if (isExpoGo()) return;
   try {
-    await cancelNotificationsByTag('daily_summary');
+    await cancelDailySummaryNotification();
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Daily Summary Ready',
@@ -96,6 +96,11 @@ export async function scheduleDailySummaryNotification(hour = 20, minute = 0) {
   } catch (err) {
     console.log('[notifications] scheduleDailySummary failed:', err);
   }
+}
+
+export async function cancelDailySummaryNotification() {
+  if (isExpoGo()) return;
+  await cancelNotificationsByTag('daily_summary');
 }
 
 export async function scheduleLowStockNotification(productName: string, currentStock: number, unit: string) {

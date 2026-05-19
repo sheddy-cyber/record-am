@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS purchases (
   supplier_id UUID REFERENCES suppliers(id) ON DELETE SET NULL,
   purchase_number TEXT NOT NULL,
   total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+  discount_amount NUMERIC(12,2) DEFAULT 0,
   amount_paid NUMERIC(12,2) DEFAULT 0,
   amount_owed NUMERIC(12,2) DEFAULT 0,
   payment_status TEXT DEFAULT 'paid', -- paid, partial, credit

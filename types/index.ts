@@ -224,6 +224,7 @@ export interface Purchase {
   supplier_id?: string;
   purchase_number: string;
   total_amount: number;
+  discount_amount: number;
   amount_paid: number;
   amount_owed: number;
   payment_status: PaymentStatus;

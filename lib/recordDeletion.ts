@@ -213,15 +213,21 @@ export async function deletePurchaseRecord(purchaseId: string) {
   throwIfError(error);
   if (!purchase) return;
 
-  const { data: items, error: itemsError } = await supabase
-    .from('purchase_items')
-    .select('product_id, quantity')
-    .eq('purchase_id', purchase.id);
+  const { data: movements, error: movementLookupError } = await supabase
+    .from('stock_movements')
+    .select('id, branch_id, product_id, type, quantity')
+    .eq('branch_id', purchase.branch_id)
+    .eq('reference', purchase.purchase_number);
 
-  throwIfError(itemsError);
+  throwIfError(movementLookupError);
 
-  for (const item of items ?? []) {
-    await adjustInventory(item.product_id, purchase.branch_id, -Number(item.quantity));
+  for (const movement of movements ?? []) {
+    const type = movement.type as StockMovementType;
+    const reverseDelta = STOCK_REMOVAL_TYPES.includes(type)
+      ? Number(movement.quantity)
+      : -Number(movement.quantity);
+
+    await adjustInventory(movement.product_id, movement.branch_id, reverseDelta);
   }
 
   const { error: debtError } = await supabase

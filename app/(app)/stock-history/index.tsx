@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert,
   View,
   Text,
   FlatList,
@@ -13,11 +12,9 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
-import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
-import { deleteStockMovementRecord } from '@/lib/recordDeletion';
-import { Badge, Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
+import { Badge, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from "@/constants";
 import { readAltUnitNote } from '@/lib/records';
@@ -91,25 +88,6 @@ export default function StockHistoryScreen() {
   const totalIn = filteredMovements.filter((movement) => movement.type === 'stock_in').reduce((sum, movement) => sum + movement.quantity, 0);
   const totalOut = filteredMovements.filter((movement) => ['stock_out', 'damage', 'wastage'].includes(movement.type)).reduce((sum, movement) => sum + movement.quantity, 0);
 
-  const handleDeleteMovement = (movement: StockMovement) => {
-    Alert.alert('Delete stock movement', 'Delete this stock movement and reverse its inventory effect?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteStockMovementRecord(movement.id);
-            await load();
-            Toast.show({ type: 'success', text1: 'Stock movement deleted' });
-          } catch (err: any) {
-            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
-          }
-        },
-      },
-    ]);
-  };
-
   if (loading) return <LoadingScreen message="Loading stock history..." />;
 
   return (
@@ -181,7 +159,7 @@ export default function StockHistoryScreen() {
         <EmptyState
           icon="clipboard"
           title="No movements found"
-          description="Stock activity will appear here as you record purchases, sales, and adjustments."
+          description="Stock activity will appear here as you record sales and inventory adjustments."
         />
       ) : (
         <FlatList
@@ -223,12 +201,6 @@ export default function StockHistoryScreen() {
                   {item.total_cost !== undefined && item.total_cost > 0 ? (
                     <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{formatCurrency(item.total_cost)}</Text>
                   ) : null}
-                  <Button
-                    title="Delete"
-                    onPress={() => handleDeleteMovement(item)}
-                    variant="danger"
-                    size="sm"
-                  />
                 </View>
               </View>
             );

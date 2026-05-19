@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, Text, View } from 'react-native';
+import { Alert, FlatList, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useNavigation } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { differenceInDays, format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
@@ -20,6 +20,7 @@ const formatCurrency = (value: number) =>
 export default function DebtsScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch } = useAuthStore();
+  const navigation = useNavigation();
 
   const [debts, setDebts] = useState<CustomerDebt[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +52,13 @@ export default function DebtsScreen() {
   useEffect(() => {
     loadDebts();
   }, [loadDebts]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      loadDebts();
+    });
+    return unsubscribe;
+  }, [navigation, loadDebts]);
 
   useRealtimeRefresh({
     channelName: `debts-screen-${currentBranch?.id ?? 'unknown'}`,
@@ -92,13 +100,7 @@ export default function DebtsScreen() {
         right={<HeaderAction icon="plus" label="Record Debt" onPress={() => router.push('/(app)/record-debt')} />}
       />
 
-      <View style={{ paddingHorizontal: SP.page, paddingTop: SP.card }}>
-        <FlatSection style={{ padding: 14 }}>
-          <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>
-            Track repayments here. Settled debts get added to sales automatically.
-          </Text>
-        </FlatSection>
-      </View>
+
 
       {debts.length === 0 ? (
         <EmptyState
@@ -113,13 +115,20 @@ export default function DebtsScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
           ListHeaderComponent={
-            <FlatSection style={{ padding: 16, marginBottom: 12 }}>
+            <FlatSection style={{ padding: 16, marginTop: SP.page, marginBottom: 12 }}>
               <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Outstanding balance</Text>
               <Text style={{ fontSize: 30, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 6 }}>
                 {formatCurrency(totalOutstanding)}
               </Text>
               <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
                 Customers with unpaid balances stay here until fully settled.
+              </Text>
+            </FlatSection>
+          }
+          ListFooterComponent={
+            <FlatSection style={{ padding: 14, marginTop: 12 }}>
+              <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary, textAlign: 'center' }}>
+                Track repayments here. Settled debts get added to sales automatically.
               </Text>
             </FlatSection>
           }
@@ -209,23 +218,28 @@ export default function DebtsScreen() {
                   size="sm"
                   style={{ flex: 1 }}
                 />
-                {item.customer_phone ? (
-                  <Button
-                    title="Send Reminder"
-                    onPress={() =>
-                      shareDebtReminderViaWhatsApp(
-                        item.customer_name,
-                        item.customer_phone!,
-                        item.balance,
-                        currentBusiness?.name ?? '',
-                        item.due_date,
-                      )
+                <Button
+                  title="Send Reminder"
+                  onPress={() => {
+                    if (!item.customer_phone) {
+                      Alert.alert(
+                        'No phone number',
+                        'Please edit this customer and add a phone number to send a WhatsApp reminder.'
+                      );
+                      return;
                     }
-                    variant="ghost"
-                    size="sm"
-                    style={{ flex: 1 }}
-                  />
-                ) : null}
+                    shareDebtReminderViaWhatsApp(
+                      item.customer_name,
+                      item.customer_phone,
+                      item.balance,
+                      currentBusiness?.name ?? '',
+                      item.due_date,
+                    );
+                  }}
+                  variant="ghost"
+                  size="sm"
+                  style={{ flex: 1 }}
+                />
               </View>
             </View>
           )}
