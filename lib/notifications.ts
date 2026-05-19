@@ -2,6 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { CURRENCY_SYMBOL } from '@/constants';
 import { supabase } from './supabase';
 
 // ─────────────────────────────────────────────────────────────────
@@ -117,7 +118,7 @@ export async function scheduleLowStockNotification(productName: string, currentS
 export async function scheduleDebtReminderNotification(customerName: string, balance: number, daysOverdue: number) {
   if (isExpoGo()) return;
   try {
-    const fmt = (n: number) => `₦${n.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+    const fmt = (n: number) => `${CURRENCY_SYMBOL}${n.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Overdue Debt',

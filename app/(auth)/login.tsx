@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui';
-import { InputField } from '@/components/forms';
+import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { BrandMark, BrandWordmark, ScreenShell } from '@/components/layout';
 import { BRAND, COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 
@@ -45,12 +45,12 @@ export default function LoginScreen() {
   return (
     <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1 }}>
           <View style={{ paddingTop: 56, paddingHorizontal: 28, paddingBottom: 34, gap: 18 }}>
             <BrandMark size={48} />
             <View>
               <Text style={{ ...TYPE.h1, color: COLORS.text.inverse, marginBottom: 6 }}>Welcome back</Text>
-              <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: 'rgba(248,250,252,0.55)' }}>
+              <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.55)' }}>
                 Sign in to keep your records moving.
               </Text>
             </View>
@@ -102,7 +102,7 @@ export default function LoginScreen() {
               <BrandWordmark size={20} />
             </View>
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </KeyboardAvoidingView>
     </ScreenShell>
   );

@@ -1,5 +1,5 @@
 // ============================================================
-// STOCKPADI - TypeScript Types
+// RECORD AM - TypeScript Types
 // ============================================================
 
 export type BusinessType =

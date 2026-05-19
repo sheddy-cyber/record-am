@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   View,
   Text,
   FlatList,
@@ -12,11 +13,13 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format } from 'date-fns';
+import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
-import { Badge, Card, EmptyState, LoadingScreen } from '@/components/ui';
+import { deleteStockMovementRecord } from '@/lib/recordDeletion';
+import { Badge, Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, FONT, RADIUS, SP, TYPE } from "@/constants";
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from "@/constants";
 import { readAltUnitNote } from '@/lib/records';
 import { StockMovement } from '@/types';
 
@@ -37,7 +40,7 @@ const MOVEMENT_CONFIG: Record<
   wastage: { label: 'Wastage', color: COLORS.warning, variant: 'warning', icon: 'trash-2' },
 };
 
-const formatCurrency = (value: number) => `₦${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+const formatCurrency = (value: number) => `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
 export default function StockHistoryScreen() {
   const insets = useSafeAreaInsets();
@@ -88,6 +91,25 @@ export default function StockHistoryScreen() {
   const totalIn = filteredMovements.filter((movement) => movement.type === 'stock_in').reduce((sum, movement) => sum + movement.quantity, 0);
   const totalOut = filteredMovements.filter((movement) => ['stock_out', 'damage', 'wastage'].includes(movement.type)).reduce((sum, movement) => sum + movement.quantity, 0);
 
+  const handleDeleteMovement = (movement: StockMovement) => {
+    Alert.alert('Delete stock movement', 'Delete this stock movement and reverse its inventory effect?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteStockMovementRecord(movement.id);
+            await load();
+            Toast.show({ type: 'success', text1: 'Stock movement deleted' });
+          } catch (err: any) {
+            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+          }
+        },
+      },
+    ]);
+  };
+
   if (loading) return <LoadingScreen message="Loading stock history..." />;
 
   return (
@@ -100,14 +122,14 @@ export default function StockHistoryScreen() {
       />
 
       <View style={{ padding: 16, gap: 12 }}>
-        <View style={{ borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.card, paddingHorizontal: 14, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{ borderWidth: 1, borderRadius: 14, borderColor: COLORS.border, backgroundColor: COLORS.card, paddingHorizontal: 14, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Feather name="search" size={16} color={COLORS.text.muted} />
           <TextInput
             value={search}
             onChangeText={setSearch}
             placeholder="Search product or reference"
             placeholderTextColor={COLORS.text.muted}
-            style={{ flex: 1, fontSize: 14, color: COLORS.text.primary, paddingVertical: 10 }}
+            style={{ fontFamily: FONT.regular, flex: 1, fontSize: 14, color: COLORS.text.primary, paddingVertical: 10 }}
           />
         </View>
 
@@ -117,8 +139,8 @@ export default function StockHistoryScreen() {
             { label: 'Units In', value: `+${totalIn}`, color: COLORS.success },
             { label: 'Units Out', value: `-${totalOut}`, color: COLORS.danger },
           ].map((item) => (
-            <View key={item.label} style={{ flex: 1, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.card, padding: 12 }}>
-              <Text style={{ fontSize: 11, color: COLORS.text.muted }}>{item.label}</Text>
+            <View key={item.label} style={{ flex: 1, borderWidth: 1, borderRadius: 14, borderColor: COLORS.border, backgroundColor: COLORS.card, padding: 12 }}>
+              <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{item.label}</Text>
               <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: item.color, marginTop: 6 }}>{item.value}</Text>
             </View>
           ))}
@@ -144,6 +166,7 @@ export default function StockHistoryScreen() {
                 justifyContent: 'center',
                 alignItems: 'center',
                 borderWidth: 1,
+                borderRadius: RADIUS.md,
                 borderColor: filter === item.key ? COLORS.ink : COLORS.border,
                 backgroundColor: filter === item.key ? COLORS.surface2 : COLORS.card,
               }}
@@ -164,29 +187,29 @@ export default function StockHistoryScreen() {
         <FlatList
           data={filteredMovements}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: insets.bottom + 92 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 92 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.ink} />}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const config = MOVEMENT_CONFIG[item.type] ?? MOVEMENT_CONFIG.adjustment;
             const isIn = item.type === 'stock_in';
             const isOut = ['stock_out', 'damage', 'wastage'].includes(item.type);
             const displayUnit = readAltUnitNote(item.notes, (item.product as any)?.unit ?? '');
 
             return (
-              <Card style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 42, height: 42, backgroundColor: `${config.color}18`, borderWidth: 1, borderColor: `${config.color}30`, alignItems: 'center', justifyContent: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, borderBottomWidth: index === filteredMovements.length - 1 ? 0 : 1, borderBottomColor: COLORS.border }}>
+                <View style={{ width: 42, height: 42, backgroundColor: `${config.color}18`, borderWidth: 1, borderRadius: 14, borderColor: `${config.color}30`, alignItems: 'center', justifyContent: 'center' }}>
                   <Feather name={config.icon} size={16} color={config.color} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
                     {(item.product as any)?.name ?? 'Unknown Product'}
                   </Text>
-                  <Text style={{ fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
-                    {format(new Date(item.created_at), 'MMM d, yyyy • h:mm a')}
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
+                    {format(new Date(item.created_at), 'MMM d, yyyy \u00B7 h:mm a')}
                   </Text>
-                  {item.reference ? <Text style={{ fontSize: 11, color: COLORS.text.muted, marginTop: 4 }}>Ref: {item.reference}</Text> : null}
+                  {item.reference ? <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 4 }}>Ref: {item.reference}</Text> : null}
                   {item.notes && !item.notes.startsWith('[record-am-unit]') ? (
-                    <Text style={{ fontSize: 11, color: COLORS.text.secondary, marginTop: 4 }} numberOfLines={1}>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.secondary, marginTop: 4 }} numberOfLines={1}>
                       {item.notes}
                     </Text>
                   ) : null}
@@ -198,10 +221,16 @@ export default function StockHistoryScreen() {
                   </Text>
                   <Badge label={config.label} variant={config.variant} />
                   {item.total_cost !== undefined && item.total_cost > 0 ? (
-                    <Text style={{ fontSize: 11, color: COLORS.text.muted }}>{formatCurrency(item.total_cost)}</Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{formatCurrency(item.total_cost)}</Text>
                   ) : null}
+                  <Button
+                    title="Delete"
+                    onPress={() => handleDeleteMovement(item)}
+                    variant="danger"
+                    size="sm"
+                  />
                 </View>
-              </Card>
+              </View>
             );
           }}
         />

@@ -4,9 +4,9 @@ import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { Button, Card, SectionHeader } from '@/components/ui';
-import { InputField, SelectField, Toggle } from '@/components/forms';
+import { InputField, KeyboardAwareScrollView, SelectField, Toggle } from '@/components/forms';
 import { BrandMark, BrandWordmark, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { APP_FOOTER_TEXT, BUSINESS_TYPES, COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { APP_FOOTER_TEXT, BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BusinessType } from '@/types';
 import { cancelAllNotifications, scheduleDailySummaryNotification } from '@/lib/notifications';
 import Toast from 'react-native-toast-message';
@@ -76,12 +76,12 @@ export default function SettingsScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScreenHeader
           title="Business Settings"
-          subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(' \u2022 ')}
+          subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(" \u00B7 ")}
           theme="dark"
           left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
         />
 
-        <ScrollView contentContainerStyle={{ padding: 20, gap: 20 }} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={{ padding: 20, gap: 20 }}>
           <Card>
             <SectionHeader title="Business Information" />
             <InputField label="Business Name" value={bizName} onChangeText={setBizName} placeholder="Your business name" required />
@@ -120,7 +120,7 @@ export default function SettingsScreen() {
               { label: 'Branch Address', value: currentBranch?.address ?? 'Not set' },
               {
                 label: 'Currency',
-                value: `${currentBusiness?.currency ?? 'NGN'} (${currentBusiness?.currency_symbol ?? '\u20A6'})`,
+                value: `${currentBusiness?.currency ?? 'NGN'} (${currentBusiness?.currency_symbol ?? CURRENCY_SYMBOL})`,
               },
             ].map((item) => (
               <View
@@ -134,13 +134,13 @@ export default function SettingsScreen() {
                   gap: 16,
                 }}
               >
-                <Text style={{ fontSize: 13, color: COLORS.text.secondary }}>{item.label}</Text>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>{item.label}</Text>
                 <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, flex: 1, textAlign: 'right' }}>
                   {item.value}
                 </Text>
               </View>
             ))}
-            <Text style={{ fontSize: 12, color: COLORS.text.muted, marginTop: 10 }}>Multi-branch management is not available yet.</Text>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 10 }}>Multi-branch management is not available yet.</Text>
           </Card>
 
           <Card>
@@ -169,11 +169,11 @@ export default function SettingsScreen() {
               <BrandMark size={52} />
               <View style={{ flex: 1 }}>
                 <BrandWordmark size={22} />
-                <Text style={{ fontSize: 13, color: COLORS.text.muted, marginTop: 6 }}>{APP_FOOTER_TEXT}</Text>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted, marginTop: 6 }}>{APP_FOOTER_TEXT}</Text>
               </View>
             </View>
           </Card>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </KeyboardAvoidingView>
     </ScreenShell>
   );

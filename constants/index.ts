@@ -7,7 +7,8 @@ export const BRAND = {
 } as const;
 
 export const APP_VERSION = '1.0.0';
-export const APP_FOOTER_TEXT = `v${APP_VERSION} · PYTHRON Labs`;
+export const APP_FOOTER_TEXT = `v${APP_VERSION} \u00B7 PYTHRON Labs`;
+export const CURRENCY_SYMBOL = String.fromCharCode(0x20A6);
 
 // ─── Font helpers ───────────────────────────────────────────────────────────
 // Maps semantic weight names to the physical Steradian font-family strings
@@ -22,73 +23,74 @@ export const FONT = {
 } as const;
 
 // ─── Colors ─────────────────────────────────────────────────────────────────
+// Theme: Atomic Tangerine + Steel Azure — warm energy meets professional depth
 export const COLORS = {
   // Core brand
-  accent: '#C9963B',          // warm gold — primary accent
-  accentLight: '#FDF5E6',     // light gold tint
-  accentMuted: '#A07A2F',     // darker gold for text-on-light
+  accent: '#ff6b35',          // atomic tangerine — primary action
+  accentLight: '#fff1eb',     // soft tangerine wash
+  accentMuted: '#e55a25',     // deeper tangerine for pressed/text
 
   // Surfaces
-  ink: '#0F172A',             // deepest navy — headers, tab bar
-  navy: '#1E293B',            // secondary dark surface
+  ink: '#004e89',             // steel azure — headers, tab bar, dark surfaces
+  navy: '#1a659e',            // baltic blue for secondary dark
   card: '#FFFFFF',
-  surface: '#F8FAFC',         // page backgrounds
-  surface2: '#F1F5F9',        // subtle card alt / input backgrounds
-  elevated: '#FFFFFF',        // elevated surfaces (modals, overlays)
+  surface: '#f9f8f6',         // warm off-white page background
+  surface2: '#efefd0',        // beige — subtle warm alt background
+  elevated: '#FFFFFF',
 
   // Semantic
-  success: '#059669',
-  successLight: '#ECFDF5',
-  warning: '#D97706',
-  warningLight: '#FFFBEB',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
-  info: '#2563EB',
-  infoLight: '#EFF6FF',
+  success: '#2ecc71',
+  successLight: '#eafaf1',
+  warning: '#f7c59f',         // peach glow — warm alerts
+  warningLight: '#fef9f5',
+  danger: '#e74c3c',
+  dangerLight: '#fdf0ef',
+  info: '#1a659e',            // baltic blue
+  infoLight: '#eaf2f8',
 
   // Text
   text: {
-    primary: '#0F172A',
-    secondary: '#475569',
-    muted: '#94A3B8',
-    inverse: '#F8FAFC',
-    accent: '#C9963B',
+    primary: '#004e89',       // steel azure for primary text
+    secondary: '#1a659e',     // baltic blue
+    muted: '#7a9ab5',         // muted azure
+    inverse: '#efefd0',       // beige — text on dark
+    accent: '#ff6b35',
   },
 
-  // Borders & Shadows
-  border: '#E2E8F0',
-  borderDark: '#CBD5E1',
-  shadow: '#0F172A',
+  // Borders
+  border: '#dde8f0',
+  borderDark: '#b8cfdf',
+  shadow: '#004e89',
 
   // Chart palette
-  chart: ['#0F172A', '#C9963B', '#059669', '#2563EB', '#DC2626', '#7C3AED'],
+  chart: ['#ff6b35', '#004e89', '#1a659e', '#f7c59f', '#efefd0', '#e55a25'],
 
-  // Legacy aliases so existing code doesn't break during migration
-  primary: '#C9963B',
-  background: '#F8FAFC',
-  cyan: '#C9963B',
-  cyanDark: '#A07A2F',
-  cyanLight: '#FDF5E6',
-  lime: '#C9963B',
-  limeLight: '#FDF5E6',
-  limeDark: '#A07A2F',
-  record: '#C9963B',
+  // Legacy aliases
+  primary: '#ff6b35',
+  background: '#f9f8f6',
+  cyan: '#1a659e',
+  cyanDark: '#004e89',
+  cyanLight: '#eaf2f8',
+  lime: '#2ecc71',
+  limeLight: '#eafaf1',
+  limeDark: '#27ae60',
+  record: '#ff6b35',
 } as const;
 
 // ─── Semantic accent groups ─────────────────────────────────────────────────
 export const ACCENTS = {
-  sales:     { bg: '#FDF5E6', border: '#F5DEB3', text: '#92610A' },
-  inventory: { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8' },
-  debt:      { bg: '#FFFBEB', border: '#FDE68A', text: '#92400E' },
-  expense:   { bg: '#FEF2F2', border: '#FECACA', text: '#B91C1C' },
-  profit:    { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46' },
-  warning:   { bg: '#FFFBEB', border: '#FDE68A', text: '#92400E' },
-  danger:    { bg: '#FEF2F2', border: '#FECACA', text: '#B91C1C' },
+  sales:     { bg: '#fff1eb', border: '#ffd4bc', text: '#c44a1c' },
+  inventory: { bg: '#eaf2f8', border: '#b8cfdf', text: '#004e89' },
+  debt:      { bg: '#fdf0ef', border: '#f5c6c2', text: '#c0392b' },
+  expense:   { bg: '#fef9f5', border: '#f7dfc8', text: '#b7650a' },
+  profit:    { bg: '#eafaf1', border: '#a9dfbf', text: '#1e8449' },
+  warning:   { bg: '#fef9f5', border: '#f7dfc8', text: '#b7650a' },
+  danger:    { bg: '#fdf0ef', border: '#f5c6c2', text: '#c0392b' },
 } as const;
 
 // ─── Typography Scale ───────────────────────────────────────────────────────
 export const TYPE = {
-  h1:       { fontSize: 28, fontFamily: FONT.bold, letterSpacing: -0.5 },
+  h1:       { fontSize: 28, fontFamily: FONT.bold, letterSpacing: -0.4 },
   h2:       { fontSize: 22, fontFamily: FONT.bold, letterSpacing: -0.3 },
   h3:       { fontSize: 18, fontFamily: FONT.bold, letterSpacing: -0.2 },
   body:     { fontSize: 15, fontFamily: FONT.regular, letterSpacing: 0 },
@@ -111,41 +113,26 @@ export const SP = {
   '2xl': 32,
   '3xl': 40,
   '4xl': 48,
-  page: 20,   // standard horizontal page padding
-  card: 16,   // standard card padding
+  page: 20,
+  card: 16,
 } as const;
 
 // ─── Border Radius ──────────────────────────────────────────────────────────
 export const RADIUS = {
-  sm: 8,
-  md: 12,
+  xs: 6,
+  sm: 10,
+  md: 14,
   lg: 16,
+  xl: 20,
+  '2xl': 24,
   full: 999,
 } as const;
 
-// ─── Shadows ────────────────────────────────────────────────────────────────
+// ─── Shadows (disabled — relying on borders and spacing for depth) ──────────
 export const SHADOW = {
-  sm: {
-    shadowColor: COLORS.shadow,
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-  },
-  md: {
-    shadowColor: COLORS.shadow,
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
-  },
-  lg: {
-    shadowColor: COLORS.shadow,
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
+  sm: {},
+  md: {},
+  lg: {},
 } as const;
 
 // ─── Business Data ──────────────────────────────────────────────────────────
@@ -180,6 +167,7 @@ export const EXPENSE_CATEGORIES = [
 
 export const PRODUCT_UNITS = [
   { value: 'piece', label: 'Piece / Item' },
+  { value: 'page', label: 'Page' },
   { value: 'dozen', label: 'Dozen (12)' },
   { value: 'carton', label: 'Carton' },
   { value: 'pack', label: 'Pack' },

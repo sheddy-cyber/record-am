@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui';
-import { InputField } from '@/components/forms';
+import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { BrandMark, ScreenShell } from '@/components/layout';
 import { BRAND, COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 
@@ -55,14 +55,14 @@ export default function RegisterScreen() {
   return (
     <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+        <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1 }}>
           <View style={{ paddingTop: 48, paddingHorizontal: 28, paddingBottom: 30 }}>
             <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
               <Feather name="arrow-left" size={20} color={COLORS.text.inverse} />
             </TouchableOpacity>
             <BrandMark size={46} />
             <Text style={{ ...TYPE.h1, color: COLORS.text.inverse, marginTop: 18, marginBottom: 6 }}>Create account</Text>
-            <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: 'rgba(248,250,252,0.55)' }}>
+            <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.55)' }}>
               Start using {BRAND.name} to keep your records sharp.
             </Text>
           </View>
@@ -134,7 +134,7 @@ export default function RegisterScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
       </KeyboardAvoidingView>
     </ScreenShell>
   );
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: RADIUS.sm,
-    backgroundColor: 'rgba(248,250,252,0.08)',
+    backgroundColor: 'rgba(250,250,248,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },

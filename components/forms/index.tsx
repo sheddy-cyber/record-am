@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ViewStyle, TextInputProps, Modal, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { useKeyboardAwareScroll } from './keyboard';
 
 // ─── Input Field ────────────────────────────────────────────────────────────
 
@@ -27,15 +28,25 @@ export const InputField: React.FC<InputFieldProps> = ({
   required,
   leftIcon,
   rightElement,
+  onFocus,
+  onBlur,
   ...props
 }) => {
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+  const keyboardAware = useKeyboardAwareScroll();
+  const displayPrefix = prefix?.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
+  const displaySuffix = suffix?.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16)),
+  );
 
   return (
     <View style={[{ marginBottom: SP.card }, containerStyle]}>
       <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.secondary, marginBottom: 6 }}>
         {label}
-        {required ? <Text style={{ color: COLORS.danger }}> *</Text> : null}
+        {required ? <Text style={{ fontFamily: FONT.regular, color: COLORS.danger }}> *</Text> : null}
       </Text>
       <View
         style={{
@@ -45,14 +56,15 @@ export const InputField: React.FC<InputFieldProps> = ({
           borderRadius: RADIUS.md,
           borderWidth: 1,
           paddingHorizontal: 14,
-          backgroundColor: COLORS.card,
+          backgroundColor: 'rgba(255,255,255,0.95)',
           borderColor: error ? COLORS.danger : focused ? COLORS.accent : COLORS.border,
           minHeight: 48,
         }}
       >
         {leftIcon}
-        {prefix ? <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.secondary }}>{prefix}</Text> : null}
+        {displayPrefix ? <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.secondary }}>{displayPrefix}</Text> : null}
         <TextInput
+          ref={inputRef}
           style={{
             flex: 1,
             fontSize: 15,
@@ -61,11 +73,19 @@ export const InputField: React.FC<InputFieldProps> = ({
             paddingVertical: 12,
           }}
           placeholderTextColor={COLORS.text.muted}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={(event) => {
+            setFocused(true);
+            keyboardAware?.scrollToInput(inputRef.current);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setFocused(false);
+            keyboardAware?.clearFocusedInput(inputRef.current);
+            onBlur?.(event);
+          }}
           {...props}
         />
-        {suffix ? <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted }}>{suffix}</Text> : null}
+        {displaySuffix ? <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted }}>{displaySuffix}</Text> : null}
         {rightElement}
       </View>
       {error ? <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.danger, marginTop: 4 }}>{error}</Text> : null}
@@ -110,7 +130,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
     <View style={[{ marginBottom: SP.card }, containerStyle]}>
       <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.secondary, marginBottom: 6 }}>
         {label}
-        {required ? <Text style={{ color: COLORS.danger }}> *</Text> : null}
+        {required ? <Text style={{ fontFamily: FONT.regular, color: COLORS.danger }}> *</Text> : null}
       </Text>
       <TouchableOpacity
         style={{
@@ -137,7 +157,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
         <Pressable
           style={{
             flex: 1,
-            backgroundColor: 'rgba(15,23,42,0.5)',
+            backgroundColor: 'rgba(0,20,50,0.45)',
             justifyContent: 'center',
             paddingHorizontal: SP.lg,
             paddingVertical: 32,
@@ -146,10 +166,12 @@ export const SelectField: React.FC<SelectFieldProps> = ({
         >
           <Pressable
             style={{
-              backgroundColor: COLORS.card,
-              borderRadius: RADIUS.lg,
-              maxHeight: 380,
+              backgroundColor: 'rgba(255,255,255,0.98)',
+              borderRadius: RADIUS.xl,
+              maxHeight: 400,
               overflow: 'hidden',
+              borderWidth: 1,
+              borderColor: 'rgba(221,232,240,0.8)',
             }}
             onPress={(event) => event.stopPropagation()}
           >
@@ -245,3 +267,5 @@ export const Toggle: React.FC<{
     </TouchableOpacity>
   </View>
 );
+
+export { KeyboardAwareScrollView, KeyboardAwareTextInput } from './keyboard';
