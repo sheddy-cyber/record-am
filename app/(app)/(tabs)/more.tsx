@@ -1,11 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
-import { useConfirmSignOut } from '@/hooks/useConfirmSignOut';
-import { Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
+import { Button, Card, ConfirmDialog, IconBox, ListRow, SectionHeader } from '@/components/ui';
 import { BrandMark, FlatSection, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { APP_FOOTER_TEXT, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
@@ -24,8 +23,8 @@ type MenuSection = {
 
 export default function MoreScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch, profile } = useAuthStore();
-  const confirmSignOut = useConfirmSignOut();
+  const { currentBusiness, currentBranch, profile, signOut } = useAuthStore();
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const sections: MenuSection[] = [
     {
@@ -83,7 +82,7 @@ export default function MoreScreen() {
         },
         {
           icon: 'package',
-          label: 'Suppliers',
+          label: 'Suppliers & Purchases',
           subtitle: 'Contacts, goods bought, and balances',
           onPress: () => router.push('/(app)/suppliers'),
           iconBg: COLORS.warningLight,
@@ -122,7 +121,7 @@ export default function MoreScreen() {
           icon: 'log-out',
           label: 'Sign Out',
           subtitle: `Log out of ${BRAND.name}`,
-          onPress: confirmSignOut,
+          onPress: () => setShowSignOutConfirm(true),
           iconBg: COLORS.dangerLight,
           iconColor: COLORS.danger,
         },
@@ -198,6 +197,19 @@ export default function MoreScreen() {
           {APP_FOOTER_TEXT}
         </Text>
       </ScrollView>
+      <ConfirmDialog
+        visible={showSignOutConfirm}
+        title="Sign Out"
+        message="Are you sure you want to sign out?"
+        confirmLabel="Sign Out"
+        onConfirm={async () => {
+          setShowSignOutConfirm(false);
+          await signOut();
+          router.replace('/(auth)/login');
+        }}
+        onCancel={() => setShowSignOutConfirm(false)}
+        variant="danger"
+      />
     </ScreenShell>
     </SwipeableTabScreen>
   );

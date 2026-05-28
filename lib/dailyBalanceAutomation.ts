@@ -22,7 +22,18 @@ export async function maybeAutoCloseDailyBalance(
   const scheduledAt = new Date(now);
   scheduledAt.setHours(hour, minute, 0, 0);
 
-  const targetDate = format(now >= scheduledAt ? now : subDays(now, 1), 'yyyy-MM-dd');
+  // If the auto-close time is early in the day (AM), we assume the business stays open past midnight
+  // and the auto-close is intended for the *previous* day's balance.
+  const closesPreviousDay = hour < 12;
+
+  let targetDateObj: Date;
+  if (closesPreviousDay) {
+    targetDateObj = now >= scheduledAt ? subDays(now, 1) : subDays(now, 2);
+  } else {
+    targetDateObj = now >= scheduledAt ? now : subDays(now, 1);
+  }
+
+  const targetDate = format(targetDateObj, 'yyyy-MM-dd');
   const lastProcessedDate = settings.autoCloseLastRunByBranch[branchId];
   if (lastProcessedDate && lastProcessedDate >= targetDate) {
     return { status: 'already_processed', summaryDate: targetDate };

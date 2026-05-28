@@ -8,11 +8,12 @@ import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { deleteProductRecord } from '@/lib/recordDeletion';
-import { Badge, Button, EmptyState, LoadingScreen } from '@/components/ui';
+import { Badge, Button, ConfirmDialog, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { Product } from '@/types';
+import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
 
 type FilterType = 'all' | 'low_stock' | 'out_of_stock';
 
@@ -34,6 +35,7 @@ export default function InventoryScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteActionProductId, setDeleteActionProductId] = useState<string | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
 
   const openCreateProduct = () => router.push('/(app)/add-stock');
 
@@ -77,7 +79,7 @@ export default function InventoryScreen() {
         const stock = getProductStock(product);
 
         if (filter === 'low_stock') return matchesSearch && stock > 0 && stock <= product.reorder_level;
-        if (filter === 'out_of_stock') return matchesSearch && stock === 0;
+        if (filter === 'out_of_stock') return matchesSearch && stock <= 0;
         return matchesSearch;
       }),
     [filter, getProductStock, products, search],
@@ -86,28 +88,13 @@ export default function InventoryScreen() {
   const getStockBadge = (product: Product) => {
     const stock = getProductStock(product);
     if (product.is_service) return <Badge label="Service" variant="primary" />;
-    if (stock === 0) return <Badge label="Out of Stock" variant="danger" />;
+    if (stock <= 0) return <Badge label="Out of Stock" variant="danger" />;
     if (stock <= product.reorder_level) return <Badge label="Low Stock" variant="warning" />;
     return <Badge label="In Stock" variant="success" />;
   };
 
   const handleDeleteProduct = (product: Product) => {
-    Alert.alert('Delete product', `Remove ${product.name} from inventory?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteProductRecord(product.id);
-            await load();
-            Toast.show({ type: 'success', text1: 'Product deleted' });
-          } catch (err: any) {
-            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
-          }
-        },
-      },
-    ]);
+    setProductToDelete(product);
   };
 
   if (loading) {
@@ -125,6 +112,7 @@ export default function InventoryScreen() {
       />
 
       <View style={{ padding: SP.page, gap: 12 }}>
+        <ReconcileWarningBanner onReconciled={load} />
         <View
           style={{
             borderWidth: 1,
@@ -284,6 +272,26 @@ export default function InventoryScreen() {
           }}
         />
       )}
+      <ConfirmDialog
+        visible={productToDelete !== null}
+        title="Delete product"
+        message={`Remove ${productToDelete?.name ?? ''} from inventory?`}
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          if (!productToDelete) return;
+          const targetProduct = productToDelete;
+          setProductToDelete(null);
+          try {
+            await deleteProductRecord(targetProduct.id);
+            await load();
+            Toast.show({ type: 'success', text1: 'Product deleted' });
+          } catch (err: any) {
+            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+          }
+        }}
+        onCancel={() => setProductToDelete(null)}
+        variant="danger"
+      />
     </ScreenShell>
     </SwipeableTabScreen>
   );

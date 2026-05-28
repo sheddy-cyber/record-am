@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDailyReport } from '@/lib/reports';
-import { Badge, Button, Card, EmptyState, LoadingScreen, SectionHeader } from '@/components/ui';
+import { Badge, Button, Card, ConfirmDialog, EmptyState, LoadingScreen, SectionHeader } from '@/components/ui';
 import { ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
@@ -26,6 +26,7 @@ export default function DailyBalanceScreen() {
     fetchDailyBalance,
     reopenDay,
   } = useDailyBalanceStore();
+  const [showReopenConfirm, setShowReopenConfirm] = useState(false);
 
   const load = useCallback(() => {
     if (currentBusiness && currentBranch) {
@@ -53,31 +54,18 @@ export default function DailyBalanceScreen() {
   const changeDate = (direction: 1 | -1) => {
     const current = new Date(selectedDate);
     const next = direction === 1 ? addDays(current, 1) : subDays(current, 1);
-    if (next > new Date()) return;
-    setSelectedDate(format(next, 'yyyy-MM-dd'));
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const nextStr = format(next, 'yyyy-MM-dd');
+    if (nextStr > todayStr) return;
+    setSelectedDate(nextStr);
   };
 
   const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
+  const touchStartX = useRef(0);
 
   const handleReopenDay = () => {
     if (!currentBusiness || !currentBranch || !summary?.is_closed) return;
-
-    Alert.alert(
-      'Reopen balance?',
-      'This will unlock the daily balance so you can make updates and close it again.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reopen',
-          onPress: async () => {
-            const success = await reopenDay(currentBusiness.id, currentBranch.id);
-            if (!success) {
-              Alert.alert('Error', 'Failed to reopen the balance. Please try again.');
-            }
-          },
-        },
-      ],
-    );
+    setShowReopenConfirm(true);
   };
 
   if (isLoading && !summary) {
@@ -98,7 +86,6 @@ export default function DailyBalanceScreen() {
     discrepancy === 0 ? '#ECFDF3' : discrepancy > 0 ? '#EEF4FF' : '#FEF3F2';
   const discrepancyBorder =
     discrepancy === 0 ? '#BFD9CA' : discrepancy > 0 ? '#B7CADB' : '#DDAEA6';
-
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <View style={{ flex: 1 }}>
@@ -111,6 +98,17 @@ export default function DailyBalanceScreen() {
 
         <View style={{ backgroundColor: COLORS.ink, paddingHorizontal: 20, paddingBottom: 18 }}>
           <View
+            onTouchStart={(e) => {
+              touchStartX.current = e.nativeEvent.pageX;
+            }}
+            onTouchEnd={(e) => {
+              const distance = touchStartX.current - e.nativeEvent.pageX;
+              if (distance > 50) {
+                changeDate(1);
+              } else if (distance < -50) {
+                changeDate(-1);
+              }
+            }}
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -380,6 +378,23 @@ export default function DailyBalanceScreen() {
             <View style={{ height: 20 }} />
           </View>
         </ScrollView>
+
+        <ConfirmDialog
+          visible={showReopenConfirm}
+          title="Reopen balance?"
+          message="This will unlock the daily balance so you can make updates and close it again."
+          confirmLabel="Reopen"
+          onConfirm={async () => {
+            setShowReopenConfirm(false);
+            if (!currentBusiness || !currentBranch) return;
+            const success = await reopenDay(currentBusiness.id, currentBranch.id);
+            if (!success) {
+              Alert.alert('Error', 'Failed to reopen the balance. Please try again.');
+            }
+          }}
+          onCancel={() => setShowReopenConfirm(false)}
+          variant="primary"
+        />
       </View>
     </ScreenShell>
   );

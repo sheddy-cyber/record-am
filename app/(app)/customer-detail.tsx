@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
-import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader } from '@/components/ui';
+import { Badge, Button, Card, ConfirmDialog, EmptyState, LoadingScreen, PaymentSummary, SectionHeader } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
@@ -28,6 +28,8 @@ export default function CustomerDetailScreen() {
     deleteCustomer,
     setSelectedCustomer,
   } = useCustomerStore();
+
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
 
   const closeScreen = () => router.back();
 
@@ -56,20 +58,7 @@ export default function CustomerDetailScreen() {
 
   const handleDelete = () => {
     if (!customer) return;
-
-    Alert.alert('Remove Customer', `Remove ${customer.name} from your customer list?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteCustomer(customer.id);
-          setSelectedCustomer(null);
-          Toast.show({ type: 'success', text1: 'Customer removed' });
-          closeScreen();
-        },
-      },
-    ]);
+    setShowRemoveConfirm(true);
   };
 
   if (isLoading && !customer) {
@@ -288,6 +277,24 @@ export default function CustomerDetailScreen() {
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {customer && (
+        <ConfirmDialog
+          visible={showRemoveConfirm}
+          title="Remove Customer"
+          message={`Remove ${customer.name} from your customer list?`}
+          confirmLabel="Remove"
+          onConfirm={async () => {
+            setShowRemoveConfirm(false);
+            await deleteCustomer(customer.id);
+            setSelectedCustomer(null);
+            Toast.show({ type: 'success', text1: 'Customer removed' });
+            closeScreen();
+          }}
+          onCancel={() => setShowRemoveConfirm(false)}
+          variant="danger"
+        />
+      )}
     </ScreenShell>
   );
 }

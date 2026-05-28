@@ -8,6 +8,7 @@ import { useBusinessStore } from '@/store/businessStore';
 import { getAppSettings } from '@/lib/appSettings';
 import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
 import { supabase } from '@/lib/supabase';
+import { addMismatch } from '@/lib/mismatchService';
 import { Button, LoadingScreen } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
@@ -80,23 +81,56 @@ export default function AddStockScreen() {
       return false;
     }
 
-    router.replace({
-      pathname: '/(app)/record-purchase',
-      params: {
-        prefill: buildPurchasePrefillParam({
-          notes: 'Opened from inventory stock addition.',
-          items: [
-            {
-              productId: params.productId,
-              productName: params.productName,
-              unit: params.productUnit,
-              quantity: params.quantity,
-              unitCost: params.unitCost,
-            },
-          ],
-        }),
-      },
-    });
+    Alert.alert(
+      'Record Purchase?',
+      `Would you like to record a corresponding purchase for this stock addition of ${formatCount(params.quantity)} ${params.productUnit}?`,
+      [
+        {
+          text: 'No, Decline',
+          style: 'cancel',
+          onPress: async () => {
+            if (currentBranch && currentBusiness) {
+              await addMismatch({
+                type: 'stock_to_purchase_declined',
+                productId: params.productId,
+                productName: params.productName,
+                branchId: currentBranch.id,
+                businessId: currentBusiness.id,
+                quantity: params.quantity,
+                unitCost: params.unitCost,
+              });
+            }
+            closeScreen();
+          },
+        },
+        {
+          text: 'Yes, Record Purchase',
+          onPress: () => {
+            router.replace({
+              pathname: '/(app)/record-purchase',
+              params: {
+                syncFlow: '1',
+                originalProductId: params.productId,
+                originalStockQty: String(params.quantity),
+                originalUnitCost: String(params.unitCost),
+                prefill: buildPurchasePrefillParam({
+                  notes: 'Opened from inventory stock addition.',
+                  items: [
+                    {
+                      productId: params.productId,
+                      productName: params.productName,
+                      unit: params.productUnit,
+                      quantity: params.quantity,
+                      unitCost: params.unitCost,
+                    },
+                  ],
+                }),
+              },
+            });
+          },
+        },
+      ]
+    );
 
     return true;
   };

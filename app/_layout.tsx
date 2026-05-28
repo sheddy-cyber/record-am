@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { AppState, Text, TextInput } from 'react-native';
-import { Stack } from 'expo-router';
+import { AppState, Text, TextInput, View, Platform } from 'react-native';
+import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import Toast from 'react-native-toast-message';
+import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
+import { BlurView } from 'expo-blur';
+import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
-import { COLORS, FONT } from '@/constants';
+import { COLORS, FONT, RADIUS } from '@/constants';
 import '../global.css';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -53,6 +55,77 @@ inputDefaults.defaultProps.style = [
   { fontFamily: FONT.regular },
   inputDefaults.defaultProps.style,
 ];
+
+// ─── Custom Toast Configuration ───────────────────────────────────────────────
+
+const ToastContent = ({ iconName, iconColor, text1, text2 }: any) => (
+  <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 }}>
+    <Feather name={iconName} size={22} color={iconColor} />
+    <View style={{ flex: 1, gap: 2, justifyContent: 'center' }}>
+      {text1 ? (
+        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#1A1A1C' }}>
+          {text1}
+        </Text>
+      ) : null}
+      {text2 ? (
+        <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: '#4A4A4D', lineHeight: 18 }}>
+          {text2}
+        </Text>
+      ) : null}
+    </View>
+  </View>
+);
+
+const ThemedToast = ({ text1, text2, type }: any) => {
+  const isSuccess = type === 'success';
+  const isError = type === 'error';
+  const iconColor = isSuccess ? COLORS.success : isError ? COLORS.danger : COLORS.info;
+  const iconName = isSuccess ? 'check-circle' : isError ? 'alert-circle' : 'info';
+
+  const iosInnerStyle = {
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.8)',
+  } as const;
+
+  return (
+    <View style={Platform.select({
+      ios: {
+        width: '92%',
+        marginTop: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 16,
+      },
+      android: {
+        width: '92%',
+        marginTop: 8,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        backgroundColor: COLORS.surface,
+        elevation: 6,
+      },
+      default: { width: '92%', marginTop: 8 }
+    })}>
+      {Platform.OS === 'ios' ? (
+        <BlurView intensity={80} tint="light" style={iosInnerStyle}>
+          <ToastContent iconName={iconName} iconColor={iconColor} text1={text1} text2={text2} />
+        </BlurView>
+      ) : (
+        <ToastContent iconName={iconName} iconColor={iconColor} text1={text1} text2={text2} />
+      )}
+    </View>
+  );
+};
+
+const toastConfig = {
+  success: (props: any) => <ThemedToast {...props} type="success" />,
+  error: (props: any) => <ThemedToast {...props} type="error" />,
+  info: (props: any) => <ThemedToast {...props} type="info" />,
+};
 
 export default function RootLayout() {
   const { setSession, initialize, currentBusiness, currentBranch, user } = useAuthStore();
@@ -158,6 +231,37 @@ export default function RootLayout() {
     };
   }, [currentBusiness?.id, currentBranch?.id, user?.id]);
 
+  useEffect(() => {
+    if (isExpoGo) return;
+
+    let active = true;
+    let subscription: any = null;
+
+    const setupListener = async () => {
+      try {
+        const Notifications = await import('expo-notifications');
+        if (!active) return;
+        subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+          const data = response.notification.request.content.data;
+          if (data?.type === 'sync_mismatch') {
+            router.push('/(app)/(tabs)/inventory');
+          }
+        });
+      } catch (err) {
+        console.log('[notifications] listener setup failed:', err);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      active = false;
+      if (subscription) {
+        subscription.remove();
+      }
+    };
+  }, []);
+
   if (!appInitialized || (!fontsLoaded && !fontError)) {
     return null;
   }
@@ -171,7 +275,7 @@ export default function RootLayout() {
           <Stack.Screen name="(app)" />
         </Stack>
         <StatusBar style="dark" backgroundColor={COLORS.surface} />
-        <Toast />
+        <Toast config={toastConfig} />
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );

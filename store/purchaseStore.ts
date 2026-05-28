@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { PaymentStatus, Product, Purchase } from '@/types';
 
-const roundAmount = (value: number) => Number(value.toFixed(2));
+export const roundAmount = (value: number) => Number(value.toFixed(2));
 
 const normalizeProductName = (value: string) =>
   value.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -22,6 +22,8 @@ export interface PurchaseCartItem {
   quantity: number;
   unit_cost: number;
   total_cost: number;
+  input_quantity?: string;
+  input_unit_cost?: string;
 }
 
 interface ResolvedPurchaseItem {

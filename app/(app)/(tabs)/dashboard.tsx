@@ -27,7 +27,7 @@ const fmt = (value: number) =>
 export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, profile } = useAuthStore();
-  const { getLowStockProducts } = useBusinessStore();
+  const { getStockAlerts } = useBusinessStore();
   const navigation = useNavigation();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -108,14 +108,15 @@ export default function DashboardScreen() {
       const totalRepayments = todayRepaymentsRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
       const totalExpenses = todayExpensesRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
       const totalDebts = debtsRes.data?.reduce((sum, row) => sum + row.balance, 0) ?? 0;
-      const lowStock = await getLowStockProducts(currentBusiness.id, currentBranch.id);
+      const stockAlerts = await getStockAlerts(currentBusiness.id, currentBranch.id);
 
       setStats({
         today_sales: totalSales + totalRepayments,
         today_profit: totalSales - totalExpenses,
         today_expenses: totalExpenses,
         total_products: productCountRes.count ?? 0,
-        low_stock_count: lowStock.length,
+        low_stock_count: stockAlerts.lowStockProducts.length,
+        out_of_stock_count: stockAlerts.outOfStockProducts.length,
         outstanding_debts: totalDebts,
         total_customers: customerCountRes.count ?? 0,
       });
@@ -128,7 +129,7 @@ export default function DashboardScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentBusiness, currentBranch, getLowStockProducts]);
+  }, [currentBusiness, currentBranch, getStockAlerts]);
 
   useEffect(() => {
     fetchData();
@@ -171,6 +172,14 @@ export default function DashboardScreen() {
     (stats?.today_sales ?? 0) > 0
       ? Math.min(((stats?.today_profit ?? 0) / (stats?.today_sales ?? 1)) * 100, 100)
       : 0;
+  const stockAlertMessages = [
+    (stats?.out_of_stock_count ?? 0) > 0
+      ? `${stats?.out_of_stock_count} product${stats?.out_of_stock_count === 1 ? ' is' : 's are'} out of stock`
+      : null,
+    (stats?.low_stock_count ?? 0) > 0
+      ? `${stats?.low_stock_count} product${stats?.low_stock_count === 1 ? ' is' : 's are'} running low`
+      : null,
+  ].filter((message): message is string => Boolean(message));
 
   if (loading) return <LoadingScreen />;
 
@@ -437,7 +446,7 @@ export default function DashboardScreen() {
         </View>
 
         {/* ── Low stock alert ─────────────────────────────── */}
-        {(stats?.low_stock_count ?? 0) > 0 ? (
+        {stockAlertMessages.length > 0 ? (
           <TouchableOpacity
             onPress={() => router.push('/(app)/(tabs)/inventory')}
             activeOpacity={0.7}
@@ -453,9 +462,16 @@ export default function DashboardScreen() {
             }}
           >
             <Feather name="alert-triangle" size={16} color={COLORS.warning} />
-            <Text style={{ flex: 1, fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
-              {stats?.low_stock_count} product{stats?.low_stock_count === 1 ? '' : 's'} running low
-            </Text>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.warning }}>
+                Inventory alert
+              </Text>
+              {stockAlertMessages.map((message) => (
+                <Text key={message} style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
+                  {message}
+                </Text>
+              ))}
+            </View>
             <Feather name="chevron-right" size={14} color={COLORS.warning} />
           </TouchableOpacity>
         ) : null}

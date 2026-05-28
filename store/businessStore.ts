@@ -1,6 +1,25 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { Business, Branch, Category, Product, Inventory } from '@/types';
+import { Business, Branch, Category, Product, StockAlertSummary } from '@/types';
+
+const getBranchStock = (product: Product, branchId: string) =>
+  product.inventory?.find((item) => item.branch_id === branchId)?.quantity ?? 0;
+
+const fetchTrackedProducts = async (businessId: string) => {
+  const { data, error } = await supabase
+    .from('products')
+    .select(`
+      *,
+      inventory(quantity, branch_id)
+    `)
+    .eq('business_id', businessId)
+    .eq('is_active', true)
+    .eq('is_service', false);
+
+  if (error) throw error;
+
+  return (data ?? []) as Product[];
+};
 
 interface BusinessState {
   businesses: Business[];
@@ -21,6 +40,7 @@ interface BusinessState {
   createProduct: (data: Partial<Product>) => Promise<Product | null>;
   updateProduct: (id: string, data: Partial<Product>) => Promise<void>;
   getLowStockProducts: (businessId: string, branchId: string) => Promise<Product[]>;
+  getStockAlerts: (businessId: string, branchId: string) => Promise<StockAlertSummary>;
 }
 
 export const useBusinessStore = create<BusinessState>((set, get) => ({
@@ -237,26 +257,39 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   getLowStockProducts: async (businessId, branchId) => {
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select(`
-          *,
-          inventory!inner(quantity, branch_id)
-        `)
-        .eq('business_id', businessId)
-        .eq('inventory.branch_id', branchId)
-        .eq('is_active', true)
-        .eq('is_service', false);
+      const products = await fetchTrackedProducts(businessId);
 
-      if (error) throw error;
-
-      // Filter where inventory quantity <= reorder_level
-      return (data ?? []).filter((p: any) => {
-        const inv = p.inventory?.[0];
-        return inv && inv.quantity <= p.reorder_level;
+      return products.filter((product) => {
+        const stock = getBranchStock(product, branchId);
+        return stock > 0 && stock <= product.reorder_level;
       });
     } catch {
       return [];
+    }
+  },
+
+  getStockAlerts: async (businessId, branchId) => {
+    try {
+      const products = await fetchTrackedProducts(businessId);
+      const lowStockProducts: Product[] = [];
+      const outOfStockProducts: Product[] = [];
+
+      products.forEach((product) => {
+        const stock = getBranchStock(product, branchId);
+
+        if (stock <= 0) {
+          outOfStockProducts.push(product);
+          return;
+        }
+
+        if (stock <= product.reorder_level) {
+          lowStockProducts.push(product);
+        }
+      });
+
+      return { lowStockProducts, outOfStockProducts };
+    } catch {
+      return { lowStockProducts: [], outOfStockProducts: [] };
     }
   },
 }));
