@@ -369,8 +369,14 @@ export interface DashboardStats {
   today_expenses: number;
   total_products: number;
   low_stock_count: number;
+  out_of_stock_count: number;
   outstanding_debts: number;
   total_customers: number;
+}
+
+export interface StockAlertSummary {
+  lowStockProducts: Product[];
+  outOfStockProducts: Product[];
 }
 
 export interface SalesTrend {

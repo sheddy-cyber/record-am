@@ -14,13 +14,15 @@ import {
   createPurchaseCartItemFromProduct,
   PurchaseCartItem,
   usePurchaseStore,
+  roundAmount,
 } from '@/store/purchaseStore';
 import { Button, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, KeyboardAwareTextInput, SelectField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, PRODUCT_UNITS } from '@/constants';
 import { PurchasePrefillPayload, parsePurchasePrefillPayload } from '@/lib/purchasePrefill';
 import { supabase } from '@/lib/supabase';
+import { addMismatch } from '@/lib/mismatchService';
 import { Product, Purchase } from '@/types';
 
 const formatCurrency = (value: number) =>
@@ -75,11 +77,20 @@ export default function RecordPurchaseScreen() {
     supplierId?: string | string[];
     purchaseId?: string | string[];
     prefill?: string | string[];
+    syncFlow?: string | string[];
+    originalProductId?: string | string[];
+    originalStockQty?: string | string[];
+    originalUnitCost?: string | string[];
   }>();
   const lockedSupplierId = Array.isArray(params.supplierId) ? params.supplierId[0] : params.supplierId;
   const purchaseId = Array.isArray(params.purchaseId) ? params.purchaseId[0] : params.purchaseId;
   const prefill = useMemo(() => parsePurchasePrefillPayload(params.prefill), [params.prefill]);
+  const syncFlow = Array.isArray(params.syncFlow) ? params.syncFlow[0] : params.syncFlow;
+  const originalProductId = Array.isArray(params.originalProductId) ? params.originalProductId[0] : params.originalProductId;
+  const originalStockQty = Array.isArray(params.originalStockQty) ? params.originalStockQty[0] : params.originalStockQty;
+  const originalUnitCost = Array.isArray(params.originalUnitCost) ? params.originalUnitCost[0] : params.originalUnitCost;
   const isEditing = Boolean(purchaseId);
+  const isSyncFlowActive = syncFlow === '1';
 
   const { currentBusiness, currentBranch, user } = useAuthStore();
   const { products, fetchProducts } = useBusinessStore();
@@ -100,6 +111,7 @@ export default function RecordPurchaseScreen() {
   const [newItemUnit, setNewItemUnit] = useState('piece');
   const [ready, setReady] = useState(false);
   const [purchaseMissing, setPurchaseMissing] = useState(false);
+  const [prefillOriginals, setPrefillOriginals] = useState<Record<string, { quantity: number; unit_cost: number }>>({});
 
   const closeScreen = () => router.back();
 
@@ -160,6 +172,12 @@ export default function RecordPurchaseScreen() {
 
     if (nextCart.length > 0) {
       setCart(nextCart);
+
+      const originals: Record<string, { quantity: number; unit_cost: number }> = {};
+      for (const cartItem of nextCart) {
+        originals[cartItem.key] = { quantity: cartItem.quantity, unit_cost: cartItem.unit_cost };
+      }
+      setPrefillOriginals(originals);
     }
 
     if (payload.supplierId) {
@@ -340,17 +358,16 @@ export default function RecordPurchaseScreen() {
     setShowNewItemForm(false);
   };
 
-  const updateCartItem = (itemKey: string, field: 'quantity' | 'unit_cost', value: number) => {
+  const updateCartItem = (itemKey: string, field: 'quantity' | 'unit_cost', value: string) => {
     setCart((previousCart) =>
-      previousCart
-        .map((item) => {
-          if (item.key !== itemKey) return item;
-          const nextValue = Number.isFinite(value) ? value : 0;
-          const updated = { ...item, [field]: nextValue };
-          updated.total_cost = Number((updated.quantity * updated.unit_cost).toFixed(2));
-          return updated;
-        })
-        .filter((item) => item.quantity > 0),
+      previousCart.map((item) => {
+        if (item.key !== itemKey) return item;
+        const parsed = parseFloat(value);
+        const nextValue = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+        const updated = { ...item, [field]: nextValue, [`input_${field}`]: value };
+        updated.total_cost = Number((updated.quantity * updated.unit_cost).toFixed(2));
+        return updated;
+      })
     );
   };
 
@@ -403,34 +420,165 @@ export default function RecordPurchaseScreen() {
       return;
     }
 
-    const savePayload = {
-      businessId: currentBusiness.id,
-      branchId: currentBranch.id,
-      supplierId: supplierId || undefined,
-      supplierName: supplierName.trim(),
-      items: cart,
-      amountPaid: totals.amountPaid,
-      discountAmount: totals.discountAmount,
-      notes: notes.trim() || undefined,
-      purchaseDate: purchaseDate.trim(),
+    const executeSave = async (hasMismatch: boolean) => {
+      try {
+        let finalSupplierId = supplierId;
+        if (!finalSupplierId && supplierName.trim()) {
+          const trimmedName = supplierName.trim();
+          const existingSupplier = suppliers.find(
+            (s) => s.name.trim().toLowerCase() === trimmedName.toLowerCase()
+          );
+          if (existingSupplier) {
+            finalSupplierId = existingSupplier.id;
+          } else {
+            const newSupplier = await useSupplierStore.getState().createSupplier({
+              business_id: currentBusiness.id,
+              name: trimmedName,
+              is_active: true,
+            });
+            if (newSupplier) {
+              finalSupplierId = newSupplier.id;
+            }
+          }
+        }
+
+        const savePayload = {
+          businessId: currentBusiness.id,
+          branchId: currentBranch.id,
+          supplierId: finalSupplierId || undefined,
+          supplierName: supplierName.trim(),
+          items: cart,
+          amountPaid: totals.amountPaid,
+          discountAmount: totals.discountAmount,
+          notes: notes.trim() || undefined,
+          purchaseDate: purchaseDate.trim(),
+        };
+
+        const purchase = isEditing && purchaseId
+          ? await updatePurchase({ ...savePayload, purchaseId })
+          : await recordPurchase({ ...savePayload, userId: user.id });
+
+        if (!purchase) {
+          Alert.alert('Error', isEditing ? 'Failed to update purchase. Please try again.' : 'Failed to record purchase. Please try again.');
+          return;
+        }
+
+        Toast.show({
+          type: 'success',
+          text1: isEditing ? 'Purchase updated' : 'Goods recorded',
+          text2: `${purchase.purchase_number} - ${formatCurrency(totals.totalAmount)} from ${supplierName.trim()}`,
+        });
+
+        const { getAppSettings } = await import('@/lib/appSettings');
+        const settings = await getAppSettings();
+
+        const itemsToSync = (purchase.items ?? [])
+          .filter((item) => item.product && !item.product.is_service);
+
+        if (isSyncFlowActive) {
+          if (hasMismatch && originalProductId && currentBranch && currentBusiness) {
+            const matchingCartItem = cart.find(
+              (item) => item.product?.id === originalProductId
+            );
+            if (matchingCartItem) {
+              await addMismatch({
+                type: 'stock_to_purchase_mismatch',
+                productId: originalProductId,
+                productName: matchingCartItem.product?.name || 'Unknown',
+                branchId: currentBranch.id,
+                businessId: currentBusiness.id,
+                quantity: parseFloat(originalStockQty || '0'),
+                unitCost: parseFloat(originalUnitCost || '0'),
+                targetQuantity: matchingCartItem.quantity,
+                targetUnitCost: matchingCartItem.unit_cost,
+                purchaseId: purchase.id,
+              });
+            }
+          }
+          closeScreen();
+        } else if (settings.inventoryPurchaseSyncEnabled && !isEditing && itemsToSync.length > 0) {
+          Alert.alert(
+            'Update Stock?',
+            `Would you like to update the inventory stock quantity for the purchased item(s)?`,
+            [
+              {
+                text: 'No, Decline',
+                style: 'cancel',
+                onPress: async () => {
+                  if (currentBranch && currentBusiness) {
+                    for (const item of itemsToSync) {
+                      await addMismatch({
+                        type: 'purchase_to_stock_declined',
+                        productId: item.product_id,
+                        productName: item.product?.name || 'Unknown',
+                        branchId: currentBranch.id,
+                        businessId: currentBusiness.id,
+                        quantity: item.quantity,
+                        unitCost: item.unit_cost,
+                        purchaseId: purchase.id,
+                      });
+                    }
+                  }
+                  closeScreen();
+                },
+              },
+              {
+                text: 'Yes, Update Stock',
+                onPress: () => {
+                  const firstItem = itemsToSync[0];
+                  const remainingItems = itemsToSync.slice(1).map((item) => ({
+                    productId: item.product_id,
+                    quantity: item.quantity,
+                    unitCost: item.unit_cost,
+                  }));
+                  router.replace({
+                    pathname: '/(app)/update-stock',
+                    params: {
+                      productId: firstItem.product_id,
+                      purchasedQty: String(firstItem.quantity),
+                      purchasedUnitCost: String(firstItem.unit_cost),
+                      purchaseId: purchase.id,
+                      syncFlow: '1',
+                      pendingQueue: JSON.stringify(remainingItems),
+                    },
+                  });
+                },
+              },
+            ]
+          );
+        } else {
+          closeScreen();
+        }
+      } catch (err: any) {
+        Alert.alert('Error', err.message ?? 'Please try again.');
+      }
     };
 
-    const purchase = isEditing && purchaseId
-      ? await updatePurchase({ ...savePayload, purchaseId })
-      : await recordPurchase({ ...savePayload, userId: user.id });
+    const originalQtyNum = parseFloat(originalStockQty || '0');
+    const originalCostNum = parseFloat(originalUnitCost || '0');
+    const matchingCartItem = cart.find(
+      (item) => item.product?.id === originalProductId
+    );
+    const hasMismatch = isSyncFlowActive && originalProductId && matchingCartItem && (
+      roundAmount(matchingCartItem.quantity) !== roundAmount(originalQtyNum) ||
+      roundAmount(matchingCartItem.unit_cost) !== roundAmount(originalCostNum)
+    );
 
-    if (!purchase) {
-      Alert.alert('Error', isEditing ? 'Failed to update purchase. Please try again.' : 'Failed to record purchase. Please try again.');
-      return;
+    if (hasMismatch) {
+      Alert.alert(
+        'Mismatch Warning',
+        'The quantity or cost price does not match the stock entry. Save anyway?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Save Anyway',
+            onPress: () => executeSave(true),
+          },
+        ]
+      );
+    } else {
+      await executeSave(false);
     }
-
-    Toast.show({
-      type: 'success',
-      text1: isEditing ? 'Purchase updated' : 'Goods recorded',
-      text2: `${purchase.purchase_number} - ${formatCurrency(totals.totalAmount)} from ${supplierName.trim()}`,
-    });
-
-    closeScreen();
   };
 
   if (!ready || (isLoading && products.length === 0)) {
@@ -527,11 +675,11 @@ export default function RecordPurchaseScreen() {
                 placeholder="e.g. Large Rice Bag"
                 containerStyle={{ marginBottom: 8 }}
               />
-              <InputField
-                label="Unit"
+              <SelectField
+                label="Unit of Measurement"
                 value={newItemUnit}
-                onChangeText={setNewItemUnit}
-                placeholder="piece, bag, carton..."
+                options={PRODUCT_UNITS}
+                onChange={setNewItemUnit}
                 containerStyle={{ marginBottom: 8 }}
               />
               <Button
@@ -633,8 +781,8 @@ export default function RecordPurchaseScreen() {
                     </View>
                     <View style={{ flexDirection: 'row', gap: 6 }}>
                       <KeyboardAwareTextInput
-                        value={String(item.quantity)}
-                        onChangeText={(value) => updateCartItem(item.key, 'quantity', parseFloat(value) || 0)}
+                        value={item.input_quantity !== undefined ? item.input_quantity : String(item.quantity)}
+                        onChangeText={(value) => updateCartItem(item.key, 'quantity', value)}
                         keyboardType="numeric"
                         style={{
                           fontFamily: FONT.regular,
@@ -651,8 +799,8 @@ export default function RecordPurchaseScreen() {
                         placeholderTextColor={COLORS.text.muted}
                       />
                       <KeyboardAwareTextInput
-                        value={String(item.unit_cost)}
-                        onChangeText={(value) => updateCartItem(item.key, 'unit_cost', parseFloat(value) || 0)}
+                        value={item.input_unit_cost !== undefined ? item.input_unit_cost : String(item.unit_cost)}
+                        onChangeText={(value) => updateCartItem(item.key, 'unit_cost', value)}
                         keyboardType="numeric"
                         style={{
                           fontFamily: FONT.regular,
@@ -672,6 +820,13 @@ export default function RecordPurchaseScreen() {
                     <Text style={{ fontSize: 11, color: COLORS.success, fontFamily: FONT.medium, marginTop: 4 }}>
                       Total: {formatCurrency(item.total_cost)}
                     </Text>
+                    {prefillOriginals[item.key] && (
+                      (item.quantity !== prefillOriginals[item.key].quantity || item.unit_cost !== prefillOriginals[item.key].unit_cost) ? (
+                        <Text style={{ fontSize: 10, color: COLORS.warning, fontFamily: FONT.medium, marginTop: 4 }}>
+                          ⚠ Values changed from stock entry (Qty: {prefillOriginals[item.key].quantity}, Cost: {formatCurrency(prefillOriginals[item.key].unit_cost)})
+                        </Text>
+                      ) : null
+                    )}
                   </View>
                 ))}
               </KeyboardAwareScrollView>
@@ -784,7 +939,7 @@ export default function RecordPurchaseScreen() {
                 value={amountPaid}
                 onChangeText={(value) => {
                   setAmountPaid(value);
-                  setAmountPaidDirty(true);
+                  setAmountPaidDirty(value.trim() !== '');
                 }}
                 placeholder={formatNumberInput(totals.totalAmount)}
                 keyboardType="numeric"

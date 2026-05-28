@@ -13,7 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { Button, EmptyState, LoadingScreen, PaymentSummary } from '@/components/ui';
+import { Button, ConfirmDialog, EmptyState, LoadingScreen, PaymentSummary } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
@@ -34,6 +34,7 @@ export default function SalesScreen() {
   const [generatingReceiptId, setGeneratingReceiptId] = useState<string | null>(null);
   const [isSharingImage, setIsSharingImage] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [activityToDelete, setActivityToDelete] = useState<RevenueActivity | null>(null);
   const receiptCaptureRef = useRef<ViewShot | null>(null);
 
   const openRecordSale = () => router.push('/(app)/record-sale');
@@ -208,29 +209,7 @@ export default function SalesScreen() {
   };
 
   const handleDeleteActivity = (activity: RevenueActivity) => {
-    const label = activity.kind === 'sale' ? 'sale' : 'debt payment';
-
-    Alert.alert('Delete record', `Delete this ${label}? This cannot be undone.`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            if (activity.kind === 'sale') {
-              await deleteSaleRecord(activity.sale_id ?? activity.id);
-            } else {
-              await deleteDebtRepaymentRecord(activity.id);
-            }
-
-            await loadActivities();
-            Toast.show({ type: 'success', text1: 'Record deleted' });
-          } catch (err: any) {
-            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
-          }
-        },
-      },
-    ]);
+    setActivityToDelete(activity);
   };
 
   if (loading) {
@@ -534,6 +513,30 @@ export default function SalesScreen() {
           </View>
         </View>
       </Modal>
+      <ConfirmDialog
+        visible={activityToDelete !== null}
+        title="Delete record"
+        message={`Delete this ${activityToDelete?.kind === 'sale' ? 'sale' : 'debt payment'}? This cannot be undone.`}
+        confirmLabel="Delete"
+        onConfirm={async () => {
+          if (!activityToDelete) return;
+          const targetActivity = activityToDelete;
+          setActivityToDelete(null);
+          try {
+            if (targetActivity.kind === 'sale') {
+              await deleteSaleRecord(targetActivity.sale_id ?? targetActivity.id);
+            } else {
+              await deleteDebtRepaymentRecord(targetActivity.id);
+            }
+            await loadActivities();
+            Toast.show({ type: 'success', text1: 'Record deleted' });
+          } catch (err: any) {
+            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+          }
+        }}
+        onCancel={() => setActivityToDelete(null)}
+        variant="danger"
+      />
     </ScreenShell>
     </SwipeableTabScreen>
   );

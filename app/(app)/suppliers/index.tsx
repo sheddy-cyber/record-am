@@ -9,6 +9,7 @@ import { useSupplierStore } from '@/store/supplierStore';
 import { Badge, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
+import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
@@ -44,7 +45,7 @@ export default function SuppliersScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <View style={{ flex: 1 }}>
         <ScreenHeader
-          title="Suppliers"
+          title="Suppliers & Purchases"
           subtitle={`${suppliers.length} total`}
           theme="dark"
           right={<HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/supplier-create')} />}
@@ -99,12 +100,16 @@ export default function SuppliersScreen() {
               {formatCurrency(suppliers.reduce((sum, supplier) => sum + supplier.total_purchased, 0))}
             </Text>
           </View>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>We Owe</Text>
             <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.danger }}>
               {formatCurrency(suppliers.reduce((sum, supplier) => sum + supplier.outstanding_debt, 0))}
             </Text>
           </View>
+        </View>
+
+        <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
+          <ReconcileWarningBanner onReconciled={load} />
         </View>
 
         {filtered.length === 0 ? (
