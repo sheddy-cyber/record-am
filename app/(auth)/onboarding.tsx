@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, Animated, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,20 +8,11 @@ import { useBusinessStore } from '@/store/businessStore';
 import { Button, Card } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { BrandMark, BrandWordmark, ScreenShell } from '@/components/layout';
+import { AuthProgress, useStepTransition } from '@/components/auth';
 import { BRAND, BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BusinessType } from '@/types';
 
 const STEPS = ['Business', 'Location', 'Ready'];
-
-function StepBar({ step }: { step: number }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 6 }}>
-      {STEPS.map((_, index) => (
-        <View key={index} style={{ flex: 1, height: 4, borderRadius: RADIUS.full, backgroundColor: index <= step ? COLORS.accent : 'rgba(250,250,248,0.14)' }} />
-      ))}
-    </View>
-  );
-}
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
@@ -35,6 +26,7 @@ export default function OnboardingScreen() {
 
   const { user, setCurrentBusiness, setCurrentBranch, setUserRole } = useAuthStore();
   const { createBusiness } = useBusinessStore();
+  const transition = useStepTransition(step);
 
   const validateStepOne = () => {
     const nextErrors: Record<string, string> = {};
@@ -80,7 +72,7 @@ export default function OnboardingScreen() {
     <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
       <View style={{ paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
         <BrandWordmark invert size={24} />
-        <StepBar step={step} />
+        <AuthProgress step={step} total={STEPS.length} />
         <View>
           <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.45)' }}>Step {step + 1} of {STEPS.length}</Text>
           <Text style={{ ...TYPE.h1, color: COLORS.text.inverse, marginTop: 8 }}>
@@ -99,6 +91,7 @@ export default function OnboardingScreen() {
       <View style={{ flex: 1, backgroundColor: COLORS.surface, borderTopLeftRadius: RADIUS.lg, borderTopRightRadius: RADIUS.lg }}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <KeyboardAwareScrollView contentContainerStyle={{ padding: SP.xl, flexGrow: 1 }}>
+            <Animated.View style={[{ flex: 1 }, transition]}>
             {step === 0 ? (
               <>
                 <InputField
@@ -197,6 +190,7 @@ export default function OnboardingScreen() {
                 <Button title={`Open ${BRAND.name}`} onPress={handleFinish} loading={loading} size="lg" variant="accent" />
               )}
             </View>
+            </Animated.View>
           </KeyboardAwareScrollView>
         </KeyboardAvoidingView>
       </View>
