@@ -10,8 +10,18 @@ export function useStepTransition(step: number) {
   const translateX = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   const previous = useRef(step);
+  const mounted = useRef(false);
 
   useEffect(() => {
+    // Skip the entry animation on the first mount: when the screen is reached
+    // via navigation, a useNativeDriver animation started during the mount can
+    // fail to commit, leaving opacity stuck at 0 (content invisible). The first
+    // step should simply render at its resting values; only animate on changes.
+    if (!mounted.current) {
+      mounted.current = true;
+      previous.current = step;
+      return;
+    }
     const direction = step >= previous.current ? 1 : -1;
     previous.current = step;
     translateX.setValue(direction * 48);
