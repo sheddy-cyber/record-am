@@ -1,7 +1,34 @@
 ﻿import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { Business, Branch, UserProfile, UserRole } from '@/types';
+
+const AUTH_CONTEXT_STORAGE_KEY = 'record-am:auth-context:v1';
+
+interface CachedAuthContext {
+  profile: UserProfile | null;
+  currentBusiness: Business | null;
+  currentBranch: Branch | null;
+  userRole: UserRole | null;
+}
+
+const readCachedAuthContext = async (): Promise<CachedAuthContext | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(AUTH_CONTEXT_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const cacheAuthContext = async (context: CachedAuthContext) => {
+  try {
+    await AsyncStorage.setItem(AUTH_CONTEXT_STORAGE_KEY, JSON.stringify(context));
+  } catch {
+    // Cache write failures should never block app startup.
+  }
+};
 
 interface AuthState {
   session: Session | null;
@@ -40,6 +67,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     try { await supabase.auth.signOut(); } catch (_) {}
+    try { await AsyncStorage.removeItem(AUTH_CONTEXT_STORAGE_KEY); } catch (_) {}
     set({
       session: null, user: null, profile: null,
       currentBusiness: null, currentBranch: null, userRole: null,
@@ -68,6 +96,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ session, user: session?.user ?? null });
 
       if (session?.user) {
+        const cachedContext = await readCachedAuthContext();
+
         // Load profile — non-fatal if it fails
         try {
           const { data: profile } = await supabase
@@ -78,6 +108,9 @@ export const useAuthStore = create<AuthState>((set) => ({
           if (profile) set({ profile });
         } catch (err) {
           console.warn('[Record Am] Could not load profile:', err);
+          if (cachedContext?.profile) {
+            set({ profile: cachedContext.profile });
+          }
         }
 
         // Load business membership — non-fatal if it fails
@@ -91,14 +124,31 @@ export const useAuthStore = create<AuthState>((set) => ({
             .single();
 
           if (membership) {
+            const nextBusiness = membership.businesses as Business;
+            const nextBranch = membership.branches as Branch;
+            const nextRole = membership.role as UserRole;
             set({
-              currentBusiness: membership.businesses as Business,
-              currentBranch: membership.branches as Branch,
-              userRole: membership.role as UserRole,
+              currentBusiness: nextBusiness,
+              currentBranch: nextBranch,
+              userRole: nextRole,
+            });
+            await cacheAuthContext({
+              profile: useAuthStore.getState().profile,
+              currentBusiness: nextBusiness,
+              currentBranch: nextBranch,
+              userRole: nextRole,
             });
           }
         } catch (err) {
           console.warn('[Record Am] Could not load business membership:', err);
+          if (cachedContext) {
+            set({
+              profile: cachedContext.profile,
+              currentBusiness: cachedContext.currentBusiness,
+              currentBranch: cachedContext.currentBranch,
+              userRole: cachedContext.userRole,
+            });
+          }
         }
       }
     } catch (err) {

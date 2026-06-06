@@ -16,8 +16,8 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { supabase } from '@/lib/supabase';
+import { recordSaleOffline } from '@/lib/offlineRecords';
 import {
-  createAltUnitNote,
   getDefaultBundleSize,
   getSaleUnitOption,
   getSaleUnitOptions,
@@ -485,120 +485,27 @@ export default function RecordSaleScreen() {
 
     setSavingSale(true);
     try {
-      const { data: saleNumberData } = await supabase.rpc('generate_sale_number', {
-        p_business_id: currentBusiness.id,
+      const { sale } = await recordSaleOffline({
+        businessId: currentBusiness.id,
+        branchId: currentBranch.id,
+        userId: user.id,
+        cart,
+        customerName,
+        customerPhone,
+        paymentMethod,
+        notes: saleNotes.trim() || undefined,
+        subtotal: roundAmount(subtotal),
+        discountAmount: roundAmount(totalDiscount),
+        totalAmount: roundAmount(cartTotal),
+        amountPaid: roundAmount(paidAmount),
+        amountOwed: roundAmount(amountOwed),
+        paymentStatus,
       });
-
-      let customerId: string | undefined;
-      if (customerName.trim()) {
-        const { data: existingCustomer } = await supabase
-          .from('customers')
-          .select('id')
-          .eq('business_id', currentBusiness.id)
-          .ilike('name', customerName.trim())
-          .limit(1)
-          .single();
-
-        if (existingCustomer) {
-          customerId = existingCustomer.id;
-        } else {
-          const { data: newCustomer } = await supabase
-            .from('customers')
-            .insert({
-              business_id: currentBusiness.id,
-              name: customerName.trim(),
-              phone: customerPhone.trim() || undefined,
-            })
-            .select('id')
-            .single();
-
-          customerId = newCustomer?.id;
-        }
-      }
-
-      const { data: sale, error: saleError } = await supabase
-        .from('sales')
-        .insert({
-          business_id: currentBusiness.id,
-          branch_id: currentBranch.id,
-          customer_id: customerId,
-          sale_number: saleNumberData ?? `SALE-${Date.now()}`,
-          subtotal: roundAmount(subtotal),
-          discount_amount: roundAmount(totalDiscount),
-          tax_amount: 0,
-          total_amount: roundAmount(cartTotal),
-          amount_paid: roundAmount(paidAmount),
-          amount_owed: roundAmount(amountOwed),
-          payment_status: paymentStatus,
-          payment_method: paymentMethod,
-          notes: saleNotes.trim() || undefined,
-          sold_by: user.id,
-        })
-        .select()
-        .single();
-
-      if (saleError) throw saleError;
-
-      for (const item of cart) {
-        const unitOption = getSaleUnitOption(item.product, item.sale_unit, item.bundle_size);
-        const stockMovementNote =
-          item.sale_unit !== item.product.unit ? createAltUnitNote(item.sale_unit) : undefined;
-
-        await supabase.from('sale_items').insert({
-          sale_id: sale.id,
-          product_id: item.product.id,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          cost_price: roundAmount(item.product.cost_price * unitOption.stockFactor),
-          discount_amount: item.discount_amount,
-          total_price: item.total_price,
-        });
-
-        if (!item.product.is_service) {
-          const currentStock = getProductStock(item.product);
-
-          await supabase.from('inventory').upsert(
-            {
-              product_id: item.product.id,
-              branch_id: currentBranch.id,
-              quantity: roundAmount(Math.max(0, currentStock - item.stock_quantity)),
-              last_updated: new Date().toISOString(),
-            },
-            { onConflict: 'product_id,branch_id' },
-          );
-
-          await supabase.from('stock_movements').insert({
-            business_id: currentBusiness.id,
-            branch_id: currentBranch.id,
-            product_id: item.product.id,
-            type: 'stock_out',
-            quantity: item.quantity,
-            reference: sale.sale_number,
-            notes: stockMovementNote,
-          });
-        }
-      }
-
-      if (amountOwed > 0 && customerName.trim()) {
-        await supabase.from('customer_debts').insert({
-          business_id: currentBusiness.id,
-          branch_id: currentBranch.id,
-          customer_id: customerId,
-          sale_id: sale.id,
-          customer_name: customerName.trim(),
-          customer_phone: customerPhone.trim() || undefined,
-          original_amount: roundAmount(cartTotal),
-          amount_paid: roundAmount(paidAmount),
-          balance: roundAmount(amountOwed),
-          status: paymentStatus === 'partial' ? 'partial' : 'outstanding',
-          notes: saleNotes.trim() || undefined,
-        });
-      }
 
       Toast.show({
         type: 'success',
         text1: 'Sale recorded',
-        text2: `${sale.sale_number} \u00B7 ${formatCurrency(cartTotal)}`,
+        text2: `${sale.sale_number} \u00B7 ${formatCurrency(cartTotal)} queued for sync`,
       });
 
       closeScreen();

@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
+import { recordRepaymentOffline } from '@/lib/offlineRecords';
+import { readCachedCustomerDebts } from '@/lib/offlineStore';
 import { Button, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -47,11 +49,16 @@ export default function RecordPaymentScreen() {
       setSelectedDebt((data as CustomerDebt) ?? null);
     } catch (err) {
       console.error(err);
-      setSelectedDebt(null);
+      if (currentBusiness && currentBranch) {
+        const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
+        setSelectedDebt(cachedDebts.find((debt) => debt.id === debtId) ?? null);
+      } else {
+        setSelectedDebt(null);
+      }
     } finally {
       setLoading(false);
     }
-  }, [debtId]);
+  }, [currentBranch, currentBusiness, debtId]);
 
   useEffect(() => {
     loadDebt();
@@ -72,67 +79,23 @@ export default function RecordPaymentScreen() {
 
     setSavingRepay(true);
     try {
-      const { error: repaymentError } = await supabase.from('debt_repayments').insert({
-        debt_id: selectedDebt.id,
+      const { debt } = await recordRepaymentOffline({
+        businessId: currentBusiness.id,
+        branchId: currentBranch.id,
+        userId: user.id,
+        debt: selectedDebt,
         amount,
-        payment_method: repayMethod,
+        paymentMethod: repayMethod,
         notes: repayNotes.trim() || undefined,
-        recorded_by: user.id,
       });
-      if (repaymentError) throw repaymentError;
-
-      const newAmountPaid = selectedDebt.amount_paid + amount;
-      const newBalance = selectedDebt.balance - amount;
-      const newStatus = newBalance <= 0 ? 'settled' : 'partial';
-
-      if (selectedDebt.sale_id) {
-        const { data: linkedSale, error: linkedSaleError } = await supabase
-          .from('sales')
-          .select('amount_paid, total_amount, payment_method')
-          .eq('id', selectedDebt.sale_id)
-          .single();
-
-        if (linkedSaleError) throw linkedSaleError;
-
-        const nextPaymentMethod =
-          linkedSale.amount_paid <= 0
-            ? repayMethod
-            : linkedSale.payment_method !== repayMethod
-              ? 'mixed'
-              : linkedSale.payment_method;
-
-        const { error: updateSaleError } = await supabase
-          .from('sales')
-          .update({
-            amount_paid: linkedSale.amount_paid + amount,
-            amount_owed: Math.max(0, (linkedSale.total_amount ?? newBalance) - (linkedSale.amount_paid + amount)),
-            payment_status: newBalance <= 0 ? 'paid' : 'partial',
-            payment_method: nextPaymentMethod,
-          })
-          .eq('id', selectedDebt.sale_id);
-
-        if (updateSaleError) throw updateSaleError;
-      }
-
-      const { error: updateDebtError } = await supabase
-        .from('customer_debts')
-        .update({
-          amount_paid: newAmountPaid,
-          balance: newBalance,
-          status: newStatus,
-          sale_id: selectedDebt.sale_id,
-        })
-        .eq('id', selectedDebt.id);
-
-      if (updateDebtError) throw updateDebtError;
 
       Toast.show({
         type: 'success',
-        text1: newStatus === 'settled' ? 'Debt settled' : 'Payment recorded',
+        text1: debt.status === 'settled' ? 'Debt settled' : 'Payment recorded',
         text2:
-          newStatus === 'settled'
-            ? `${formatCurrency(amount)} was added to sales and revenue.`
-            : `${formatCurrency(amount)} was added to sales. Balance remains in debts.`,
+          debt.status === 'settled'
+            ? `${formatCurrency(amount)} queued for sync.`
+            : `${formatCurrency(amount)} queued for sync. Balance remains in debts.`,
       });
 
       closeScreen();

@@ -1,19 +1,59 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import { COLORS, FONT, RADIUS, SP } from '@/constants';
+import { COLORS, FONT, RADIUS } from '@/constants';
 import {
   Mismatch,
   getMismatches,
   removeMismatch,
-  reconcileStockToMatchPurchase,
-  reconcilePurchaseToMatchStock,
 } from '@/lib/mismatchService';
+import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
 import Toast from 'react-native-toast-message';
 
 interface ReconcileWarningBannerProps {
   onReconciled?: () => void;
+}
+
+function getMismatchText(mismatch: Mismatch): string {
+  if (mismatch.type === 'stock_to_purchase_declined') {
+    return `Stock of ${mismatch.productName} increased by ${mismatch.quantity}, but no purchase recorded.`;
+  }
+  if (mismatch.type === 'stock_to_purchase_mismatch') {
+    return `Stock addition of ${mismatch.quantity} ${mismatch.productName} doesn't match purchase quantity of ${mismatch.targetQuantity}.`;
+  }
+  if (mismatch.type === 'purchase_to_stock_declined') {
+    return `Purchase of ${mismatch.quantity} ${mismatch.productName} recorded, but no stock added.`;
+  }
+  return `Purchase of ${mismatch.quantity} ${mismatch.productName} doesn't match stock addition of ${mismatch.targetQuantity}.`;
+}
+
+function getStockAdjustment(mismatch: Mismatch): number {
+  if (mismatch.type === 'stock_to_purchase_declined') {
+    return -mismatch.quantity;
+  }
+  if (mismatch.type === 'stock_to_purchase_mismatch') {
+    return (mismatch.targetQuantity ?? mismatch.quantity) - mismatch.quantity;
+  }
+  if (mismatch.type === 'purchase_to_stock_declined') {
+    return mismatch.quantity;
+  }
+  return mismatch.quantity - (mismatch.targetQuantity ?? mismatch.quantity);
+}
+
+function getPurchasePrefillQuantity(mismatch: Mismatch): number {
+  if (mismatch.type === 'purchase_to_stock_mismatch') {
+    return mismatch.targetQuantity ?? mismatch.quantity;
+  }
+  return mismatch.quantity;
+}
+
+function getPurchasePrefillUnitCost(mismatch: Mismatch): number {
+  if (mismatch.type === 'purchase_to_stock_mismatch') {
+    return mismatch.targetUnitCost ?? mismatch.unitCost;
+  }
+  return mismatch.unitCost;
 }
 
 export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerProps) {
@@ -52,6 +92,56 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
     );
   };
 
+  const openStockForm = (mismatch: Mismatch) => {
+    const params: Record<string, string> = {
+      productId: mismatch.productId,
+      stockAdjustment: String(getStockAdjustment(mismatch)),
+      purchasedUnitCost: String(mismatch.targetUnitCost ?? mismatch.unitCost),
+      syncFlow: '1',
+      mismatchId: mismatch.id,
+    };
+
+    if (mismatch.purchaseId) {
+      params.purchaseId = mismatch.purchaseId;
+    }
+
+    router.push({
+      pathname: '/(app)/update-stock',
+      params,
+    });
+  };
+
+  const openPurchaseForm = (mismatch: Mismatch) => {
+    const params: Record<string, string> = {
+      mismatchId: mismatch.id,
+    };
+
+    if (mismatch.purchaseId) {
+      params.purchaseId = mismatch.purchaseId;
+    } else {
+      params.syncFlow = '1';
+      params.originalProductId = mismatch.productId;
+      params.originalStockQty = String(mismatch.quantity);
+      params.originalUnitCost = String(mismatch.unitCost);
+      params.prefill = buildPurchasePrefillParam({
+        notes: 'Opened from sync mismatch reconciliation.',
+        items: [
+          {
+            productId: mismatch.productId,
+            productName: mismatch.productName,
+            quantity: getPurchasePrefillQuantity(mismatch),
+            unitCost: getPurchasePrefillUnitCost(mismatch),
+          },
+        ],
+      });
+    }
+
+    router.push({
+      pathname: '/(app)/record-purchase',
+      params,
+    });
+  };
+
   const handleReconcile = (mismatch: Mismatch) => {
     const sourceQty = mismatch.quantity;
     const targetQty = mismatch.targetQuantity ?? mismatch.quantity;
@@ -69,45 +159,15 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
 
     Alert.alert(
       'Reconcile Sync Mismatch',
-      `${msg}\n\nChoose an action to reconcile this:`,
+      `${msg}\n\nChoose a form to open. No records will be changed until you save.`,
       [
         {
           text: 'Update Stock',
-          onPress: async () => {
-            const success = await reconcileStockToMatchPurchase(mismatch);
-            if (success) {
-              Toast.show({
-                type: 'success',
-                text1: 'Stock updated to match purchase',
-              });
-              await loadMismatches();
-              onReconciled?.();
-            } else {
-              Toast.show({
-                type: 'error',
-                text1: 'Reconciliation failed',
-              });
-            }
-          },
+          onPress: () => openStockForm(mismatch),
         },
         {
           text: 'Update Purchase',
-          onPress: async () => {
-            const success = await reconcilePurchaseToMatchStock(mismatch);
-            if (success) {
-              Toast.show({
-                type: 'success',
-                text1: 'Purchase updated to match stock',
-              });
-              await loadMismatches();
-              onReconciled?.();
-            } else {
-              Toast.show({
-                type: 'error',
-                text1: 'Reconciliation failed',
-              });
-            }
-          },
+          onPress: () => openPurchaseForm(mismatch),
         },
         { text: 'Cancel', style: 'cancel' },
       ]
@@ -117,50 +177,52 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
   if (mismatches.length === 0) return null;
 
   return (
-    <View style={{ gap: 10, marginBottom: 14 }}>
-      {mismatches.map((mismatch) => {
-        let text = '';
-        if (mismatch.type === 'stock_to_purchase_declined') {
-          text = `Stock of ${mismatch.productName} increased by ${mismatch.quantity}, but no purchase recorded.`;
-        } else if (mismatch.type === 'stock_to_purchase_mismatch') {
-          text = `Stock addition of ${mismatch.quantity} ${mismatch.productName} doesn't match purchase quantity of ${mismatch.targetQuantity}.`;
-        } else if (mismatch.type === 'purchase_to_stock_declined') {
-          text = `Purchase of ${mismatch.quantity} ${mismatch.productName} recorded, but no stock added.`;
-        } else if (mismatch.type === 'purchase_to_stock_mismatch') {
-          text = `Purchase of ${mismatch.quantity} ${mismatch.productName} doesn't match stock addition of ${mismatch.targetQuantity}.`;
-        }
+    <View
+      style={{
+        backgroundColor: 'rgba(255, 150, 0, 0.08)',
+        borderColor: COLORS.warning,
+        borderWidth: 1,
+        borderRadius: RADIUS.md,
+        padding: 12,
+        marginBottom: 14,
+        gap: 10,
+      }}
+    >
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+        <Feather name="alert-triangle" size={16} color={COLORS.warning} style={{ marginTop: 2 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+            {mismatches.length === 1 ? 'Sync Mismatch Warning' : 'Sync Mismatch Warnings'}
+          </Text>
+          <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: 2 }}>
+            {mismatches.length === 1
+              ? '1 mismatch needs attention.'
+              : `${mismatches.length} mismatches need attention.`}
+          </Text>
+        </View>
+      </View>
 
+      {mismatches.map((mismatch) => {
         return (
           <View
             key={mismatch.id}
             style={{
-              backgroundColor: 'rgba(255, 150, 0, 0.08)',
-              borderColor: COLORS.warning,
-              borderWidth: 1,
-              borderRadius: RADIUS.md,
-              padding: 12,
-              flexDirection: 'column',
-              gap: 8,
+              borderTopWidth: 1,
+              borderTopColor: 'rgba(247, 197, 159, 0.55)',
+              paddingTop: 10,
+              gap: 7,
             }}
           >
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-              <Feather name="alert-triangle" size={16} color={COLORS.warning} style={{ marginTop: 2 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                  Sync Mismatch Warning
-                </Text>
-                <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: 2 }}>
-                  {text}
-                </Text>
-              </View>
-            </View>
+            <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, lineHeight: 17 }}>
+              {getMismatchText(mismatch)}
+            </Text>
 
-            <View style={{ flexDirection: 'row', gap: 10, justifyContent: 'flex-end', marginTop: 4 }}>
+            <View style={{ flexDirection: 'row', gap: 8, justifyContent: 'flex-end' }}>
               <TouchableOpacity
                 onPress={() => handleDismiss(mismatch)}
                 style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
                   borderRadius: RADIUS.sm,
                   backgroundColor: COLORS.surface2,
                 }}

@@ -12,6 +12,7 @@ import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
+import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import '../global.css';
 
@@ -131,6 +132,7 @@ export default function RootLayout() {
   const { setSession, initialize, currentBusiness, currentBranch, user } = useAuthStore();
   const [appInitialized, setAppInitialized] = useState(false);
   const [fontsLoaded, fontError] = useFonts(STERADIAN_FONT_ASSETS);
+  useOfflineSync(Boolean(user));
 
   useEffect(() => {
     let active = true;

@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { isDebtSettlementSale } from '@/lib/records';
+import {
+  readCachedExpenses,
+  readCachedRevenueActivities,
+  readCachedRows,
+  upsertCachedExpenses,
+  upsertCachedRows,
+} from '@/lib/offlineStore';
 import { format, subDays, startOfDay, endOfDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 
 export type DateRange = '7days' | '30days' | 'this_month' | 'this_week';
@@ -87,6 +94,148 @@ function getDateBounds(range: DateRange): { from: Date; to: Date; prevFrom: Date
   return { from, to, prevFrom, prevTo };
 }
 
+const inDateRange = (value: string | undefined, from: Date, to: Date) => {
+  if (!value) return false;
+  const time = new Date(value).getTime();
+  return time >= from.getTime() && time <= to.getTime();
+};
+
+const inDateStringRange = (value: string | undefined, from: Date, to: Date) => {
+  if (!value) return false;
+  const [year, month, day] = value.split('-').map((part) => parseInt(part, 10));
+  if (!year || !month || !day) return false;
+  const time = new Date(year, month - 1, day).getTime();
+  return time >= startOfDay(from).getTime() && time <= endOfDay(to).getTime();
+};
+
+async function buildCachedAnalytics(
+  businessId: string,
+  branchId: string,
+  dateRange: DateRange,
+) {
+  const { from, to, prevFrom, prevTo } = getDateBounds(dateRange);
+  const [activities, expenses, saleItems] = await Promise.all([
+    readCachedRevenueActivities(businessId, branchId, 500),
+    readCachedExpenses(businessId, branchId),
+    readCachedRows<any>({ businessId, branchId }, 'sale_items'),
+  ]);
+
+  const currentActivities = activities.filter((activity) => inDateRange(activity.created_at, from, to));
+  const previousActivities = activities.filter((activity) => inDateRange(activity.created_at, prevFrom, prevTo));
+  const currentExpenses = expenses.filter((expense) =>
+    inDateStringRange(expense.expense_date, from, to) || inDateRange(expense.created_at, from, to),
+  );
+  const currentSaleItems = saleItems.filter((item) =>
+    inDateRange(item.created_at ?? item.sale?.created_at, from, to),
+  );
+
+  const totalRevenue = currentActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
+  const prevRevenue = previousActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
+  const totalExpenses = currentExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const totalProfit = currentSaleItems.reduce(
+    (sum, item) => sum + (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * Number(item.quantity ?? 0),
+    0,
+  );
+  const prevProfit = prevRevenue * 0.3;
+  const totalTransactions = currentActivities.length;
+
+  const trendMap = new Map<string, { revenue: number; profit: number; transactions: number }>();
+  let cursor = new Date(from);
+  while (cursor <= to) {
+    const key = format(cursor, 'yyyy-MM-dd');
+    trendMap.set(key, { revenue: 0, profit: 0, transactions: 0 });
+    cursor = new Date(cursor.getTime() + 86400000);
+  }
+
+  currentActivities.forEach((activity) => {
+    const key = format(new Date(activity.created_at), 'yyyy-MM-dd');
+    const existing = trendMap.get(key) ?? { revenue: 0, profit: 0, transactions: 0 };
+    trendMap.set(key, {
+      revenue: existing.revenue + activity.amount_paid,
+      profit: existing.profit,
+      transactions: existing.transactions + 1,
+    });
+  });
+
+  currentSaleItems.forEach((item) => {
+    const createdAt = item.created_at ?? item.sale?.created_at;
+    if (!createdAt) return;
+    const key = format(new Date(createdAt), 'yyyy-MM-dd');
+    const existing = trendMap.get(key);
+    if (!existing) return;
+    const itemProfit = (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * Number(item.quantity ?? 0);
+    trendMap.set(key, { ...existing, profit: existing.profit + itemProfit });
+  });
+
+  const salesTrend: SalesTrendPoint[] = Array.from(trendMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, data]) => ({
+      date,
+      label: format(new Date(date), dateRange === '7days' || dateRange === 'this_week' ? 'EEE' : 'MMM d'),
+      ...data,
+    }));
+
+  const productMap = new Map<string, TopProduct>();
+  currentSaleItems.forEach((item) => {
+    const productId = item.product_id ?? item.product?.id;
+    if (!productId) return;
+    const productName = item.product?.name ?? 'Unknown';
+    const existing = productMap.get(productId) ?? {
+      product_id: productId,
+      product_name: productName,
+      total_qty: 0,
+      total_revenue: 0,
+      total_profit: 0,
+    };
+    const quantity = Number(item.quantity ?? 0);
+    const revenue = Number(item.total_price ?? 0);
+    const profit = (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * quantity;
+    productMap.set(productId, {
+      ...existing,
+      total_qty: existing.total_qty + quantity,
+      total_revenue: existing.total_revenue + revenue,
+      total_profit: existing.total_profit + profit,
+    });
+  });
+
+  const expenseMap = new Map<string, number>();
+  currentExpenses.forEach((expense) => {
+    expenseMap.set(expense.category, (expenseMap.get(expense.category) ?? 0) + expense.amount);
+  });
+  const expenseTotal = Array.from(expenseMap.values()).reduce((sum, total) => sum + total, 0);
+  const expenseBreakdown: ExpenseBreakdown[] = Array.from(expenseMap.entries())
+    .map(([category, total]) => ({
+      category,
+      total,
+      percentage: expenseTotal > 0 ? (total / expenseTotal) * 100 : 0,
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const allProducts = Array.from(productMap.values());
+
+  return {
+    summary: {
+      total_revenue: totalRevenue,
+      total_profit: totalProfit,
+      total_expenses: totalExpenses,
+      total_transactions: totalTransactions,
+      avg_transaction_value: totalTransactions > 0 ? totalRevenue / totalTransactions : 0,
+      prev_revenue: prevRevenue,
+      prev_profit: prevProfit,
+      revenue_growth: prevRevenue === 0 ? 0 : ((totalRevenue - prevRevenue) / prevRevenue) * 100,
+      profit_growth: prevProfit === 0 ? 0 : ((totalProfit - prevProfit) / prevProfit) * 100,
+    },
+    salesTrend,
+    topProducts: [...allProducts]
+      .sort((a, b) => b.total_qty - a.total_qty || b.total_revenue - a.total_revenue)
+      .slice(0, 5),
+    bottomProducts: [...allProducts]
+      .sort((a, b) => a.total_qty - b.total_qty || a.total_revenue - b.total_revenue)
+      .slice(0, 5),
+    expenseBreakdown,
+  };
+}
+
 export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   summary: null,
   salesTrend: [],
@@ -147,7 +296,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       // ── Current period expenses ───────────────────────────
       const { data: currentExpenses } = await supabase
         .from('expenses')
-        .select('amount, category')
+        .select('*')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('expense_date', format(from, 'yyyy-MM-dd'))
@@ -157,6 +306,10 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       const { data: saleItems } = await supabase
         .from('sale_items')
         .select(`
+          id,
+          sale_id,
+          product_id,
+          created_at,
           quantity,
           unit_price,
           cost_price,
@@ -168,6 +321,11 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         .eq('sale.branch_id', branchId)
         .gte('sale.created_at', fromISO)
         .lte('sale.created_at', toISO);
+
+      await Promise.all([
+        upsertCachedExpenses(businessId, branchId, (currentExpenses as any[]) ?? []),
+        upsertCachedRows({ businessId, branchId }, 'sale_items', (saleItems as any[]) ?? []),
+      ]);
 
       // ── Compute summary ───────────────────────────────────
       const revenueSales = (currentSales ?? []).filter((sale) => !isDebtSettlementSale(sale.notes));
@@ -307,7 +465,19 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       set({ expenseBreakdown });
     } catch (err: any) {
       console.error('[analytics]', err);
-      set({ error: err.message });
+      try {
+        const cached = await buildCachedAnalytics(businessId, branchId, dateRange);
+        set({
+          summary: cached.summary,
+          salesTrend: cached.salesTrend,
+          topProducts: cached.topProducts,
+          bottomProducts: cached.bottomProducts,
+          expenseBreakdown: cached.expenseBreakdown,
+          error: null,
+        });
+      } catch {
+        set({ error: err.message });
+      }
     } finally {
       set({ isLoading: false });
     }

@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { Supplier, Purchase, SupplierDebt } from '@/types';
+import {
+  createLocalId,
+  enqueueMutations,
+  nowIso,
+  readCachedRows,
+  upsertCachedRows,
+} from '@/lib/offlineStore';
 
 export interface SupplierWithStats extends Supplier {
   total_purchased: number;
@@ -72,8 +79,14 @@ export const useSupplierStore = create<SupplierState>((set) => ({
       );
 
       set({ suppliers: suppliersWithStats });
+      await upsertCachedRows({ businessId }, 'suppliers', suppliersWithStats);
     } catch (err: any) {
-      set({ error: err.message });
+      const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
+      if (cachedSuppliers.length > 0) {
+        set({ suppliers: cachedSuppliers, error: null });
+      } else {
+        set({ error: err.message });
+      }
     } finally {
       set({ isLoading: false });
     }
@@ -110,13 +123,23 @@ export const useSupplierStore = create<SupplierState>((set) => ({
   createSupplier: async (data) => {
     set({ isSaving: true, error: null });
     try {
-      const { data: supplier, error } = await supabase
-        .from('suppliers')
-        .insert(data)
-        .select()
-        .single();
+      if (!data.business_id || !data.name) {
+        throw new Error('Supplier business and name are required.');
+      }
 
-      if (error) throw error;
+      const timestamp = nowIso();
+      const supplier: Supplier = {
+        id: data.id ?? createLocalId(),
+        business_id: data.business_id,
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        address: data.address,
+        notes: data.notes,
+        is_active: data.is_active ?? true,
+        created_at: data.created_at ?? timestamp,
+        updated_at: timestamp,
+      };
 
       const withStats: SupplierWithStats = {
         ...supplier,
@@ -126,6 +149,18 @@ export const useSupplierStore = create<SupplierState>((set) => ({
       };
 
       set((state) => ({ suppliers: [withStats, ...state.suppliers] }));
+      await Promise.all([
+        upsertCachedRows({ businessId: supplier.business_id }, 'suppliers', [withStats]),
+        enqueueMutations([
+          {
+            operation: 'upsert',
+            table: 'suppliers',
+            payload: supplier,
+            onConflict: 'id',
+            description: `Sync supplier ${supplier.name}`,
+          },
+        ]),
+      ]);
       return supplier;
     } catch (err: any) {
       set({ error: err.message });

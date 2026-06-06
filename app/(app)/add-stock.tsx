@@ -7,8 +7,8 @@ import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { getAppSettings } from '@/lib/appSettings';
 import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
-import { supabase } from '@/lib/supabase';
 import { addMismatch } from '@/lib/mismatchService';
+import { recordInventorySnapshotOffline } from '@/lib/offlineRecords';
 import { Button, LoadingScreen } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
@@ -147,6 +147,12 @@ export default function AddStockScreen() {
     }
 
     const cleanProductName = productName.trim().replace(/\s+/g, ' ');
+    const cleanProductUnit = productUnit.trim().replace(/\s+/g, ' ');
+    if (!cleanProductUnit) {
+      Alert.alert('Unit required', 'Select a unit of measurement or enter a custom unit.');
+      return;
+    }
+
     const duplicateProduct = products.find(
       (product) =>
         normalizeProductName(product.name) ===
@@ -178,7 +184,7 @@ export default function AddStockScreen() {
       const product = await createProduct({
         business_id: currentBusiness.id,
         name: cleanProductName,
-        unit: productUnit,
+        unit: cleanProductUnit,
         cost_price: parsedCostPrice,
         selling_price: parseFloat(sellingPrice),
         reorder_level: parseFloat(reorderLevel) || 5,
@@ -188,36 +194,30 @@ export default function AddStockScreen() {
       if (!product) throw new Error('Failed to create product');
 
       if (currentBranch) {
-        await supabase.from('inventory').insert({
-          product_id: product.id,
-          branch_id: currentBranch.id,
+        await recordInventorySnapshotOffline({
+          businessId: currentBusiness.id,
+          branchId: currentBranch.id,
+          productId: product.id,
           quantity: initialQuantity,
-        });
-
-        if (initialQuantity > 0) {
-          await supabase.from('stock_movements').insert({
-            business_id: currentBusiness.id,
-            branch_id: currentBranch.id,
-            product_id: product.id,
-            type: 'stock_in',
-            quantity: initialQuantity,
-            unit_cost: parsedCostPrice || undefined,
-            total_cost: parsedCostPrice
-              ? parsedCostPrice * initialQuantity
+          movement:
+            initialQuantity > 0
+              ? {
+                  type: 'stock_in',
+                  quantity: initialQuantity,
+                  unit_cost: parsedCostPrice || undefined,
+                  total_cost: parsedCostPrice
+                    ? parsedCostPrice * initialQuantity
+                    : undefined,
+                  notes: 'Opening stock',
+                }
               : undefined,
-            notes: 'Opening stock',
-          });
-        }
+        });
       }
-
-      // Reload products after the inventory row exists so other screens
-      // immediately see the correct stock quantity when this screen closes.
-      await fetchProducts(currentBusiness.id);
 
       Toast.show({
         type: 'success',
         text1: 'Product added',
-        text2: `${product.name} is now in inventory${initialQuantity > 0 ? ` with ${formatCount(initialQuantity)} ${product.unit}` : ''}.`,
+        text2: `${product.name} is now in inventory${initialQuantity > 0 ? ` with ${formatCount(initialQuantity)} ${product.unit}` : ''}. Sync queued.`,
       });
 
       resetProductForm();
@@ -275,7 +275,7 @@ export default function AddStockScreen() {
             onReorderLevelChange={setReorderLevel}
             stockQuantity={openingQuantity}
             onStockQuantityChange={setOpeningQuantity}
-            stockQuantityLabel={`Opening Quantity (${productUnit})`}
+            stockQuantityLabel={`Opening Quantity (${productUnit.trim() || 'unit'})`}
             stockQuantityHint="Set the starting stock while creating this product."
             isService={isService}
             onIsServiceChange={setIsService}

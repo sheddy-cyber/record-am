@@ -2,6 +2,12 @@ import React from 'react';
 import { InputField, SelectField, Toggle } from '@/components/forms';
 import { CURRENCY_SYMBOL, PRODUCT_UNITS } from '@/constants';
 
+const CUSTOM_UNIT_VALUE = '__custom_unit__';
+const UNIT_OPTIONS = [
+  ...PRODUCT_UNITS,
+  { value: CUSTOM_UNIT_VALUE, label: 'Custom unit' },
+];
+
 type ProductFormFieldsProps = {
   productName: string;
   onProductNameChange: (value: string) => void;
@@ -39,6 +45,9 @@ export function ProductFormFields({
   isService,
   onIsServiceChange,
 }: ProductFormFieldsProps) {
+  const hasPresetUnit = PRODUCT_UNITS.some((unit) => unit.value === productUnit);
+  const selectedUnit = hasPresetUnit ? productUnit : CUSTOM_UNIT_VALUE;
+
   return (
     <>
       <InputField
@@ -50,11 +59,23 @@ export function ProductFormFields({
       />
       <SelectField
         label="Unit of Measurement"
-        value={productUnit}
-        options={PRODUCT_UNITS}
-        onChange={onProductUnitChange}
+        value={selectedUnit}
+        options={UNIT_OPTIONS}
+        onChange={(value) => {
+          onProductUnitChange(value === CUSTOM_UNIT_VALUE ? '' : value);
+        }}
         required
       />
+      {selectedUnit === CUSTOM_UNIT_VALUE ? (
+        <InputField
+          label="Custom Unit"
+          value={productUnit}
+          onChangeText={onProductUnitChange}
+          placeholder="e.g. crate, bundle, plate"
+          hint="This unit will be saved with the product."
+          required
+        />
+      ) : null}
       <InputField
         label="Cost Price"
         value={costPrice}

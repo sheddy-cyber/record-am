@@ -7,8 +7,8 @@ import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { getAppSettings } from '@/lib/appSettings';
 import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
-import { supabase } from '@/lib/supabase';
-import { addMismatch } from '@/lib/mismatchService';
+import { addMismatch, removeMismatch } from '@/lib/mismatchService';
+import { updateProductAndInventoryOffline } from '@/lib/offlineRecords';
 import { Button, EmptyState, LoadingScreen } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
@@ -25,10 +25,6 @@ const normalizeProductName = (value: string) =>
 
 const roundAmount = (value: number) => Number(value.toFixed(2));
 
-const throwIfError = (error: unknown) => {
-  if (error) throw error;
-};
-
 export default function UpdateStockScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
@@ -38,17 +34,25 @@ export default function UpdateStockScreen() {
     purchaseId?: string | string[];
     syncFlow?: string | string[];
     pendingQueue?: string | string[];
+    stockAdjustment?: string | string[];
+    mismatchId?: string | string[];
   }>();
   const productId = Array.isArray(params.productId) ? params.productId[0] : params.productId;
   const rawPurchasedQty = Array.isArray(params.purchasedQty) ? params.purchasedQty[0] : params.purchasedQty;
   const rawPurchasedUnitCost = Array.isArray(params.purchasedUnitCost) ? params.purchasedUnitCost[0] : params.purchasedUnitCost;
+  const rawStockAdjustment = Array.isArray(params.stockAdjustment) ? params.stockAdjustment[0] : params.stockAdjustment;
   const purchasedQty = rawPurchasedQty ? parseFloat(rawPurchasedQty) || 0 : 0;
   const purchasedUnitCost = rawPurchasedUnitCost ? parseFloat(rawPurchasedUnitCost) || 0 : 0;
+  const parsedStockAdjustment = rawStockAdjustment !== undefined ? parseFloat(rawStockAdjustment) : NaN;
+  const stockAdjustment = Number.isFinite(parsedStockAdjustment) ? parsedStockAdjustment : null;
+  const effectiveStockAdjustment = stockAdjustment ?? purchasedQty;
   const purchaseId = Array.isArray(params.purchaseId) ? params.purchaseId[0] : params.purchaseId;
   const syncFlow = Array.isArray(params.syncFlow) ? params.syncFlow[0] : params.syncFlow;
   const pendingQueue = Array.isArray(params.pendingQueue) ? params.pendingQueue[0] : params.pendingQueue;
+  const mismatchId = Array.isArray(params.mismatchId) ? params.mismatchId[0] : params.mismatchId;
   const isSyncFlowActive = syncFlow === '1';
-  const fromPurchase = purchasedQty > 0;
+  const isManualReconcile = Boolean(mismatchId);
+  const fromPurchase = stockAdjustment !== null || purchasedQty > 0;
 
   const { currentBusiness, currentBranch } = useAuthStore();
   const { products, fetchProducts } = useBusinessStore();
@@ -173,16 +177,18 @@ export default function UpdateStockScreen() {
     setSellingPrice(formatCount(Number(product.selling_price ?? 0)));
 
     const newStockQty = fromPurchase
-      ? roundAmount(currentStock + purchasedQty)
+      ? roundAmount(currentStock + effectiveStockAdjustment)
       : currentStock;
     setStockQuantity(formatCount(newStockQty));
     if (fromPurchase) {
       setPrefilledStockQty(newStockQty);
+    } else {
+      setPrefilledStockQty(null);
     }
 
     setReorderLevel(formatCount(Number(product.reorder_level ?? 5)));
     setIsService(product.is_service);
-  }, [currentStock, product]);
+  }, [currentStock, effectiveStockAdjustment, fromPurchase, product, purchasedUnitCost]);
 
   const handleSaveProduct = async () => {
     if (!product || !currentBusiness) return;
@@ -196,6 +202,12 @@ export default function UpdateStockScreen() {
     }
 
     const cleanProductName = productName.trim().replace(/\s+/g, ' ');
+    const cleanProductUnit = productUnit.trim().replace(/\s+/g, ' ');
+    if (!cleanProductUnit) {
+      Alert.alert('Unit required', 'Select a unit of measurement or enter a custom unit.');
+      return;
+    }
+
     const duplicateProduct = products.find(
       (item) =>
         item.id !== product.id &&
@@ -241,73 +253,54 @@ export default function UpdateStockScreen() {
         const previousQuantity = roundAmount(currentStock);
         const quantityDelta = roundAmount(nextQuantity - previousQuantity);
 
-        const { error: productError } = await supabase
-          .from('products')
-          .update({
+        const movementQuantity = Math.abs(quantityDelta);
+        const movementType = quantityDelta > 0 ? 'stock_in' : 'stock_out';
+        const movementNote =
+          isService && previousQuantity > 0
+            ? 'Converted to service item from product update.'
+            : quantityDelta > 0
+              ? 'Quantity increased from product update.'
+              : 'Quantity reduced from product update.';
+
+        await updateProductAndInventoryOffline({
+          businessId: currentBusiness.id,
+          branchId: currentBranch?.id,
+          product,
+          productPatch: {
             name: cleanProductName,
-            unit: productUnit,
+            unit: cleanProductUnit,
             cost_price: parsedCostPrice,
             selling_price: parsedSellingPrice,
             reorder_level: parsedReorderLevel,
             is_service: isService,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', product.id);
-
-        throwIfError(productError);
-
-        if (currentBranch) {
-          const { error: inventoryError } = await supabase
-            .from('inventory')
-            .upsert(
-              {
-                product_id: product.id,
-                branch_id: currentBranch.id,
-                quantity: nextQuantity,
-                last_updated: new Date().toISOString(),
-              },
-              { onConflict: 'product_id,branch_id' },
-            );
-
-          throwIfError(inventoryError);
-
-          if (quantityDelta !== 0) {
-            const movementQuantity = Math.abs(quantityDelta);
-            const movementType = quantityDelta > 0 ? 'stock_in' : 'stock_out';
-            const movementNote =
-              isService && previousQuantity > 0
-                ? 'Converted to service item from product update.'
-                : quantityDelta > 0
-                  ? 'Quantity increased from product update.'
-                  : 'Quantity reduced from product update.';
-
-            const { error: movementError } = await supabase.from('stock_movements').insert({
-              business_id: currentBusiness.id,
-              branch_id: currentBranch.id,
-              product_id: product.id,
-              type: movementType,
-              quantity: movementQuantity,
-              unit_cost: movementType === 'stock_in' && parsedCostPrice > 0 ? parsedCostPrice : undefined,
-              total_cost:
-                movementType === 'stock_in' && parsedCostPrice > 0
-                  ? roundAmount(parsedCostPrice * movementQuantity)
-                  : undefined,
-              notes: movementNote,
-            });
-
-            throwIfError(movementError);
-          }
-        }
-
-        await fetchProducts(currentBusiness.id);
+          },
+          nextQuantity: currentBranch ? nextQuantity : undefined,
+          movement:
+            currentBranch && quantityDelta !== 0
+              ? {
+                  type: movementType,
+                  quantity: movementQuantity,
+                  unit_cost: movementType === 'stock_in' && parsedCostPrice > 0 ? parsedCostPrice : undefined,
+                  total_cost:
+                    movementType === 'stock_in' && parsedCostPrice > 0
+                      ? roundAmount(parsedCostPrice * movementQuantity)
+                      : undefined,
+                  notes: movementNote,
+                }
+              : undefined,
+        });
 
         Toast.show({
           type: 'success',
           text1: 'Product updated',
           text2: isService
             ? `${cleanProductName} was saved as a service item.`
-            : `${cleanProductName} now has ${formatCount(nextQuantity)} ${productUnit} in stock.`,
+            : `${cleanProductName} now has ${formatCount(nextQuantity)} ${cleanProductUnit} in stock. Sync queued.`,
         });
+
+        if (mismatchId) {
+          await removeMismatch(mismatchId);
+        }
 
         if (isSyncFlowActive) {
           if (hasMismatch && currentBranch && currentBusiness) {
@@ -347,7 +340,7 @@ export default function UpdateStockScreen() {
           const openedPurchaseSync = await maybeOpenPurchaseSync({
             productId: product.id,
             productName: cleanProductName,
-            productUnit,
+            productUnit: cleanProductUnit,
             quantity: quantityDelta > 0 ? roundAmount(quantityDelta) : 0,
             unitCost: parsedCostPrice,
           });
@@ -361,7 +354,7 @@ export default function UpdateStockScreen() {
       }
     };
 
-    const hasMismatch = isSyncFlowActive && prefilledStockQty !== null && (
+    const hasMismatch = !isManualReconcile && isSyncFlowActive && prefilledStockQty !== null && (
       roundAmount(parsedStockQuantity) !== roundAmount(prefilledStockQty) ||
       roundAmount(parsedCostPrice) !== roundAmount(purchasedUnitCost)
     );
@@ -431,12 +424,16 @@ export default function UpdateStockScreen() {
             onReorderLevelChange={setReorderLevel}
             stockQuantity={stockQuantity}
             onStockQuantityChange={setStockQuantity}
-            stockQuantityLabel={`Stock Quantity (${productUnit})`}
+            stockQuantityLabel={`Stock Quantity (${productUnit.trim() || 'unit'})`}
             stockQuantityHint={
               prefilledStockQty !== null && parseFloat(stockQuantity) !== prefilledStockQty
-                ? `⚠ Changed from prefilled value (${formatCount(prefilledStockQty)}). Was ${formatCount(currentStock)} + ${formatCount(purchasedQty)} purchased.`
-                : fromPurchase
-                  ? `Prefilled: ${formatCount(currentStock)} in stock + ${formatCount(purchasedQty)} purchased.`
+                ? isManualReconcile
+                  ? `Changed from reconciliation value (${formatCount(prefilledStockQty)}).`
+                  : `⚠ Changed from prefilled value (${formatCount(prefilledStockQty)}). Was ${formatCount(currentStock)} + ${formatCount(purchasedQty)} purchased.`
+                : isManualReconcile && prefilledStockQty !== null
+                  ? `Prefilled for reconciliation: ${formatCount(prefilledStockQty)} ${productUnit.trim() || 'unit'}.`
+                  : fromPurchase
+                    ? `Prefilled: ${formatCount(currentStock)} in stock + ${formatCount(purchasedQty)} purchased.`
                   : 'Set the quantity currently available in this branch.'
             }
             isService={isService}

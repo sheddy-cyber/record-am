@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { differenceInDays, format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
+import { cacheCustomerDebts, readCachedCustomerDebts } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDebtReminderViaWhatsApp } from '@/lib/reports';
 import { Badge, Button, Divider, EmptyState, LoadingScreen } from '@/components/ui';
@@ -41,9 +42,19 @@ export default function DebtsScreen() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setDebts((data as CustomerDebt[]) ?? []);
+      const serverDebts = (data as CustomerDebt[]) ?? [];
+      const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
+      const serverDebtIds = new Set(serverDebts.map((debt) => debt.id));
+      const nextDebts = [
+        ...serverDebts,
+        ...cachedDebts.filter((debt) => !serverDebtIds.has(debt.id) && debt.status !== 'settled'),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setDebts(nextDebts);
+      await cacheCustomerDebts(currentBusiness.id, currentBranch.id, nextDebts);
     } catch (err) {
       console.error(err);
+      const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
+      setDebts(cachedDebts.filter((debt) => debt.status !== 'settled'));
     } finally {
       setLoading(false);
     }
