@@ -1,24 +1,44 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { Business, Branch, Category, Product, StockAlertSummary } from '@/types';
+import {
+  cacheProducts,
+  createLocalId,
+  enqueueMutations,
+  nowIso,
+  readCachedProducts,
+  upsertCachedProducts,
+} from '@/lib/offlineStore';
 
 const getBranchStock = (product: Product, branchId: string) =>
   product.inventory?.find((item) => item.branch_id === branchId)?.quantity ?? 0;
 
+const stripProductForWrite = (product: Product) => {
+  const { category, inventory, ...payload } = product;
+  return payload;
+};
+
 const fetchTrackedProducts = async (businessId: string) => {
-  const { data, error } = await supabase
-    .from('products')
-    .select(`
-      *,
-      inventory(quantity, branch_id)
-    `)
-    .eq('business_id', businessId)
-    .eq('is_active', true)
-    .eq('is_service', false);
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select(`
+        *,
+        inventory(quantity, branch_id)
+      `)
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .eq('is_service', false);
 
-  if (error) throw error;
+    if (error) throw error;
 
-  return (data ?? []) as Product[];
+    const products = (data ?? []) as Product[];
+    await upsertCachedProducts(businessId, products);
+    return products;
+  } catch {
+    const cachedProducts = await readCachedProducts(businessId);
+    return cachedProducts.filter((product) => product.is_active && !product.is_service);
+  }
 };
 
 interface BusinessState {
@@ -118,9 +138,20 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         .order('name');
 
       if (error) throw error;
-      set({ products: data ?? [] });
+      const serverProducts = (data ?? []) as Product[];
+      const cachedProducts = await readCachedProducts(businessId);
+      const serverProductIds = new Set(serverProducts.map((product) => product.id));
+      const localOnlyProducts = cachedProducts.filter((product) => !serverProductIds.has(product.id));
+      const products = [...serverProducts, ...localOnlyProducts].sort((a, b) => a.name.localeCompare(b.name));
+      set({ products });
+      await cacheProducts(businessId, products);
     } catch (err: any) {
-      set({ error: err.message });
+      const cachedProducts = await readCachedProducts(businessId);
+      if (cachedProducts.length > 0) {
+        set({ products: cachedProducts, error: null });
+      } else {
+        set({ error: err.message });
+      }
     } finally {
       set({ isLoading: false });
     }
@@ -220,36 +251,73 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   },
 
   createProduct: async (data) => {
-    set({ isLoading: true });
     try {
-      const { data: product, error } = await supabase
-        .from('products')
-        .insert(data)
-        .select('*, category:categories(*)')
-        .single();
+      if (!data.business_id || !data.name) {
+        throw new Error('Product business and name are required.');
+      }
 
-      if (error) throw error;
+      const timestamp = nowIso();
+      const product: Product = {
+        id: data.id ?? createLocalId(),
+        business_id: data.business_id,
+        category_id: data.category_id,
+        name: data.name,
+        description: data.description,
+        sku: data.sku,
+        barcode: data.barcode,
+        unit: data.unit ?? 'piece',
+        cost_price: Number(data.cost_price ?? 0),
+        selling_price: Number(data.selling_price ?? 0),
+        reorder_level: Number(data.reorder_level ?? 5),
+        image_url: data.image_url,
+        is_service: Boolean(data.is_service ?? false),
+        is_active: data.is_active ?? true,
+        created_at: data.created_at ?? timestamp,
+        updated_at: timestamp,
+        inventory: data.inventory ?? [],
+      };
+
       set((state) => ({ products: [...state.products, product] }));
+      await Promise.all([
+        upsertCachedProducts(product.business_id, [product]),
+        enqueueMutations([
+          {
+            operation: 'upsert',
+            table: 'products',
+            payload: stripProductForWrite(product),
+            onConflict: 'id',
+            description: `Sync product ${product.name}`,
+          },
+        ]),
+      ]);
       return product;
     } catch (err: any) {
       set({ error: err.message });
       return null;
-    } finally {
-      set({ isLoading: false });
     }
   },
 
   updateProduct: async (id, data) => {
     try {
-      const { error } = await supabase
-        .from('products')
-        .update(data)
-        .eq('id', id);
-
-      if (error) throw error;
+      const timestamp = nowIso();
+      const patch = { ...data, updated_at: timestamp };
       set((state) => ({
-        products: state.products.map((p) => (p.id === id ? { ...p, ...data } : p)),
+        products: state.products.map((p) => (p.id === id ? { ...p, ...patch } : p)),
       }));
+      const product = get().products.find((item) => item.id === id);
+      if (product) {
+        await upsertCachedProducts(product.business_id, [{ ...product, ...patch } as Product]);
+      }
+      await enqueueMutations([
+        {
+          operation: 'update',
+          table: 'products',
+          payload: patch,
+          match: { id },
+          conflictPolicy: 'server-wins-if-newer',
+          description: 'Sync product update',
+        },
+      ]);
     } catch (err: any) {
       set({ error: err.message });
     }

@@ -1,6 +1,16 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { PaymentStatus, Product, Purchase } from '@/types';
+import { PaymentStatus, Product, Purchase, PurchaseItem, Supplier, SupplierDebt } from '@/types';
+import { useBusinessStore } from '@/store/businessStore';
+import {
+  createLocalId,
+  enqueueMutations,
+  nowIso,
+  readCachedRows,
+  readCachedProducts,
+  upsertCachedProducts,
+  upsertCachedRows,
+} from '@/lib/offlineStore';
 
 export const roundAmount = (value: number) => Number(value.toFixed(2));
 
@@ -479,6 +489,303 @@ async function writePurchaseRecord(
   }
 }
 
+const stripProductForWrite = (product: Product) => {
+  const { category, inventory, ...payload } = product;
+  return payload;
+};
+
+const hydrateLocalProductsByName = async (businessId: string) => {
+  const memoryProducts = useBusinessStore.getState().products;
+  const cachedProducts = await readCachedProducts(businessId);
+  const products = [...cachedProducts, ...memoryProducts].filter((product) => product.is_active);
+  return new Map(products.map((product) => [normalizeProductName(product.name), product]));
+};
+
+async function ensureLocalDraftProduct(params: {
+  branchId: string;
+  businessId: string;
+  productDraft: PurchaseDraftProduct;
+  unitCost: number;
+  productsByName: Map<string, Product>;
+  mutations: Parameters<typeof enqueueMutations>[0];
+}) {
+  const { branchId, businessId, productDraft, unitCost, productsByName, mutations } = params;
+  const cleanedName = productDraft.name.trim().replace(/\s+/g, ' ');
+  if (!cleanedName) {
+    throw new Error('Each purchase item must have a product name.');
+  }
+
+  const nameKey = normalizeProductName(cleanedName);
+  const existing = productsByName.get(nameKey);
+  if (existing) {
+    return existing;
+  }
+
+  const timestamp = nowIso();
+  const product: Product = {
+    id: createLocalId(),
+    business_id: businessId,
+    name: cleanedName,
+    unit: productDraft.unit.trim() || 'piece',
+    cost_price: roundAmount(unitCost),
+    selling_price: roundAmount(productDraft.selling_price > 0 ? productDraft.selling_price : unitCost),
+    reorder_level: roundAmount(productDraft.reorder_level ?? 5),
+    is_service: productDraft.is_service ?? false,
+    is_active: true,
+    created_at: timestamp,
+    updated_at: timestamp,
+    inventory: productDraft.is_service
+      ? []
+      : [
+          {
+            id: createLocalId(),
+            product_id: '',
+            branch_id: branchId,
+            quantity: 0,
+            last_updated: timestamp,
+          },
+        ],
+  };
+
+  product.inventory = product.inventory?.map((inventory) => ({
+    ...inventory,
+    product_id: product.id,
+  }));
+
+  productsByName.set(nameKey, product);
+  useBusinessStore.setState((state) => ({ products: [...state.products, product] }));
+  await upsertCachedProducts(businessId, [product]);
+
+  mutations.push({
+    operation: 'upsert',
+    table: 'products',
+    payload: stripProductForWrite(product),
+    onConflict: 'id',
+    description: `Sync product ${product.name}`,
+  });
+
+  if (!product.is_service) {
+    mutations.push({
+      operation: 'upsert',
+      table: 'inventory',
+      payload: {
+        product_id: product.id,
+        branch_id: branchId,
+        quantity: 0,
+        last_updated: timestamp,
+      },
+      onConflict: 'product_id,branch_id',
+      description: `Sync inventory shell for ${product.name}`,
+    });
+  }
+
+  return product;
+}
+
+async function resolvePurchaseItemsOffline(
+  items: PurchaseCartItem[],
+  businessId: string,
+  branchId: string,
+  mutations: Parameters<typeof enqueueMutations>[0],
+) {
+  if (items.length === 0) {
+    throw new Error('Add at least one item to this purchase.');
+  }
+
+  const productsByName = await hydrateLocalProductsByName(businessId);
+  const resolvedItems: Array<ResolvedPurchaseItem & { product: Product }> = [];
+
+  for (const item of items) {
+    const quantity = roundAmount(item.quantity);
+    const unitCost = roundAmount(item.unit_cost);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new Error(`Enter a valid quantity for ${getPurchaseCartItemName(item) || 'this item'}.`);
+    }
+    if (!Number.isFinite(unitCost) || unitCost < 0) {
+      throw new Error(`Enter a valid unit cost for ${getPurchaseCartItemName(item) || 'this item'}.`);
+    }
+
+    let product = item.product;
+    if (!product && item.productDraft) {
+      product = await ensureLocalDraftProduct({
+        branchId,
+        businessId,
+        productDraft: item.productDraft,
+        unitCost,
+        productsByName,
+        mutations,
+      });
+    }
+
+    if (!product) {
+      throw new Error('Every purchase item must be linked to a product.');
+    }
+
+    resolvedItems.push({
+      product_id: product.id,
+      product,
+      quantity,
+      unit_cost: unitCost,
+      total_cost: roundAmount(quantity * unitCost),
+    });
+  }
+
+  return resolvedItems;
+}
+
+async function writePurchaseRecordOffline(params: CreatePurchaseParams) {
+  const timestamp = nowIso();
+  const mutations: Parameters<typeof enqueueMutations>[0] = [];
+  const resolvedItems = await resolvePurchaseItemsOffline(
+    params.items,
+    params.businessId,
+    params.branchId,
+    mutations,
+  );
+  const totals = calculatePurchaseTotals(
+    resolvedItems.map((item) => ({
+      key: item.product_id,
+      quantity: item.quantity,
+      unit_cost: item.unit_cost,
+      total_cost: item.total_cost,
+    })),
+    params.discountAmount ?? 0,
+    params.amountPaid,
+  );
+
+  const purchaseId = createLocalId();
+  const supplierId = params.supplierId || createLocalId();
+  const supplierName = params.supplierName.trim();
+  const purchaseNumber = `OFF-PUR-${Date.now().toString(36).toUpperCase()}`;
+  const supplier: Supplier = {
+    id: supplierId,
+    business_id: params.businessId,
+    name: supplierName,
+    is_active: true,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
+
+  const purchaseItems: PurchaseItem[] = resolvedItems.map((item) => ({
+    id: createLocalId(),
+    purchase_id: purchaseId,
+    product_id: item.product_id,
+    quantity: item.quantity,
+    unit_cost: item.unit_cost,
+    total_cost: item.total_cost,
+    created_at: timestamp,
+    product: item.product,
+  }));
+
+  const purchase: Purchase = {
+    id: purchaseId,
+    business_id: params.businessId,
+    branch_id: params.branchId,
+    supplier_id: supplierId,
+    purchase_number: purchaseNumber,
+    total_amount: totals.totalAmount,
+    discount_amount: totals.discountAmount,
+    amount_paid: totals.amountPaid,
+    amount_owed: totals.amountOwed,
+    payment_status: totals.paymentStatus,
+    notes: params.notes,
+    purchase_date: params.purchaseDate,
+    recorded_by: params.userId,
+    created_at: timestamp,
+    updated_at: timestamp,
+    supplier: { ...supplier },
+    items: purchaseItems,
+  };
+
+  const supplierDebt: SupplierDebt | null =
+    totals.amountOwed > 0
+      ? {
+          id: createLocalId(),
+          business_id: params.businessId,
+          supplier_id: supplierId,
+          purchase_id: purchaseId,
+          supplier_name: supplierName,
+          original_amount: totals.totalAmount,
+          amount_paid: totals.amountPaid,
+          balance: totals.amountOwed,
+          status: totals.paymentStatus === 'partial' ? 'partial' : 'outstanding',
+          notes: params.notes,
+          created_at: timestamp,
+          updated_at: timestamp,
+        }
+      : null;
+
+  mutations.push(
+    {
+      operation: 'upsert',
+      table: 'suppliers',
+      payload: supplier,
+      onConflict: 'id',
+      description: `Sync supplier ${supplier.name}`,
+    },
+    {
+      operation: 'upsert',
+      table: 'purchases',
+      payload: {
+        id: purchase.id,
+        business_id: purchase.business_id,
+        branch_id: purchase.branch_id,
+        supplier_id: purchase.supplier_id,
+        purchase_number: purchase.purchase_number,
+        total_amount: purchase.total_amount,
+        discount_amount: purchase.discount_amount,
+        amount_paid: purchase.amount_paid,
+        amount_owed: purchase.amount_owed,
+        payment_status: purchase.payment_status,
+        notes: purchase.notes ?? null,
+        purchase_date: purchase.purchase_date,
+        recorded_by: purchase.recorded_by ?? null,
+        created_at: purchase.created_at,
+        updated_at: purchase.updated_at,
+      },
+      onConflict: 'id',
+      description: `Sync purchase ${purchase.purchase_number}`,
+    },
+    {
+      operation: 'upsert',
+      table: 'purchase_items',
+      payload: purchaseItems.map((item) => ({
+        id: item.id,
+        purchase_id: item.purchase_id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit_cost: item.unit_cost,
+        total_cost: item.total_cost,
+        created_at: item.created_at,
+      })),
+      onConflict: 'id',
+      description: `Sync purchase items for ${purchase.purchase_number}`,
+    },
+  );
+
+  if (supplierDebt) {
+    mutations.push({
+      operation: 'upsert',
+      table: 'supplier_debts',
+      payload: supplierDebt,
+      onConflict: 'id',
+      description: `Sync supplier debt for ${supplierName}`,
+    });
+  }
+
+  await Promise.all([
+    upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'purchases', [purchase]),
+    upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'purchase_items', purchaseItems),
+    supplierDebt
+      ? upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'supplier_debts', [supplierDebt])
+      : Promise.resolve(),
+    upsertCachedRows({ businessId: params.businessId }, 'suppliers', [supplier]),
+    enqueueMutations(mutations),
+  ]);
+
+  return purchase;
+}
+
 export const usePurchaseStore = create<PurchaseState>((set) => ({
   purchases: [],
   isLoading: false,
@@ -501,9 +808,22 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
         .limit(50);
 
       throwIfError(error);
-      set({ purchases: (data as Purchase[]) ?? [] });
+      const serverPurchases = (data as Purchase[]) ?? [];
+      const cachedPurchases = await readCachedRows<Purchase>({ businessId, branchId }, 'purchases');
+      const serverPurchaseIds = new Set(serverPurchases.map((purchase) => purchase.id));
+      const purchases = [
+        ...serverPurchases,
+        ...cachedPurchases.filter((purchase) => !serverPurchaseIds.has(purchase.id)),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      set({ purchases });
+      await upsertCachedRows({ businessId, branchId }, 'purchases', purchases);
     } catch (err: any) {
-      set({ error: err.message ?? 'Unable to load purchases.' });
+      const purchases = await readCachedRows<Purchase>({ businessId, branchId }, 'purchases');
+      if (purchases.length > 0) {
+        set({ purchases, error: null });
+      } else {
+        set({ error: err.message ?? 'Unable to load purchases.' });
+      }
     } finally {
       set({ isLoading: false });
     }
@@ -521,7 +841,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
   recordPurchase: async (params) => {
     set({ isSaving: true, error: null });
     try {
-      const purchase = await writePurchaseRecord(params);
+      const purchase = await writePurchaseRecordOffline(params);
       set((state) => ({ purchases: [purchase, ...state.purchases.filter((item) => item.id !== purchase.id)] }));
       return purchase;
     } catch (err: any) {

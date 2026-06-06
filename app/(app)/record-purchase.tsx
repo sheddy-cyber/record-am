@@ -22,7 +22,8 @@ import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, PRODUCT_UNITS } from '@/constants';
 import { PurchasePrefillPayload, parsePurchasePrefillPayload } from '@/lib/purchasePrefill';
 import { supabase } from '@/lib/supabase';
-import { addMismatch } from '@/lib/mismatchService';
+import { addMismatch, removeMismatch } from '@/lib/mismatchService';
+import { createLocalId } from '@/lib/offlineStore';
 import { Product, Purchase } from '@/types';
 
 const formatCurrency = (value: number) =>
@@ -35,6 +36,12 @@ const formatNumberInput = (value: number) =>
 
 const normalizeName = (value: string) =>
   value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const CUSTOM_UNIT_VALUE = '__custom_unit__';
+const UNIT_OPTIONS = [
+  ...PRODUCT_UNITS,
+  { value: CUSTOM_UNIT_VALUE, label: 'Custom unit' },
+];
 
 const getItemName = (item: PurchaseCartItem) =>
   item.product?.name ?? item.productDraft?.name ?? 'Item';
@@ -81,6 +88,7 @@ export default function RecordPurchaseScreen() {
     originalProductId?: string | string[];
     originalStockQty?: string | string[];
     originalUnitCost?: string | string[];
+    mismatchId?: string | string[];
   }>();
   const lockedSupplierId = Array.isArray(params.supplierId) ? params.supplierId[0] : params.supplierId;
   const purchaseId = Array.isArray(params.purchaseId) ? params.purchaseId[0] : params.purchaseId;
@@ -89,6 +97,7 @@ export default function RecordPurchaseScreen() {
   const originalProductId = Array.isArray(params.originalProductId) ? params.originalProductId[0] : params.originalProductId;
   const originalStockQty = Array.isArray(params.originalStockQty) ? params.originalStockQty[0] : params.originalStockQty;
   const originalUnitCost = Array.isArray(params.originalUnitCost) ? params.originalUnitCost[0] : params.originalUnitCost;
+  const mismatchId = Array.isArray(params.mismatchId) ? params.mismatchId[0] : params.mismatchId;
   const isEditing = Boolean(purchaseId);
   const isSyncFlowActive = syncFlow === '1';
 
@@ -114,6 +123,8 @@ export default function RecordPurchaseScreen() {
   const [prefillOriginals, setPrefillOriginals] = useState<Record<string, { quantity: number; unit_cost: number }>>({});
 
   const closeScreen = () => router.back();
+  const newItemUnitIsPreset = PRODUCT_UNITS.some((unit) => unit.value === newItemUnit);
+  const selectedNewItemUnit = newItemUnitIsPreset ? newItemUnit : CUSTOM_UNIT_VALUE;
 
   const initializeFromPurchase = (purchase: Purchase) => {
     const linkedSupplier = purchase.supplier_id
@@ -329,6 +340,12 @@ export default function RecordPurchaseScreen() {
       return;
     }
 
+    const cleanUnit = newItemUnit.trim().replace(/\s+/g, ' ');
+    if (!cleanUnit) {
+      Alert.alert('Unit required', 'Select a unit of measurement or enter a custom unit.');
+      return;
+    }
+
     setCart((previousCart) => {
       const existingIndex = previousCart.findIndex((item) => normalizeName(getItemName(item)) === normalizeName(cleanName));
       if (existingIndex >= 0) {
@@ -347,7 +364,7 @@ export default function RecordPurchaseScreen() {
         ...previousCart,
         createPurchaseCartItemFromDraft({
           name: cleanName,
-          unit: newItemUnit.trim() || 'piece',
+          unit: cleanUnit,
           selling_price: 0,
         }),
       ];
@@ -428,24 +445,21 @@ export default function RecordPurchaseScreen() {
           const existingSupplier = suppliers.find(
             (s) => s.name.trim().toLowerCase() === trimmedName.toLowerCase()
           );
-          if (existingSupplier) {
-            finalSupplierId = existingSupplier.id;
-          } else {
-            const newSupplier = await useSupplierStore.getState().createSupplier({
-              business_id: currentBusiness.id,
-              name: trimmedName,
-              is_active: true,
-            });
-            if (newSupplier) {
-              finalSupplierId = newSupplier.id;
-            }
-          }
+          finalSupplierId = existingSupplier?.id ?? createLocalId();
+        }
+
+        if (!finalSupplierId) {
+          Alert.alert(
+            'Supplier required',
+            'Select an existing supplier or enter a supplier name so this purchase appears in supplier records.'
+          );
+          return;
         }
 
         const savePayload = {
           businessId: currentBusiness.id,
           branchId: currentBranch.id,
-          supplierId: finalSupplierId || undefined,
+          supplierId: finalSupplierId,
           supplierName: supplierName.trim(),
           items: cart,
           amountPaid: totals.amountPaid,
@@ -466,8 +480,12 @@ export default function RecordPurchaseScreen() {
         Toast.show({
           type: 'success',
           text1: isEditing ? 'Purchase updated' : 'Goods recorded',
-          text2: `${purchase.purchase_number} - ${formatCurrency(totals.totalAmount)} from ${supplierName.trim()}`,
+          text2: `${purchase.purchase_number} - ${formatCurrency(totals.totalAmount)} from ${supplierName.trim()}${isEditing ? '' : ' queued for sync'}`,
         });
+
+        if (mismatchId) {
+          await removeMismatch(mismatchId);
+        }
 
         const { getAppSettings } = await import('@/lib/appSettings');
         const settings = await getAppSettings();
@@ -559,7 +577,7 @@ export default function RecordPurchaseScreen() {
     const matchingCartItem = cart.find(
       (item) => item.product?.id === originalProductId
     );
-    const hasMismatch = isSyncFlowActive && originalProductId && matchingCartItem && (
+    const hasMismatch = !mismatchId && isSyncFlowActive && originalProductId && matchingCartItem && (
       roundAmount(matchingCartItem.quantity) !== roundAmount(originalQtyNum) ||
       roundAmount(matchingCartItem.unit_cost) !== roundAmount(originalCostNum)
     );
@@ -677,11 +695,23 @@ export default function RecordPurchaseScreen() {
               />
               <SelectField
                 label="Unit of Measurement"
-                value={newItemUnit}
-                options={PRODUCT_UNITS}
-                onChange={setNewItemUnit}
+                value={selectedNewItemUnit}
+                options={UNIT_OPTIONS}
+                onChange={(value) => {
+                  setNewItemUnit(value === CUSTOM_UNIT_VALUE ? '' : value);
+                }}
                 containerStyle={{ marginBottom: 8 }}
               />
+              {selectedNewItemUnit === CUSTOM_UNIT_VALUE ? (
+                <InputField
+                  label="Custom Unit"
+                  value={newItemUnit}
+                  onChangeText={setNewItemUnit}
+                  placeholder="e.g. crate, bundle, plate"
+                  required
+                  containerStyle={{ marginBottom: 8 }}
+                />
+              ) : null}
               <Button
                 title="Add Item To Purchase"
                 onPress={addNewItemToCart}

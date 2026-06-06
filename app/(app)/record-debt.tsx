@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
-import { supabase } from '@/lib/supabase';
+import { recordDebtOffline } from '@/lib/offlineRecords';
 import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -40,25 +40,20 @@ export default function RecordDebtScreen() {
     setSavingDebt(true);
     try {
       const amount = parseFloat(debtAmount);
-      const { error } = await supabase.from('customer_debts').insert({
-        business_id: currentBusiness.id,
-        branch_id: currentBranch.id,
-        customer_name: debtCustomerName.trim(),
-        customer_phone: debtCustomerPhone.trim() || undefined,
-        original_amount: amount,
-        amount_paid: 0,
-        balance: amount,
-        due_date: debtDueDate || undefined,
-        status: 'outstanding',
+      await recordDebtOffline({
+        businessId: currentBusiness.id,
+        branchId: currentBranch.id,
+        customerName: debtCustomerName.trim(),
+        customerPhone: debtCustomerPhone.trim() || undefined,
+        amount,
+        dueDate: debtDueDate || undefined,
         notes: debtNotes.trim() || undefined,
       });
-
-      if (error) throw error;
 
       Toast.show({
         type: 'success',
         text1: 'Debt recorded',
-        text2: `${debtCustomerName.trim()} \u00B7 ${formatCurrency(amount)}`,
+        text2: `${debtCustomerName.trim()} \u00B7 ${formatCurrency(amount)} queued for sync`,
       });
 
       closeScreen();

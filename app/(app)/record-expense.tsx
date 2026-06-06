@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
-import { supabase } from '@/lib/supabase';
+import { recordExpenseOffline } from '@/lib/offlineRecords';
 import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -14,7 +14,7 @@ import { PaymentMethod } from '@/types';
 
 export default function RecordExpenseScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch } = useAuthStore();
+  const { currentBusiness, currentBranch, user } = useAuthStore();
 
   const [expenseCategory, setExpenseCategory] = useState('rent');
   const [expenseDescription, setExpenseDescription] = useState('');
@@ -38,22 +38,21 @@ export default function RecordExpenseScreen() {
 
     setSavingExpense(true);
     try {
-      const { error } = await supabase.from('expenses').insert({
-        business_id: currentBusiness.id,
-        branch_id: currentBranch.id,
+      await recordExpenseOffline({
+        businessId: currentBusiness.id,
+        branchId: currentBranch.id,
+        userId: user?.id,
         category: expenseCategory,
         description: expenseDescription.trim(),
         amount: parseFloat(expenseAmount),
-        payment_method: expenseMethod,
-        expense_date: expenseDate,
+        paymentMethod: expenseMethod,
+        expenseDate,
       });
-
-      if (error) throw error;
 
       Toast.show({
         type: 'success',
         text1: 'Expense recorded',
-        text2: `${expenseDescription.trim()} \u00B7 ${CURRENCY_SYMBOL}${parseFloat(expenseAmount).toLocaleString()}`,
+        text2: `${expenseDescription.trim()} \u00B7 ${CURRENCY_SYMBOL}${parseFloat(expenseAmount).toLocaleString()} queued for sync`,
       });
 
       closeScreen();

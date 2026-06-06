@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
+import { readCachedRows } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { Button, ConfirmDialog, EmptyState, LoadingScreen, PaymentSummary } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -106,8 +107,21 @@ export default function SalesScreen() {
         items: data ?? [],
       });
     } catch (err) {
-      Alert.alert('Unable to generate receipt', 'The sale receipt could not be prepared right now.');
-      console.error(err);
+      const [cachedSales, cachedItems] = await Promise.all([
+        readCachedRows<Sale>({ businessId: currentBusiness.id, branchId: currentBranch.id }, 'sales'),
+        readCachedRows<any>({ businessId: currentBusiness.id, branchId: currentBranch.id }, 'sale_items'),
+      ]);
+      const cachedSale = cachedSales.find((item) => item.id === saleId);
+
+      if (cachedSale) {
+        setPreviewSale({
+          ...cachedSale,
+          items: cachedItems.filter((item) => item.sale_id === saleId),
+        });
+      } else {
+        Alert.alert('Unable to generate receipt', 'The sale receipt could not be prepared right now.');
+        console.error(err);
+      }
     } finally {
       setGeneratingReceiptId(null);
     }

@@ -9,6 +9,11 @@ import { useBusinessStore } from '@/store/businessStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { isDebtSettlementSale } from '@/lib/records';
+import {
+  buildCachedDashboardData,
+  cacheCustomerDebts,
+  upsertCachedExpenses,
+} from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { Badge, Card, EmptyState, LoadingScreen, SectionHeader, StatCard, PaymentSummary } from '@/components/ui';
 import { BrandMark, ScreenShell, ScreenHeader, HeaderAction } from '@/components/layout';
@@ -71,7 +76,7 @@ export default function DashboardScreen() {
           .lte('created_at', todayEnd),
         supabase
           .from('expenses')
-          .select('amount')
+          .select('*')
           .eq('business_id', currentBusiness.id)
           .eq('branch_id', currentBranch.id)
           .eq('expense_date', todayDate),
@@ -123,8 +128,16 @@ export default function DashboardScreen() {
 
       setRecentActivities(recentRevenueRes);
       setRecentDebts((debtListRes.data as CustomerDebt[]) ?? []);
+      await Promise.all([
+        cacheCustomerDebts(currentBusiness.id, currentBranch.id, (debtListRes.data as CustomerDebt[]) ?? []),
+        upsertCachedExpenses(currentBusiness.id, currentBranch.id, (todayExpensesRes.data as any[]) ?? []),
+      ]);
     } catch (err) {
       console.error(err);
+      const cached = await buildCachedDashboardData(currentBusiness.id, currentBranch.id);
+      setStats(cached.stats);
+      setRecentActivities(cached.recentActivities);
+      setRecentDebts(cached.recentDebts);
     } finally {
       setLoading(false);
       setRefreshing(false);
