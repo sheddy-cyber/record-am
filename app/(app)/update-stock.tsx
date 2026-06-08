@@ -57,7 +57,7 @@ export default function UpdateStockScreen() {
   const { currentBusiness, currentBranch } = useAuthStore();
   const { products, fetchProducts } = useBusinessStore();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
   const [costPrice, setCostPrice] = useState('');
@@ -142,9 +142,12 @@ export default function UpdateStockScreen() {
       return;
     }
 
-    setLoading(true);
+    if (useBusinessStore.getState().products.length === 0) {
+      setLoading(true);
+    }
+    
     try {
-      await fetchProducts(currentBusiness.id);
+      void fetchProducts(currentBusiness.id);
     } finally {
       setLoading(false);
     }
@@ -376,9 +379,6 @@ export default function UpdateStockScreen() {
     }
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading product..." />;
-  }
 
   if (!product) {
     return (

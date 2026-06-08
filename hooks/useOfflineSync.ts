@@ -1,22 +1,28 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
 import { flushOfflineQueue, scheduleOfflineSync } from '@/lib/offlineStore';
+import { useNetworkStatus } from './useNetworkStatus';
 
 export function useOfflineSync(enabled = true) {
+  const { isOnline } = useNetworkStatus();
+
   useEffect(() => {
     if (!enabled) return undefined;
 
     let active = true;
 
     const sync = () => {
-      if (!active) return;
+      if (!active || !isOnline) return;
       void flushOfflineQueue();
     };
 
-    scheduleOfflineSync(300);
+    if (isOnline) {
+      scheduleOfflineSync(300);
+    }
+
     const interval = setInterval(sync, 15000);
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
+      if (state === 'active' && isOnline) {
         scheduleOfflineSync(300);
       }
     });
@@ -26,5 +32,5 @@ export function useOfflineSync(enabled = true) {
       clearInterval(interval);
       subscription.remove();
     };
-  }, [enabled]);
+  }, [enabled, isOnline]);
 }

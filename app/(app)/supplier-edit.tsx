@@ -75,9 +75,6 @@ export default function SupplierEditScreen() {
     closeScreen();
   };
 
-  if (isLoading && !supplier) {
-    return <LoadingScreen message="Loading supplier..." />;
-  }
 
   if (!supplier) {
     return (

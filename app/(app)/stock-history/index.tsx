@@ -44,7 +44,7 @@ export default function StockHistoryScreen() {
   const { currentBusiness, currentBranch } = useAuthStore();
 
   const [movements, setMovements] = useState<StockMovement[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<string>('all');
@@ -88,7 +88,6 @@ export default function StockHistoryScreen() {
   const totalIn = filteredMovements.filter((movement) => movement.type === 'stock_in').reduce((sum, movement) => sum + movement.quantity, 0);
   const totalOut = filteredMovements.filter((movement) => ['stock_out', 'damage', 'wastage'].includes(movement.type)).reduce((sum, movement) => sum + movement.quantity, 0);
 
-  if (loading) return <LoadingScreen message="Loading stock history..." />;
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">

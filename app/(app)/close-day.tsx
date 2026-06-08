@@ -82,9 +82,6 @@ export default function CloseDayScreen() {
     closeScreen();
   };
 
-  if (isLoading && !summary) {
-    return <LoadingScreen message="Loading daily balance..." />;
-  }
 
   if (!summary) {
     return (

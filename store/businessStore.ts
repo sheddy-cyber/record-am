@@ -124,7 +124,14 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   },
 
   fetchProducts: async (businessId) => {
-    set({ isLoading: true });
+    try {
+      const cachedProducts = await readCachedProducts(businessId);
+      if (cachedProducts.length > 0) set({ products: cachedProducts });
+    } catch {}
+
+    const currentProducts = get().products;
+    if (currentProducts.length === 0) set({ isLoading: true });
+
     try {
       const { data, error } = await supabase
         .from('products')

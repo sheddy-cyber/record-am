@@ -61,9 +61,6 @@ export default function CustomerDetailScreen() {
     setShowRemoveConfirm(true);
   };
 
-  if (isLoading && !customer) {
-    return <LoadingScreen message="Loading customer..." />;
-  }
 
   if (!customer) {
     return (

@@ -33,7 +33,7 @@ interface SupplierState {
   setSelectedSupplier: (supplier: SupplierWithStats | null) => void;
 }
 
-export const useSupplierStore = create<SupplierState>((set) => ({
+export const useSupplierStore = create<SupplierState>((set, get) => ({
   suppliers: [],
   selectedSupplier: null,
   supplierPurchases: [],
@@ -43,7 +43,15 @@ export const useSupplierStore = create<SupplierState>((set) => ({
   error: null,
 
   fetchSuppliers: async (businessId) => {
-    set({ isLoading: true, error: null });
+    try {
+      const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
+      if (cachedSuppliers.length > 0) set({ suppliers: cachedSuppliers });
+    } catch {}
+
+    const currentSuppliers = get().suppliers;
+    if (currentSuppliers.length === 0) set({ isLoading: true });
+    set({ error: null });
+
     try {
       const { data: suppliers, error } = await supabase
         .from('suppliers')
@@ -171,23 +179,39 @@ export const useSupplierStore = create<SupplierState>((set) => ({
   },
 
   updateSupplier: async (id, data) => {
-    set({ isSaving: true });
+    set({ isSaving: true, error: null });
     try {
-      const { error } = await supabase
-        .from('suppliers')
-        .update(data)
-        .eq('id', id);
+      const timestamp = nowIso();
+      const patch = { ...data, updated_at: timestamp };
 
-      if (error) throw error;
+      const targetSupplier = get().suppliers.find((s) => s.id === id);
+      const businessId = targetSupplier?.business_id;
 
       set((state) => ({
         suppliers: state.suppliers.map((s) =>
-          s.id === id ? { ...s, ...data } : s
+          s.id === id ? { ...s, ...patch } : s
         ),
         selectedSupplier: state.selectedSupplier?.id === id
-          ? { ...state.selectedSupplier, ...data }
+          ? { ...state.selectedSupplier, ...patch }
           : state.selectedSupplier,
       }));
+
+      if (businessId) {
+        const cached = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
+        const updated = cached.map((s) => (s.id === id ? { ...s, ...patch } : s));
+        await upsertCachedRows({ businessId }, 'suppliers', updated);
+      }
+
+      await enqueueMutations([
+        {
+          operation: 'update',
+          table: 'suppliers',
+          payload: patch,
+          match: { id },
+          conflictPolicy: 'server-wins-if-newer',
+          description: `Sync supplier update`,
+        },
+      ]);
     } catch (err: any) {
       set({ error: err.message });
     } finally {
@@ -196,15 +220,33 @@ export const useSupplierStore = create<SupplierState>((set) => ({
   },
 
   deleteSupplier: async (id) => {
+    set({ error: null });
     try {
-      await supabase
-        .from('suppliers')
-        .update({ is_active: false })
-        .eq('id', id);
+      const timestamp = nowIso();
+      const targetSupplier = get().suppliers.find((s) => s.id === id);
+      const businessId = targetSupplier?.business_id;
 
       set((state) => ({
         suppliers: state.suppliers.filter((s) => s.id !== id),
+        selectedSupplier: state.selectedSupplier?.id === id ? null : state.selectedSupplier,
       }));
+
+      if (businessId) {
+        const cached = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
+        const updated = cached.filter((s) => s.id !== id);
+        await upsertCachedRows({ businessId }, 'suppliers', updated);
+      }
+
+      await enqueueMutations([
+        {
+          operation: 'update',
+          table: 'suppliers',
+          payload: { is_active: false, updated_at: timestamp },
+          match: { id },
+          conflictPolicy: 'server-wins-if-newer',
+          description: `Sync supplier deletion`,
+        },
+      ]);
     } catch (err: any) {
       set({ error: err.message });
     }

@@ -20,7 +20,7 @@ export default function Index() {
 
   if (!session) return <Redirect href="/(auth)/login" />;
   if (!currentBusiness) return <Redirect href="/(auth)/onboarding" />;
-  return <Redirect href="/(app)/(tabs)/dashboard" />;
+  return <Redirect href="/(app)/(tabs)" />;
 }
 
 const styles = StyleSheet.create({

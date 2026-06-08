@@ -15,6 +15,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useDashboardStore } from '@/store/dashboardStore';
 import { supabase } from '@/lib/supabase';
 import { recordSaleOffline } from '@/lib/offlineRecords';
 import {
@@ -48,7 +50,8 @@ const roundAmount = (value: number) => Number(value.toFixed(2));
 export default function RecordSaleScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, user } = useAuthStore();
-  const { products, fetchProducts } = useBusinessStore();
+  const products = useBusinessStore((s) => s.products);
+  const fetchProducts = useBusinessStore((s) => s.fetchProducts);
 
   const [loading, setLoading] = useState(true);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -143,16 +146,21 @@ export default function RecordSaleScreen() {
 
   const loadProducts = useCallback(async () => {
     if (!currentBusiness) return;
-    setLoading(true);
+    
+    // Only show loading state if we have absolutely no products
+    if (useBusinessStore.getState().products.length === 0) {
+      setLoading(true);
+    }
+    
     try {
-      await Promise.all([
-        fetchProducts(currentBusiness.id),
-        loadPinnedProductIds(),
-        loadSoldProductQuantities(),
-      ]);
+      void fetchProducts(currentBusiness.id);
+      await loadPinnedProductIds();
     } finally {
       setLoading(false);
     }
+    
+    // Load sold quantities in background - not critical for initial render
+    loadSoldProductQuantities();
   }, [currentBusiness, fetchProducts, loadPinnedProductIds, loadSoldProductQuantities]);
 
   useEffect(() => {
@@ -508,6 +516,10 @@ export default function RecordSaleScreen() {
         text2: `${sale.sale_number} \u00B7 ${formatCurrency(cartTotal)} queued for sync`,
       });
 
+      // Instantly refresh analytics with the new cached data
+      void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+      void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+
       closeScreen();
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -516,9 +528,6 @@ export default function RecordSaleScreen() {
     }
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading products..." />;
-  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">

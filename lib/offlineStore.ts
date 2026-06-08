@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetInfo from '@react-native-community/netinfo';
 import { supabase } from '@/lib/supabase';
+import { useOfflineStore } from '@/store/offlineStore';
 import { CustomerDebt, DashboardStats, Expense, Product, RevenueActivity } from '@/types';
 
 type Primitive = string | number | boolean | null;
@@ -206,6 +208,7 @@ export async function enqueueMutations(
   ];
 
   await writeOfflineQueue(nextQueue);
+  void useOfflineStore.getState().updatePendingCount();
   scheduleOfflineSync();
 }
 
@@ -382,7 +385,14 @@ export async function flushOfflineQueue() {
     return { synced: 0, remaining: await getPendingMutationCount(), conflicts: 0 };
   }
 
+  // Check network connectivity first
+  const netState = await NetInfo.fetch();
+  if (!netState.isConnected) {
+    return { synced: 0, remaining: await getPendingMutationCount(), conflicts: 0 };
+  }
+
   syncInFlight = true;
+  useOfflineStore.getState().setSyncing(true);
 
   try {
     const queue = await readOfflineQueue();
@@ -425,9 +435,12 @@ export async function flushOfflineQueue() {
     }
 
     await writeOfflineQueue(remainingQueue);
+    useOfflineStore.getState().setLastSyncTime(new Date().toISOString());
     return { synced, remaining: remainingQueue.length, conflicts };
   } finally {
     syncInFlight = false;
+    useOfflineStore.getState().setSyncing(false);
+    void useOfflineStore.getState().updatePendingCount();
   }
 }
 

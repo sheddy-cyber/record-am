@@ -46,7 +46,11 @@ export default function SupplierDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      import('react-native').then(({ InteractionManager }) => {
+        InteractionManager.runAfterInteractions(() => {
+          load();
+        });
+      });
     }, [load]),
   );
 
@@ -70,9 +74,6 @@ export default function SupplierDetailScreen() {
     setPurchaseToDelete(purchaseId);
   };
 
-  if (isLoading && !supplier) {
-    return <LoadingScreen message="Loading supplier..." />;
-  }
 
   if (!supplier) {
     return (

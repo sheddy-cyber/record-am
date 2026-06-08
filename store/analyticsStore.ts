@@ -7,6 +7,7 @@ import {
   readCachedRows,
   upsertCachedExpenses,
   upsertCachedRows,
+  upsertCachedRevenueActivities,
 } from '@/lib/offlineStore';
 import { format, subDays, startOfDay, endOfDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 
@@ -58,6 +59,7 @@ interface AnalyticsState {
 
   setDateRange: (range: DateRange) => void;
   fetchAnalytics: (businessId: string, branchId: string) => Promise<void>;
+  refreshFromCache: (businessId: string, branchId: string) => Promise<void>;
 }
 
 function getDateBounds(range: DateRange): { from: Date; to: Date; prevFrom: Date; prevTo: Date } {
@@ -248,9 +250,40 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
   setDateRange: (range) => set({ dateRange: range }),
 
+  refreshFromCache: async (businessId, branchId) => {
+    const { dateRange } = get();
+    try {
+      const cached = await buildCachedAnalytics(businessId, branchId, dateRange);
+      set({
+        summary: cached.summary,
+        salesTrend: cached.salesTrend,
+        topProducts: cached.topProducts,
+        bottomProducts: cached.bottomProducts,
+        expenseBreakdown: cached.expenseBreakdown,
+      });
+    } catch (err) {
+      console.error('[analytics] refreshFromCache failed', err);
+    }
+  },
+
   fetchAnalytics: async (businessId, branchId) => {
     set({ isLoading: true, error: null });
     const { dateRange } = get();
+    
+    // 1. Instantly load from cache for "super fast" feeling
+    try {
+      const cached = await buildCachedAnalytics(businessId, branchId, dateRange);
+      set({
+        summary: cached.summary,
+        salesTrend: cached.salesTrend,
+        topProducts: cached.topProducts,
+        bottomProducts: cached.bottomProducts,
+        expenseBreakdown: cached.expenseBreakdown,
+      });
+    } catch (err) {
+      console.warn('[analytics] Failed to instantly load cache', err);
+    }
+
     const { from, to, prevFrom, prevTo } = getDateBounds(dateRange);
 
     const fromISO = from.toISOString();
@@ -262,7 +295,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       // ── Current period sales ──────────────────────────────
       const { data: currentSales } = await supabase
         .from('sales')
-        .select('amount_paid, created_at, notes')
+        .select('id, amount_paid, created_at, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('created_at', fromISO)
@@ -279,7 +312,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
       const { data: currentRepayments } = await supabase
         .from('debt_repayments')
-        .select('amount, created_at, debt:customer_debts!inner(business_id, branch_id)')
+        .select('id, debt_id, amount, payment_method, notes, created_at, debt:customer_debts!inner(id, business_id, branch_id)')
         .eq('debt.business_id', businessId)
         .eq('debt.branch_id', branchId)
         .gte('created_at', fromISO)
@@ -322,9 +355,42 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         .gte('sale.created_at', fromISO)
         .lte('sale.created_at', toISO);
 
+      const saleActivities = (currentSales ?? [])
+        .filter((sale) => !isDebtSettlementSale(sale.notes))
+        .map((sale) => ({
+          id: sale.id,
+          kind: 'sale' as const,
+          customer_name: 'Customer',
+          reference: sale.notes ? (sale.notes.length > 20 ? sale.notes.slice(0, 20) + '...' : sale.notes) : 'Sale',
+          total_amount: sale.amount_paid,
+          amount_paid: sale.amount_paid,
+          amount_owed: 0,
+          payment_status: 'paid' as const,
+          payment_method: 'mixed' as const,
+          notes: sale.notes,
+          created_at: sale.created_at,
+          sale_id: sale.id,
+        }));
+
+      const repaymentActivities = (currentRepayments ?? []).map((repayment) => ({
+        id: repayment.id,
+        kind: 'debt_repayment' as const,
+        customer_name: 'Customer',
+        reference: repayment.notes || 'Debt Repayment',
+        total_amount: repayment.amount,
+        amount_paid: repayment.amount,
+        amount_owed: 0,
+        payment_status: 'paid' as const,
+        payment_method: repayment.payment_method || 'mixed',
+        notes: repayment.notes || undefined,
+        created_at: repayment.created_at,
+        debt_id: repayment.debt_id,
+      }));
+
       await Promise.all([
         upsertCachedExpenses(businessId, branchId, (currentExpenses as any[]) ?? []),
         upsertCachedRows({ businessId, branchId }, 'sale_items', (saleItems as any[]) ?? []),
+        upsertCachedRevenueActivities(businessId, branchId, [...saleActivities, ...repaymentActivities]),
       ]);
 
       // ── Compute summary ───────────────────────────────────

@@ -599,8 +599,8 @@ export default function RecordPurchaseScreen() {
     }
   };
 
-  if (!ready || (isLoading && products.length === 0)) {
-    return <LoadingScreen message={isEditing ? 'Loading purchase...' : 'Loading purchase setup...'} />;
+  if (!ready && isEditing) {
+    return <LoadingScreen message="Loading purchase..." />;
   }
 
   if (purchaseMissing) {

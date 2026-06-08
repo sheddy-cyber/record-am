@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { router } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { Button, Card, SectionHeader } from '@/components/ui';
@@ -10,11 +11,14 @@ import { APP_FOOTER_TEXT, BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS,
 import { BusinessType } from '@/types';
 import { getAppSettings, getTimeParts, isValidTimeInput, saveAppSettings } from '@/lib/appSettings';
 import { cancelDailySummaryNotification, scheduleDailySummaryNotification } from '@/lib/notifications';
+import { getPendingMutationCount, flushOfflineQueue } from '@/lib/offlineStore';
+import { useOfflineStore } from '@/store/offlineStore';
 import Toast from 'react-native-toast-message';
 
 export default function SettingsScreen() {
   const { currentBusiness, currentBranch, setCurrentBusiness } = useAuthStore();
   const { updateBusiness } = useBusinessStore();
+  const { isOnline, pendingCount: pendingMutations, isSyncing: syncing } = useOfflineStore();
 
   const [bizName, setBizName] = useState(currentBusiness?.name ?? '');
   const [bizType, setBizType] = useState<BusinessType>((currentBusiness?.type as BusinessType) ?? 'provisions');
@@ -46,6 +50,7 @@ export default function SettingsScreen() {
     };
 
     loadSettings();
+    void useOfflineStore.getState().updatePendingCount();
 
     return () => {
       active = false;
@@ -141,6 +146,24 @@ export default function SettingsScreen() {
       Alert.alert('Error', err.message);
     } finally {
       setInventorySaving(false);
+    }
+  };
+
+  const handleSyncNow = async () => {
+    if (!isOnline) {
+      Alert.alert('Offline', 'You are currently offline. Please connect to the internet to sync.');
+      return;
+    }
+
+    try {
+      await flushOfflineQueue();
+      Toast.show({
+        type: 'success',
+        text1: 'Sync completed',
+        text2: pendingMutations === 0 ? 'All changes synced' : `${pendingMutations} changes still pending`,
+      });
+    } catch (err: any) {
+      Alert.alert('Sync Error', err.message);
     }
   };
 
@@ -272,6 +295,66 @@ export default function SettingsScreen() {
               variant="secondary"
               size="md"
             />
+          </Card>
+
+          <Card>
+            <SectionHeader title="Sync Status" />
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 12,
+                borderBottomWidth: 1,
+                borderBottomColor: COLORS.border,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Feather name={isOnline ? 'wifi' : 'wifi-off'} size={20} color={isOnline ? COLORS.success : COLORS.danger} />
+                <View>
+                  <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                    {isOnline ? 'Online' : 'Offline'}
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                    {isOnline ? 'Connected to server' : 'Using local data'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingVertical: 12,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Feather
+                  name={pendingMutations === 0 ? 'check-circle' : 'cloud'}
+                  size={20}
+                  color={pendingMutations === 0 ? COLORS.success : COLORS.warning}
+                />
+                <View>
+                  <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                    {pendingMutations === 0 ? 'All synced' : `${pendingMutations} pending`}
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                    {pendingMutations === 0 ? 'No changes to sync' : 'Changes queued for sync'}
+                  </Text>
+                </View>
+              </View>
+            </View>
+            {pendingMutations > 0 && isOnline && (
+              <Button
+                title="Sync Now"
+                onPress={handleSyncNow}
+                loading={syncing}
+                variant="primary"
+                size="sm"
+                style={{ marginTop: 8 }}
+              />
+            )}
           </Card>
 
           <Card style={{ backgroundColor: '#F9FAFB' }}>

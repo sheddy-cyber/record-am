@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { useAlertStore } from '@/store/alertStore';
 import { Button, Card } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { BrandMark, BrandWordmark, ScreenShell } from '@/components/layout';
@@ -68,9 +69,9 @@ export default function OnboardingScreen() {
       setCurrentBusiness(business);
       if (branch) setCurrentBranch(branch);
       setUserRole('owner');
-      router.replace('/(app)/(tabs)/dashboard');
+      router.replace('/(app)/(tabs)');
     } catch (err: any) {
-      Alert.alert('Setup failed', err.message || 'Could not create business. Please try again.');
+      useAlertStore.getState().showAlert('Setup failed', err.message || 'Could not create business. Please try again.', { type: 'danger' });
     } finally {
       setLoading(false);
     }

@@ -68,9 +68,6 @@ export default function DailyBalanceScreen() {
     setShowReopenConfirm(true);
   };
 
-  if (isLoading && !summary) {
-    return <LoadingScreen message="Loading daily balance..." />;
-  }
 
   const discrepancy = summary ? (summary.cash_in_hand_actual ?? 0) - summary.cash_in_hand_expected : 0;
   const isClosed = summary?.is_closed ?? false;

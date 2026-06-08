@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Text, View } from 'react-native';
+import { Alert, FlatList, InteractionManager, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router, useNavigation } from 'expo-router';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { differenceInDays, format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { cacheCustomerDebts, readCachedCustomerDebts } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { useTabStore } from '@/store/tabStore';
 import { shareDebtReminderViaWhatsApp } from '@/lib/reports';
 import { Badge, Button, Divider, EmptyState, LoadingScreen } from '@/components/ui';
 import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -18,16 +19,18 @@ import { CustomerDebt } from '@/types';
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-export default function DebtsScreen() {
+function DebtsScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch } = useAuthStore();
-  const navigation = useNavigation();
+  const businessId = useAuthStore((s) => s.currentBusiness?.id);
+  const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const businessName = useAuthStore((s) => s.currentBusiness?.name);
+
 
   const [debts, setDebts] = useState<CustomerDebt[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadDebts = useCallback(async () => {
-    if (!currentBusiness || !currentBranch) {
+    if (!businessId || !branchId) {
       setLoading(false);
       return;
     }
@@ -36,49 +39,50 @@ export default function DebtsScreen() {
       const { data, error } = await supabase
         .from('customer_debts')
         .select('*')
-        .eq('business_id', currentBusiness.id)
-        .eq('branch_id', currentBranch.id)
+        .eq('business_id', businessId)
+        .eq('branch_id', branchId)
         .neq('status', 'settled')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       const serverDebts = (data as CustomerDebt[]) ?? [];
-      const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
+      const cachedDebts = await readCachedCustomerDebts(businessId, branchId);
       const serverDebtIds = new Set(serverDebts.map((debt) => debt.id));
       const nextDebts = [
         ...serverDebts,
         ...cachedDebts.filter((debt) => !serverDebtIds.has(debt.id) && debt.status !== 'settled'),
       ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setDebts(nextDebts);
-      await cacheCustomerDebts(currentBusiness.id, currentBranch.id, nextDebts);
+      await cacheCustomerDebts(businessId, branchId, nextDebts);
     } catch (err) {
       console.error(err);
-      const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
+      const cachedDebts = await readCachedCustomerDebts(businessId, branchId);
       setDebts(cachedDebts.filter((debt) => debt.status !== 'settled'));
     } finally {
       setLoading(false);
     }
-  }, [currentBranch, currentBusiness]);
+  }, [businessId, branchId]);
+
+  const activeTab = useTabStore((s) => s.activeTab);
 
   useEffect(() => {
-    loadDebts();
-  }, [loadDebts]);
+    if (activeTab === 'debts') {
+      InteractionManager.runAfterInteractions(() => {
+        loadDebts();
+      });
+    }
+  }, [activeTab, loadDebts]);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadDebts();
-    });
-    return unsubscribe;
-  }, [navigation, loadDebts]);
+  // Refetch handled by activeTab selector above — no focus listener needed
 
   useRealtimeRefresh({
-    channelName: `debts-screen-${currentBranch?.id ?? 'unknown'}`,
-    enabled: Boolean(currentBusiness && currentBranch),
-    watch: [currentBusiness?.id, currentBranch?.id],
+    channelName: `debts-screen-${branchId ?? 'unknown'}`,
+    enabled: Boolean(businessId && branchId),
+    watch: [businessId, branchId],
     tables: [
-      ...(currentBranch ? [{ table: 'customer_debts', filter: `branch_id=eq.${currentBranch.id}` }] : []),
+      ...(branchId ? [{ table: 'customer_debts', filter: `branch_id=eq.${branchId}` }] : []),
       { table: 'debt_repayments' },
-      ...(currentBranch ? [{ table: 'sales', filter: `branch_id=eq.${currentBranch.id}` }] : []),
+      ...(branchId ? [{ table: 'sales', filter: `branch_id=eq.${branchId}` }] : []),
     ],
     onRefresh: loadDebts,
   });
@@ -97,9 +101,7 @@ export default function DebtsScreen() {
     return new Date(debt.due_date) < new Date();
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading debts..." />;
-  }
+  // Render instantly without blocking UI. RefreshControl handles background loading state.
 
   return (
     <SwipeableTabScreen name="debts">
@@ -125,6 +127,10 @@ export default function DebtsScreen() {
           data={debts}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
           ListHeaderComponent={
             <FlatSection style={{ padding: 16, marginTop: SP.page, marginBottom: 12 }}>
               <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Outstanding balance</Text>
@@ -243,7 +249,7 @@ export default function DebtsScreen() {
                       item.customer_name,
                       item.customer_phone,
                       item.balance,
-                      currentBusiness?.name ?? '',
+                      businessName ?? '',
                       item.due_date,
                     );
                   }}
@@ -260,3 +266,5 @@ export default function DebtsScreen() {
     </SwipeableTabScreen>
   );
 }
+
+export default React.memo(DebtsScreen);

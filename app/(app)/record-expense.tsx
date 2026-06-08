@@ -5,6 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useDashboardStore } from '@/store/dashboardStore';
 import { recordExpenseOffline } from '@/lib/offlineRecords';
 import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
@@ -54,6 +56,9 @@ export default function RecordExpenseScreen() {
         text1: 'Expense recorded',
         text2: `${expenseDescription.trim()} \u00B7 ${CURRENCY_SYMBOL}${parseFloat(expenseAmount).toLocaleString()} queued for sync`,
       });
+
+      void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+      void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
 
       closeScreen();
     } catch (err: any) {

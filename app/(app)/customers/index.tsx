@@ -9,8 +9,8 @@ import { Badge, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
-const formatCurrency = (value: number) =>
-  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+const formatCurrency = (value: number | undefined | null) =>
+  `${CURRENCY_SYMBOL}${(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
 export default function CustomersScreen() {
   const { currentBusiness } = useAuthStore();
@@ -33,9 +33,6 @@ export default function CustomersScreen() {
       (customer.phone ?? '').includes(search),
   );
 
-  if (isLoading && !customers.length) {
-    return <LoadingScreen message="Loading customers..." />;
-  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">

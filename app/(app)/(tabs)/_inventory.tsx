@@ -7,6 +7,7 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { useTabStore } from '@/store/tabStore';
 import { deleteProductRecord } from '@/lib/recordDeletion';
 import { Badge, Button, ConfirmDialog, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -25,10 +26,12 @@ const formatCount = (value: number) =>
     ? `${value}`
     : value.toFixed(2).replace(/\.00$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
 
-export default function InventoryScreen() {
+function InventoryScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch } = useAuthStore();
-  const { products, fetchProducts } = useBusinessStore();
+  const businessId = useAuthStore((s) => s.currentBusiness?.id);
+  const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const products = useBusinessStore((s) => s.products);
+  const fetchProducts = useBusinessStore((s) => s.fetchProducts);
 
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
@@ -40,37 +43,52 @@ export default function InventoryScreen() {
   const openCreateProduct = () => router.push('/(app)/add-stock');
 
   const load = useCallback(async () => {
-    if (!currentBusiness) {
+    if (!businessId) {
       setLoading(false);
       setRefreshing(false);
       return;
     }
 
-    await fetchProducts(currentBusiness.id);
+    if (useBusinessStore.getState().products.length === 0) {
+      setLoading(true);
+    }
+    
+    void fetchProducts(businessId);
+    
     setLoading(false);
     setRefreshing(false);
-  }, [currentBusiness, fetchProducts]);
+  }, [businessId, fetchProducts]);
+
+  const activeTab = useTabStore((s) => s.activeTab);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (activeTab === 'inventory') {
+      import('react-native').then(({ InteractionManager }) => {
+        InteractionManager.runAfterInteractions(() => {
+          load();
+        });
+      });
+    }
+  }, [activeTab, load]);
+
+  // Refetch handled by activeTab selector above — no focus listener needed
 
   useRealtimeRefresh({
-    channelName: `inventory-screen-${currentBranch?.id ?? 'unknown'}`,
-    enabled: Boolean(currentBusiness && currentBranch),
-    watch: [currentBusiness?.id, currentBranch?.id],
+    channelName: `inventory-screen-${branchId ?? 'unknown'}`,
+    enabled: Boolean(businessId && branchId),
+    watch: [businessId, branchId],
     tables: [
-      ...(currentBranch ? [{ table: 'inventory', filter: `branch_id=eq.${currentBranch.id}` }] : []),
-      ...(currentBranch ? [{ table: 'stock_movements', filter: `branch_id=eq.${currentBranch.id}` }] : []),
-      ...(currentBusiness ? [{ table: 'products', filter: `business_id=eq.${currentBusiness.id}` }] : []),
+      ...(branchId ? [{ table: 'inventory', filter: `branch_id=eq.${branchId}` }] : []),
+      ...(branchId ? [{ table: 'stock_movements', filter: `branch_id=eq.${branchId}` }] : []),
+      ...(businessId ? [{ table: 'products', filter: `business_id=eq.${businessId}` }] : []),
     ],
     onRefresh: load,
   });
 
   const getProductStock = useCallback((product: Product) => {
-    if (!currentBranch) return 0;
-    return product.inventory?.find((item) => item.branch_id === currentBranch.id)?.quantity ?? 0;
-  }, [currentBranch]);
+    if (!branchId) return 0;
+    return product.inventory?.find((item) => item.branch_id === branchId)?.quantity ?? 0;
+  }, [branchId]);
 
   const filteredProducts = useMemo(
     () =>
@@ -78,8 +96,8 @@ export default function InventoryScreen() {
         const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase());
         const stock = getProductStock(product);
 
-        if (filter === 'low_stock') return matchesSearch && stock > 0 && stock <= product.reorder_level;
-        if (filter === 'out_of_stock') return matchesSearch && stock <= 0;
+        if (filter === 'low_stock') return matchesSearch && !product.is_service && stock > 0 && stock <= product.reorder_level;
+        if (filter === 'out_of_stock') return matchesSearch && !product.is_service && stock <= 0;
         return matchesSearch;
       }),
     [filter, getProductStock, products, search],
@@ -97,9 +115,7 @@ export default function InventoryScreen() {
     setProductToDelete(product);
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading inventory..." />;
-  }
+  // Render instantly without blocking UI. RefreshControl handles background loading state.
 
   return (
     <SwipeableTabScreen name="inventory">
@@ -178,6 +194,10 @@ export default function InventoryScreen() {
           data={filteredProducts}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -296,3 +316,5 @@ export default function InventoryScreen() {
     </SwipeableTabScreen>
   );
 }
+
+export default React.memo(InventoryScreen);

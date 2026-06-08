@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useIsFocused } from '@react-navigation/native';
 import { supabase } from '@/lib/supabase';
 
 type RealtimeTableConfig = {
@@ -47,7 +48,8 @@ export function useRealtimeRefresh({
       }, debounceMs);
     };
 
-    let channel = supabase.channel(channelName);
+    const uniqueChannelName = `${channelName}-${Math.random().toString(36).substring(7)}`;
+    let channel = supabase.channel(uniqueChannelName);
 
     for (const table of tables) {
       channel = channel.on(

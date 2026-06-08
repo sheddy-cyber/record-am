@@ -4,6 +4,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useDashboardStore } from '@/store/dashboardStore';
 import { supabase } from '@/lib/supabase';
 import { recordRepaymentOffline } from '@/lib/offlineRecords';
 import { readCachedCustomerDebts } from '@/lib/offlineStore';
@@ -22,7 +24,7 @@ export default function RecordPaymentScreen() {
   const debtId = Array.isArray(params.debtId) ? params.debtId[0] : params.debtId;
   const { currentBusiness, currentBranch, user } = useAuthStore();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<CustomerDebt | null>(null);
   const [repayAmount, setRepayAmount] = useState('');
   const [repayMethod, setRepayMethod] = useState<PaymentMethod>('cash');
@@ -37,7 +39,19 @@ export default function RecordPaymentScreen() {
       return;
     }
 
-    setLoading(true);
+    if (currentBusiness && currentBranch) {
+      const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
+      const cached = cachedDebts.find((debt) => debt.id === debtId);
+      if (cached) {
+        setSelectedDebt(cached);
+        setLoading(false); // Instantly remove loading screen
+      } else {
+        setLoading(true);
+      }
+    } else {
+      setLoading(true);
+    }
+
     try {
       const { data, error } = await supabase
         .from('customer_debts')
@@ -49,10 +63,7 @@ export default function RecordPaymentScreen() {
       setSelectedDebt((data as CustomerDebt) ?? null);
     } catch (err) {
       console.error(err);
-      if (currentBusiness && currentBranch) {
-        const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
-        setSelectedDebt(cachedDebts.find((debt) => debt.id === debtId) ?? null);
-      } else {
+      if (!selectedDebt) {
         setSelectedDebt(null);
       }
     } finally {
@@ -98,6 +109,9 @@ export default function RecordPaymentScreen() {
             : `${formatCurrency(amount)} queued for sync. Balance remains in debts.`,
       });
 
+      void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+      void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+
       closeScreen();
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -106,9 +120,6 @@ export default function RecordPaymentScreen() {
     }
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading debt..." />;
-  }
 
   if (!selectedDebt) {
     return (

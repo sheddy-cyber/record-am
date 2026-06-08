@@ -32,7 +32,7 @@ export default function AddStockScreen() {
     createProduct,
   } = useBusinessStore();
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
   const [costPrice, setCostPrice] = useState('');
@@ -47,9 +47,11 @@ export default function AddStockScreen() {
   const load = useCallback(async () => {
     if (!currentBusiness) return;
 
-    setLoading(true);
+    if (useBusinessStore.getState().products.length === 0) {
+      setLoading(true);
+    }
     try {
-      await fetchProducts(currentBusiness.id);
+      void fetchProducts(currentBusiness.id);
     } finally {
       setLoading(false);
     }
@@ -239,9 +241,6 @@ export default function AddStockScreen() {
     }
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading inventory setup..." />;
-  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">

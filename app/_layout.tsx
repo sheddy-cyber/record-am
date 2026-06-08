@@ -11,9 +11,12 @@ import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
 import { BlurView } from 'expo-blur';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
+import { useAlertStore } from '@/store/alertStore';
+import { useTabStore } from '@/store/tabStore';
 import { useAuthStore } from '@/store/authStore';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
+import { GlobalDialog } from '@/components/ui/GlobalDialog';
 import '../global.css';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -246,7 +249,8 @@ export default function RootLayout() {
         subscription = Notifications.addNotificationResponseReceivedListener((response) => {
           const data = response.notification.request.content.data;
           if (data?.type === 'sync_mismatch') {
-            router.push('/(app)/(tabs)/inventory');
+            useTabStore.getState().setActiveTab('inventory');
+            router.push('/(app)/(tabs)');
           }
         });
       } catch (err) {
@@ -271,12 +275,13 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: COLORS.surface }}>
-        <Stack screenOptions={{ headerShown: false }}>
+        <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(app)" />
         </Stack>
         <StatusBar style="dark" backgroundColor={COLORS.surface} />
+        <GlobalDialog />
         <Toast config={toastConfig} />
       </GestureHandlerRootView>
     </SafeAreaProvider>

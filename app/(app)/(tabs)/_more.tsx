@@ -21,9 +21,13 @@ type MenuSection = {
   }[];
 };
 
-export default function MoreScreen() {
+function MoreScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch, profile, signOut } = useAuthStore();
+  const profileName = useAuthStore((s) => s.profile?.full_name);
+  const businessName = useAuthStore((s) => s.currentBusiness?.name);
+  const businessCurrency = useAuthStore((s) => s.currentBusiness?.currency);
+  const branchName = useAuthStore((s) => s.currentBranch?.name);
+  const signOut = useAuthStore((s) => s.signOut);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const sections: MenuSection[] = [
@@ -96,7 +100,7 @@ export default function MoreScreen() {
         {
           icon: 'user',
           label: 'My Profile',
-          subtitle: profile?.full_name ?? 'Edit your details',
+          subtitle: profileName ?? 'Edit your details',
           onPress: () => router.push('/(app)/profile'),
           iconBg: COLORS.surface2,
           iconColor: COLORS.text.secondary,
@@ -104,7 +108,7 @@ export default function MoreScreen() {
         {
           icon: 'settings',
           label: 'Business Settings',
-          subtitle: currentBusiness?.name ?? 'Manage your setup',
+          subtitle: businessName ?? 'Manage your setup',
           onPress: () => router.push('/(app)/settings'),
           iconBg: COLORS.surface2,
           iconColor: COLORS.text.secondary,
@@ -134,7 +138,7 @@ export default function MoreScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title="More"
-        subtitle={profile?.full_name ?? 'User'}
+        subtitle={profileName ?? 'User'}
         theme="dark"
         right={
           <View
@@ -148,7 +152,7 @@ export default function MoreScreen() {
             }}
           >
             <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: '#FFFFFF' }}>
-              {(profile?.full_name ?? 'U').charAt(0).toUpperCase()}
+              {(profileName ?? 'U').charAt(0).toUpperCase()}
             </Text>
           </View>
         }
@@ -162,12 +166,12 @@ export default function MoreScreen() {
           <BrandMark size={42} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-              {currentBusiness?.name}
+              {businessName}
             </Text>
             <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>
-              {currentBranch?.name}
-              {' \u00B7 '}
-              {currentBusiness?.currency}
+              {branchName}
+              {' · '}
+              {businessCurrency}
             </Text>
           </View>
         </FlatSection>
@@ -214,3 +218,5 @@ export default function MoreScreen() {
     </SwipeableTabScreen>
   );
 }
+
+export default React.memo(MoreScreen);

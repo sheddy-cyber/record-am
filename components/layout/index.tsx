@@ -12,6 +12,7 @@ import { StatusBar } from "expo-status-bar";
 import { Feather } from "@expo/vector-icons";
 import Svg, { Rect, Path } from "react-native-svg";
 import { BRAND, COLORS, FONT, RADIUS, SP, TYPE } from "@/constants";
+import { useOfflineStore } from "@/store/offlineStore";
 
 type StatusBarMode = "light" | "dark";
 
@@ -131,6 +132,7 @@ export function ScreenHeader({
   const titleColor = isDark ? COLORS.text.inverse : COLORS.text.primary;
   const subtitleColor = isDark ? "rgba(250,250,248,0.5)" : COLORS.text.muted;
   const statusBarStyle: StatusBarMode = isDark ? "light" : "dark";
+  const { isOnline, isSyncing, pendingCount } = useOfflineStore();
 
   return (
     <View
@@ -157,7 +159,15 @@ export function ScreenHeader({
       >
         {left ? <View style={{ minWidth: 40 }}>{left}</View> : null}
         <View style={{ flex: 1 }}>
-          <Text style={{ ...TYPE.h2, color: titleColor }}>{title}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={{ ...TYPE.h2, color: titleColor }}>{title}</Text>
+            {!isOnline && (
+              <Feather name="cloud-off" size={14} color={COLORS.danger} style={{ opacity: 0.8 }} />
+            )}
+            {isOnline && (isSyncing || pendingCount > 0) && (
+              <Feather name="refresh-cw" size={14} color={COLORS.accent} style={{ opacity: 0.8 }} />
+            )}
+          </View>
           {subtitle ? (
             <Text
               style={{

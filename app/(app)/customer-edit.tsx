@@ -75,9 +75,6 @@ export default function CustomerEditScreen() {
     closeScreen();
   };
 
-  if (isLoading && !customer) {
-    return <LoadingScreen message="Loading customer..." />;
-  }
 
   if (!customer) {
     return (

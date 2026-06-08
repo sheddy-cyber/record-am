@@ -10,6 +10,7 @@ import {
   readCachedProducts,
   upsertCachedProducts,
   upsertCachedRows,
+  replaceCachedRows,
 } from '@/lib/offlineStore';
 
 export const roundAmount = (value: number) => Number(value.toFixed(2));
@@ -633,7 +634,7 @@ async function resolvePurchaseItemsOffline(
   return resolvedItems;
 }
 
-async function writePurchaseRecordOffline(params: CreatePurchaseParams) {
+async function writePurchaseRecordOffline(params: PurchaseMutationParams & { userId?: string; purchaseId?: string }) {
   const timestamp = nowIso();
   const mutations: Parameters<typeof enqueueMutations>[0] = [];
   const resolvedItems = await resolvePurchaseItemsOffline(
@@ -653,16 +654,22 @@ async function writePurchaseRecordOffline(params: CreatePurchaseParams) {
     params.amountPaid,
   );
 
-  const purchaseId = createLocalId();
-  const supplierId = params.supplierId || createLocalId();
+  const purchaseId = params.purchaseId || createLocalId();
+  let existingPurchase: Purchase | null = null;
+  if (params.purchaseId) {
+    existingPurchase = usePurchaseStore.getState().purchases.find((p) => p.id === params.purchaseId) ?? null;
+  }
+
+  const supplierId = params.supplierId || existingPurchase?.supplier_id || createLocalId();
   const supplierName = params.supplierName.trim();
-  const purchaseNumber = `OFF-PUR-${Date.now().toString(36).toUpperCase()}`;
+  const purchaseNumber = existingPurchase?.purchase_number || `OFF-PUR-${Date.now().toString(36).toUpperCase()}`;
+
   const supplier: Supplier = {
     id: supplierId,
     business_id: params.businessId,
     name: supplierName,
     is_active: true,
-    created_at: timestamp,
+    created_at: existingPurchase?.supplier?.created_at || timestamp,
     updated_at: timestamp,
   };
 
@@ -690,8 +697,8 @@ async function writePurchaseRecordOffline(params: CreatePurchaseParams) {
     payment_status: totals.paymentStatus,
     notes: params.notes,
     purchase_date: params.purchaseDate,
-    recorded_by: params.userId,
-    created_at: timestamp,
+    recorded_by: existingPurchase?.recorded_by || params.userId,
+    created_at: existingPurchase?.created_at || timestamp,
     updated_at: timestamp,
     supplier: { ...supplier },
     items: purchaseItems,
@@ -745,23 +752,42 @@ async function writePurchaseRecordOffline(params: CreatePurchaseParams) {
       },
       onConflict: 'id',
       description: `Sync purchase ${purchase.purchase_number}`,
-    },
-    {
-      operation: 'upsert',
-      table: 'purchase_items',
-      payload: purchaseItems.map((item) => ({
-        id: item.id,
-        purchase_id: item.purchase_id,
-        product_id: item.product_id,
-        quantity: item.quantity,
-        unit_cost: item.unit_cost,
-        total_cost: item.total_cost,
-        created_at: item.created_at,
-      })),
-      onConflict: 'id',
-      description: `Sync purchase items for ${purchase.purchase_number}`,
-    },
+    }
   );
+
+  if (params.purchaseId) {
+    mutations.push({
+      operation: 'delete',
+      table: 'purchase_items',
+      match: { purchase_id: purchaseId },
+      description: `Delete old items for purchase ${purchase.purchase_number}`,
+    });
+  }
+
+  mutations.push({
+    operation: 'upsert',
+    table: 'purchase_items',
+    payload: purchaseItems.map((item) => ({
+      id: item.id,
+      purchase_id: item.purchase_id,
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit_cost: item.unit_cost,
+      total_cost: item.total_cost,
+      created_at: item.created_at,
+    })),
+    onConflict: 'id',
+    description: `Sync purchase items for ${purchase.purchase_number}`,
+  });
+
+  if (params.purchaseId) {
+    mutations.push({
+      operation: 'delete',
+      table: 'supplier_debts',
+      match: { purchase_id: purchaseId },
+      description: `Clear supplier debt for purchase ${purchase.purchase_number}`,
+    });
+  }
 
   if (supplierDebt) {
     mutations.push({
@@ -773,16 +799,23 @@ async function writePurchaseRecordOffline(params: CreatePurchaseParams) {
     });
   }
 
-  await Promise.all([
-    upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'purchases', [purchase]),
-    upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'purchase_items', purchaseItems),
-    supplierDebt
-      ? upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'supplier_debts', [supplierDebt])
-      : Promise.resolve(),
-    upsertCachedRows({ businessId: params.businessId }, 'suppliers', [supplier]),
-    enqueueMutations(mutations),
-  ]);
+  // Update local cache
+  const cachedPurchases = await readCachedRows<Purchase>({ businessId: params.businessId, branchId: params.branchId }, 'purchases');
+  const filteredPurchases = cachedPurchases.filter((p) => p.id !== purchaseId);
+  await replaceCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'purchases', [purchase, ...filteredPurchases]);
 
+  const cachedItems = await readCachedRows<PurchaseItem>({ businessId: params.businessId, branchId: params.branchId }, 'purchase_items');
+  const filteredItems = cachedItems.filter((item) => item.purchase_id !== purchaseId);
+  await replaceCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'purchase_items', [...filteredItems, ...purchaseItems]);
+
+  const cachedDebts = await readCachedRows<SupplierDebt>({ businessId: params.businessId, branchId: params.branchId }, 'supplier_debts');
+  const filteredDebts = cachedDebts.filter((d) => d.purchase_id !== purchaseId);
+  const nextDebts = supplierDebt ? [...filteredDebts, supplierDebt] : filteredDebts;
+  await replaceCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'supplier_debts', nextDebts);
+
+  await upsertCachedRows({ businessId: params.businessId }, 'suppliers', [supplier]);
+
+  await enqueueMutations(mutations);
   return purchase;
 }
 
@@ -793,7 +826,15 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
   error: null,
 
   fetchPurchases: async (businessId, branchId) => {
-    set({ isLoading: true, error: null });
+    try {
+      const cachedPurchases = await readCachedRows<Purchase>({ businessId, branchId }, 'purchases');
+      if (cachedPurchases.length > 0) set({ purchases: cachedPurchases });
+    } catch {}
+
+    const currentPurchases = get().purchases;
+    if (currentPurchases.length === 0) set({ isLoading: true });
+    set({ error: null });
+
     try {
       const { data, error } = await supabase
         .from('purchases')
@@ -856,7 +897,7 @@ export const usePurchaseStore = create<PurchaseState>((set) => ({
   updatePurchase: async (params) => {
     set({ isSaving: true, error: null });
     try {
-      const purchase = await writePurchaseRecord(params);
+      const purchase = await writePurchaseRecordOffline(params);
       set((state) => {
         const exists = state.purchases.some((item) => item.id === purchase.id);
         return {

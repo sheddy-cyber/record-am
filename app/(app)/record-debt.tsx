@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
+import { useDashboardStore } from '@/store/dashboardStore';
 import { recordDebtOffline } from '@/lib/offlineRecords';
 import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
@@ -55,6 +56,8 @@ export default function RecordDebtScreen() {
         text1: 'Debt recorded',
         text2: `${debtCustomerName.trim()} \u00B7 ${formatCurrency(amount)} queued for sync`,
       });
+
+      void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
 
       closeScreen();
     } catch (err: any) {

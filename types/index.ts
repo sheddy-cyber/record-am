@@ -349,6 +349,7 @@ export interface RevenueActivity {
   customer_name: string;
   customer_phone?: string;
   reference: string;
+  items_summary?: string;
   total_amount: number;
   amount_paid: number;
   amount_owed: number;

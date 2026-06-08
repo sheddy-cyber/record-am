@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { Customer, Sale, CustomerDebt } from '@/types';
+import {
+  createLocalId,
+  enqueueMutations,
+  nowIso,
+  readCachedRows,
+  upsertCachedRows,
+} from '@/lib/offlineStore';
 
 export interface CustomerWithStats extends Customer {
   total_spent: number;
@@ -36,7 +43,15 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
   error: null,
 
   fetchCustomers: async (businessId) => {
-    set({ isLoading: true, error: null });
+    try {
+      const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
+      if (cachedCustomers.length > 0) set({ customers: cachedCustomers });
+    } catch {}
+
+    const currentCustomers = get().customers;
+    if (currentCustomers.length === 0) set({ isLoading: true });
+    set({ error: null });
+
     try {
       // Fetch customers
       const { data: customers, error } = await supabase
@@ -77,8 +92,14 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       );
 
       set({ customers: customersWithStats });
+      await upsertCachedRows({ businessId }, 'customers', customersWithStats);
     } catch (err: any) {
-      set({ error: err.message });
+      const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
+      if (cachedCustomers.length > 0) {
+        set({ customers: cachedCustomers, error: null });
+      } else {
+        set({ error: err.message });
+      }
     } finally {
       set({ isLoading: false });
     }
@@ -106,7 +127,19 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         customerDebts: (debts as CustomerDebt[]) ?? [],
       });
     } catch (err: any) {
-      set({ error: err.message });
+      // Try loading from cache if server fails
+      try {
+        const [cachedSales, cachedDebts] = await Promise.all([
+          readCachedRows<Sale>({ businessId }, 'sales'),
+          readCachedRows<CustomerDebt>({ businessId }, 'customer_debts'),
+        ]);
+        set({
+          customerSales: cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20),
+          customerDebts: cachedDebts.filter((d) => d.customer_id === customerId),
+        });
+      } catch {
+        set({ error: err.message });
+      }
     } finally {
       set({ isLoading: false });
     }
@@ -115,13 +148,23 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
   createCustomer: async (data) => {
     set({ isSaving: true, error: null });
     try {
-      const { data: customer, error } = await supabase
-        .from('customers')
-        .insert(data)
-        .select()
-        .single();
+      if (!data.business_id || !data.name) {
+        throw new Error('Customer business and name are required.');
+      }
 
-      if (error) throw error;
+      const timestamp = nowIso();
+      const customer: Customer = {
+        id: data.id ?? createLocalId(),
+        business_id: data.business_id,
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        address: data.address,
+        notes: data.notes,
+        is_active: data.is_active ?? true,
+        created_at: data.created_at ?? timestamp,
+        updated_at: timestamp,
+      };
 
       const withStats: CustomerWithStats = {
         ...customer,
@@ -131,6 +174,18 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       };
 
       set((state) => ({ customers: [withStats, ...state.customers] }));
+      await Promise.all([
+        upsertCachedRows({ businessId: customer.business_id }, 'customers', [withStats]),
+        enqueueMutations([
+          {
+            operation: 'upsert',
+            table: 'customers',
+            payload: customer,
+            onConflict: 'id',
+            description: `Sync customer ${customer.name}`,
+          },
+        ]),
+      ]);
       return customer;
     } catch (err: any) {
       set({ error: err.message });
@@ -141,23 +196,39 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
   },
 
   updateCustomer: async (id, data) => {
-    set({ isSaving: true });
+    set({ isSaving: true, error: null });
     try {
-      const { error } = await supabase
-        .from('customers')
-        .update(data)
-        .eq('id', id);
+      const timestamp = nowIso();
+      const patch = { ...data, updated_at: timestamp };
 
-      if (error) throw error;
+      const targetCustomer = get().customers.find((c) => c.id === id);
+      const businessId = targetCustomer?.business_id;
 
       set((state) => ({
         customers: state.customers.map((c) =>
-          c.id === id ? { ...c, ...data } : c
+          c.id === id ? { ...c, ...patch } : c
         ),
         selectedCustomer: state.selectedCustomer?.id === id
-          ? { ...state.selectedCustomer, ...data }
+          ? { ...state.selectedCustomer, ...patch }
           : state.selectedCustomer,
       }));
+
+      if (businessId) {
+        const cached = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
+        const updated = cached.map((c) => (c.id === id ? { ...c, ...patch } : c));
+        await upsertCachedRows({ businessId }, 'customers', updated);
+      }
+
+      await enqueueMutations([
+        {
+          operation: 'update',
+          table: 'customers',
+          payload: patch,
+          match: { id },
+          conflictPolicy: 'server-wins-if-newer',
+          description: `Sync customer update`,
+        },
+      ]);
     } catch (err: any) {
       set({ error: err.message });
     } finally {
@@ -166,15 +237,33 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
   },
 
   deleteCustomer: async (id) => {
+    set({ error: null });
     try {
-      await supabase
-        .from('customers')
-        .update({ is_active: false })
-        .eq('id', id);
+      const timestamp = nowIso();
+      const targetCustomer = get().customers.find((c) => c.id === id);
+      const businessId = targetCustomer?.business_id;
 
       set((state) => ({
         customers: state.customers.filter((c) => c.id !== id),
+        selectedCustomer: state.selectedCustomer?.id === id ? null : state.selectedCustomer,
       }));
+
+      if (businessId) {
+        const cached = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
+        const updated = cached.filter((c) => c.id !== id);
+        await upsertCachedRows({ businessId }, 'customers', updated);
+      }
+
+      await enqueueMutations([
+        {
+          operation: 'update',
+          table: 'customers',
+          payload: { is_active: false, updated_at: timestamp },
+          match: { id },
+          conflictPolicy: 'server-wins-if-newer',
+          description: `Sync customer deletion`,
+        },
+      ]);
     } catch (err: any) {
       set({ error: err.message });
     }

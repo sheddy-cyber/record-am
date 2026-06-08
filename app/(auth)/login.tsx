@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
+import { useAlertStore } from '@/store/alertStore';
+import { useOfflineStore } from '@/store/offlineStore';
 import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { BrandMark, BrandWordmark, ScreenShell } from '@/components/layout';
@@ -16,6 +18,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const { initialize } = useAuthStore();
+  const { isOnline } = useOfflineStore();
 
   const validate = () => {
     const nextErrors: typeof errors = {};
@@ -27,6 +30,10 @@ export default function LoginScreen() {
   };
 
   const handleLogin = async () => {
+    if (!isOnline) {
+      useAlertStore.getState().showAlert('Offline Mode', 'Internet connection required to log in. Please connect and try again.', { type: 'warning' });
+      return;
+    }
     if (!validate()) return;
     setLoading(true);
 
@@ -36,7 +43,7 @@ export default function LoginScreen() {
       await initialize();
       router.replace('/');
     } catch (err: any) {
-      Alert.alert('Sign in failed', err.message);
+      useAlertStore.getState().showAlert('Sign in failed', err.message, { type: 'danger' });
     } finally {
       setLoading(false);
     }
@@ -53,6 +60,14 @@ export default function LoginScreen() {
               <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.55)' }}>
                 Sign in to keep your records moving.
               </Text>
+              {!isOnline && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, backgroundColor: 'rgba(231,76,60,0.15)', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#e74c3c' }}>
+                  <Feather name="wifi-off" size={16} color="#e74c3c" />
+                  <Text style={{ color: '#fdf0ef', fontSize: 13, fontFamily: FONT.medium, flex: 1 }}>
+                    You are offline. An internet connection is required to sign in.
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -67,6 +82,7 @@ export default function LoginScreen() {
               error={errors.email}
               required
               leftIcon={<Feather name="mail" size={16} color={COLORS.text.muted} />}
+              editable={isOnline}
             />
             <InputField
               label="Password"
@@ -77,18 +93,25 @@ export default function LoginScreen() {
               error={errors.password}
               required
               leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
+              editable={isOnline}
               rightElement={
-                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }} disabled={!isOnline}>
                   <Feather name={showPassword ? 'eye-off' : 'eye'} size={16} color={COLORS.text.muted} />
                 </TouchableOpacity>
               }
             />
 
-            <TouchableOpacity style={{ alignSelf: 'flex-end', marginBottom: 24, marginTop: -4 }}>
-              <Text style={{ color: COLORS.accent, fontSize: 13, fontFamily: FONT.medium }}>Forgot password?</Text>
+            <TouchableOpacity style={{ alignSelf: 'flex-end', marginBottom: 24, marginTop: -4 }} disabled={!isOnline}>
+              <Text style={{ color: isOnline ? COLORS.accent : COLORS.text.muted, fontSize: 13, fontFamily: FONT.medium }}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <Button title="Sign In" onPress={handleLogin} loading={loading} size="lg" />
+            <Button
+              title={isOnline ? "Sign In" : "Offline Mode"}
+              onPress={handleLogin}
+              loading={loading}
+              disabled={!isOnline}
+              size="lg"
+            />
 
             <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 28 }}>
               <Text style={{ color: COLORS.text.muted, fontSize: 14, fontFamily: FONT.regular }}>Don&apos;t have an account? </Text>

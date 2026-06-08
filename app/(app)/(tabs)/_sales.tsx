@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Share, Text, TouchableOpacity, View, RefreshControl, Modal, ScrollView } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, FlatList, InteractionManager, Share, Text, TouchableOpacity, View, RefreshControl, Modal, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router, useNavigation } from 'expo-router';
+import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
 import { readCachedRows } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { useTabStore } from '@/store/tabStore';
 import { Button, ConfirmDialog, EmptyState, LoadingScreen, PaymentSummary } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
@@ -24,10 +25,15 @@ import { shareReceiptViaWhatsApp } from '@/lib/reports';
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 
-export default function SalesScreen() {
+function SalesScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch } = useAuthStore();
-  const navigation = useNavigation();
+  const businessId = useAuthStore((s) => s.currentBusiness?.id);
+  const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const businessName = useAuthStore((s) => s.currentBusiness?.name);
+  const businessAddress = useAuthStore((s) => s.currentBusiness?.address);
+  const businessPhone = useAuthStore((s) => s.currentBusiness?.phone);
+  const branchName = useAuthStore((s) => s.currentBranch?.name);
+  // Subscribe only to primitive values so unrelated auth store updates do not refetch this tab.
   const [activities, setActivities] = useState<RevenueActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -41,7 +47,7 @@ export default function SalesScreen() {
   const openRecordSale = () => router.push('/(app)/record-sale');
 
   const loadActivities = useCallback(async (isRefreshing = false) => {
-    if (!currentBusiness || !currentBranch) {
+    if (!businessId || !branchId) {
       setLoading(false);
       setRefreshing(false);
       return;
@@ -49,7 +55,7 @@ export default function SalesScreen() {
 
     if (!isRefreshing) setLoading(true);
     try {
-      const data = await fetchRevenueActivities(currentBusiness.id, currentBranch.id, 60);
+      const data = await fetchRevenueActivities(businessId, branchId, 60);
       setActivities(data);
     } catch (err) {
       console.error(err);
@@ -57,33 +63,34 @@ export default function SalesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentBranch, currentBusiness]);
+  }, [businessId, branchId]);
+
+  const activeTab = useTabStore((s) => s.activeTab);
 
   useEffect(() => {
-    loadActivities();
-  }, [loadActivities]);
+    if (activeTab === 'sales') {
+      InteractionManager.runAfterInteractions(() => {
+        loadActivities();
+      });
+    }
+  }, [activeTab, loadActivities]);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadActivities();
-    });
-    return unsubscribe;
-  }, [navigation, loadActivities]);
+  // Refetch handled by activeTab selector above — no focus listener needed
 
   useRealtimeRefresh({
-    channelName: `sales-screen-${currentBranch?.id ?? 'unknown'}`,
-    enabled: Boolean(currentBusiness && currentBranch),
-    watch: [currentBusiness?.id, currentBranch?.id],
+    channelName: `sales-screen-${branchId ?? 'unknown'}`,
+    enabled: Boolean(businessId && branchId),
+    watch: [businessId, branchId],
     tables: [
-      ...(currentBranch ? [{ table: 'sales', filter: `branch_id=eq.${currentBranch.id}` }] : []),
-      ...(currentBranch ? [{ table: 'customer_debts', filter: `branch_id=eq.${currentBranch.id}` }] : []),
+      ...(branchId ? [{ table: 'sales', filter: `branch_id=eq.${branchId}` }] : []),
+      ...(branchId ? [{ table: 'customer_debts', filter: `branch_id=eq.${branchId}` }] : []),
       { table: 'debt_repayments' },
     ],
     onRefresh: () => loadActivities(true),
   });
 
   const generateSaleReceipt = async (saleId: string) => {
-    if (!currentBusiness || !currentBranch) return;
+    if (!businessId || !branchId) return;
 
     setGeneratingReceiptId(saleId);
     try {
@@ -108,15 +115,15 @@ export default function SalesScreen() {
       });
     } catch (err) {
       const [cachedSales, cachedItems] = await Promise.all([
-        readCachedRows<Sale>({ businessId: currentBusiness.id, branchId: currentBranch.id }, 'sales'),
-        readCachedRows<any>({ businessId: currentBusiness.id, branchId: currentBranch.id }, 'sale_items'),
+        readCachedRows<Sale>({ businessId, branchId }, 'sales'),
+        readCachedRows<any>({ businessId, branchId }, 'sale_items'),
       ]);
-      const cachedSale = cachedSales.find((item) => item.id === saleId);
+      const cachedSale = cachedSales.find((item: any) => item.id === saleId);
 
       if (cachedSale) {
         setPreviewSale({
           ...cachedSale,
-          items: cachedItems.filter((item) => item.sale_id === saleId),
+          items: cachedItems.filter((item: any) => item.sale_id === saleId),
         });
       } else {
         Alert.alert('Unable to generate receipt', 'The sale receipt could not be prepared right now.');
@@ -128,7 +135,7 @@ export default function SalesScreen() {
   };
 
   const generateRepaymentReceipt = async (repaymentId: string) => {
-    if (!currentBusiness || !currentBranch) return;
+    if (!businessId || !branchId) return;
 
     setGeneratingReceiptId(repaymentId);
     try {
@@ -196,7 +203,7 @@ export default function SalesScreen() {
   };
 
   const downloadReceipt = async () => {
-    if (!previewSale || !currentBusiness || !currentBranch) return;
+    if (!previewSale || !businessId || !branchId) return;
     setIsDownloading(true);
     try {
       const { status } = await MediaLibrary.requestPermissionsAsync();
@@ -226,19 +233,101 @@ export default function SalesScreen() {
     setActivityToDelete(activity);
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading sales..." />;
-  }
+  const renderActivityItem = ({ item }: { item: RevenueActivity }) => {
+    const isRepayment = item.kind === 'debt_repayment';
+    const isGenerating = generatingReceiptId === (isRepayment ? item.id : item.sale_id);
+    
+    return (
+      <TouchableOpacity 
+        activeOpacity={0.7}
+        onLongPress={() => handleDeleteActivity(item)}
+        onPress={() => {
+          if (isRepayment) {
+            generateRepaymentReceipt(item.id);
+          } else if (item.sale_id) {
+            generateSaleReceipt(item.sale_id);
+          }
+        }}
+        style={styles.card}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.customerInfo}>
+            <View style={[styles.iconContainer, { backgroundColor: isRepayment ? COLORS.successLight : COLORS.accentLight }]}>
+              <Feather 
+                name={isRepayment ? "arrow-down-left" : "shopping-cart"} 
+                size={16} 
+                color={isRepayment ? COLORS.success : COLORS.accent} 
+              />
+            </View>
+            <View>
+              <Text style={styles.customerName} numberOfLines={1}>
+                {item.customer_name}
+              </Text>
+              <Text style={styles.dateText}>
+                {format(new Date(item.created_at), 'MMM d, h:mm a')}
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.amountInfo}>
+            <Text style={[styles.totalAmount, { color: isRepayment ? COLORS.success : COLORS.accent }]}>
+              {formatCurrency(item.total_amount)}
+            </Text>
+            {item.amount_owed > 0 ? (
+              <View style={styles.debtBadge}>
+                <Text style={styles.debtText}>
+                  Owes {formatCurrency(item.amount_owed)}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.paidText}>Fully Paid</Text>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.metaRow}>
+            <View style={styles.metaItem}>
+              <Feather name="credit-card" size={12} color={COLORS.text.muted} />
+              <Text style={styles.metaText}>{item.payment_method.replace('_', ' ').toUpperCase()}</Text>
+            </View>
+            <View style={styles.metaItem}>
+              <Feather name="hash" size={12} color={COLORS.text.muted} />
+              <Text style={styles.metaText}>{item.reference}</Text>
+            </View>
+          </View>
+          
+          {isGenerating ? (
+            <ActivityIndicator size="small" color={COLORS.accent} />
+          ) : (
+            <Feather name="chevron-right" size={16} color={COLORS.text.muted} />
+          )}
+        </View>
+
+        {item.notes ? (
+          <View style={styles.notesContainer}>
+            <Text style={styles.notesText} numberOfLines={1}>
+              "{item.notes}"
+            </Text>
+          </View>
+        ) : null}
+      </TouchableOpacity>
+    );
+  };
+
+
 
   return (
     <SwipeableTabScreen name="sales">
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title="Sales"
-        subtitle={`${activities.length} entr${activities.length === 1 ? 'y' : 'ies'}`}
+        subtitle={`${activities.length} activity record${activities.length === 1 ? '' : 's'}`}
         theme="dark"
         right={<HeaderAction icon="plus" label="Record Sale" onPress={openRecordSale} />}
       />
+
+
 
       {activities.length === 0 ? (
         <EmptyState
@@ -250,8 +339,16 @@ export default function SalesScreen() {
       ) : (
         <FlatList
           data={activities}
-          keyExtractor={(item) => `${item.kind}-${item.id}`}
-          contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
+          keyExtractor={(item: any) => `${item.kind}-${item.id}`}
+          contentContainerStyle={{ 
+            paddingHorizontal: SP.page, 
+            paddingTop: SP.page,
+            paddingBottom: insets.bottom + 92 
+          }}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          removeClippedSubviews={true}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -262,92 +359,8 @@ export default function SalesScreen() {
               tintColor={COLORS.accent}
             />
           }
-          renderItem={({ item, index }) => (
-            <View
-              style={{
-                paddingVertical: SP.page,
-                borderBottomWidth: index === activities.length - 1 ? 0 : 1,
-                borderBottomColor: COLORS.border,
-              }}
-            >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                    {item.kind === 'debt_repayment' ? `Payment \u00B7 ${item.customer_name}` : item.customer_name}
-                  </Text>
-                  <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
-                    {item.reference}
-                    {' \u00B7 '}
-                    {format(new Date(item.created_at), 'MMM d, h:mm a')}
-                  </Text>
-                  <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.text.muted, marginTop: 6 }}>
-                    {item.payment_method.replace('_', ' ').toUpperCase()}
-                  </Text>
-                  {item.notes ? (
-                    <Text
-                      style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 8 }}
-                      numberOfLines={2}
-                    >
-                      {item.notes}
-                    </Text>
-                  ) : null}
-                </View>
-                <PaymentSummary
-                  totalAmount={item.total_amount}
-                  amountPaid={item.amount_paid}
-                  amountOwed={item.amount_owed}
-                  tone="sales"
-                />
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                {item.kind === 'sale' && item.sale_id ? (
-                  <Button
-                    title={generatingReceiptId === item.sale_id ? 'Generating...' : 'Generate Receipt'}
-                    icon="file-text"
-                    onPress={() => generateSaleReceipt(item.sale_id!)}
-                    variant="ghost"
-                    size="sm"
-                    loading={generatingReceiptId === item.sale_id}
-                    disabled={Boolean(generatingReceiptId && generatingReceiptId !== item.sale_id)}
-                    style={{ flex: 1 }}
-                  />
-                ) : item.kind === 'debt_repayment' ? (
-                  <Button
-                    title={generatingReceiptId === item.id ? 'Generating...' : 'Generate Receipt'}
-                    icon="file-text"
-                    onPress={() => generateRepaymentReceipt(item.id)}
-                    variant="ghost"
-                    size="sm"
-                    loading={generatingReceiptId === item.id}
-                    disabled={Boolean(generatingReceiptId && generatingReceiptId !== item.id)}
-                    style={{ flex: 1 }}
-                  />
-                ) : (
-                  <View style={{ flex: 1, minHeight: 38, justifyContent: 'center' }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 12,
-                        color: item.amount_owed > 0 ? COLORS.warning : COLORS.success,
-                        textAlign: 'center',
-                      }}
-                    >
-                      {item.amount_owed > 0 ? `Remaining debt: ${formatCurrency(item.amount_owed)}` : 'Debt fully settled'}
-                    </Text>
-                  </View>
-                )}
-                <Button
-                  title="Delete"
-                  icon="trash-2"
-                  onPress={() => handleDeleteActivity(item)}
-                  variant="danger"
-                  size="sm"
-                  style={{ width: 112 }}
-                />
-              </View>
-            </View>
-          )}
+          renderItem={renderActivityItem}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         />
       )}
       {/* Receipt Preview Modal */}
@@ -420,7 +433,7 @@ export default function SalesScreen() {
               }}
               showsVerticalScrollIndicator={false}
             >
-              {previewSale && currentBusiness && currentBranch && (
+              {previewSale && businessName && branchName && (
                 <ViewShot
                   ref={receiptCaptureRef}
                   options={{ format: 'png', quality: 1, result: 'tmpfile' }}
@@ -428,8 +441,10 @@ export default function SalesScreen() {
                   <View collapsable={false}>
                     <ReceiptShareCard
                       sale={previewSale}
-                      business={currentBusiness}
-                      branch={currentBranch}
+                      businessName={businessName}
+                      businessAddress={businessAddress}
+                      businessPhone={businessPhone}
+                      branchName={branchName}
                     />
                   </View>
                 </ViewShot>
@@ -449,7 +464,7 @@ export default function SalesScreen() {
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <TouchableOpacity
                   onPress={async () => {
-                    if (!previewSale || !currentBusiness || !currentBranch) return;
+                    if (!previewSale || !businessId || !branchId) return;
                     setIsSharingImage(true);
                     try {
                       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -556,7 +571,123 @@ export default function SalesScreen() {
   );
 }
 
-function ReceiptShareCard({ sale, business, branch }: { sale: Sale; business: any; branch: any }) {
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  customerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: 12,
+  },
+  iconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  customerName: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+    marginBottom: 2,
+  },
+  dateText: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: COLORS.text.muted,
+  },
+  amountInfo: {
+    alignItems: 'flex-end',
+  },
+  totalAmount: {
+    fontSize: 17,
+    fontFamily: FONT.bold,
+    marginBottom: 4,
+  },
+  debtBadge: {
+    backgroundColor: COLORS.dangerLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+  },
+  debtText: {
+    fontSize: 10,
+    fontFamily: FONT.bold,
+    color: COLORS.danger,
+  },
+  paidText: {
+    fontSize: 11,
+    fontFamily: FONT.medium,
+    color: COLORS.success,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 11,
+    fontFamily: FONT.medium,
+    color: COLORS.text.muted,
+  },
+  notesContainer: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.03)',
+  },
+  notesText: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: COLORS.text.muted,
+    fontStyle: 'italic',
+  },
+
+});
+
+export default React.memo(SalesScreen);
+
+function ReceiptShareCard({
+  sale,
+  businessName,
+  businessAddress,
+  businessPhone,
+  branchName,
+}: {
+  sale: Sale;
+  businessName: string;
+  businessAddress?: string | null;
+  businessPhone?: string | null;
+  branchName: string;
+}) {
   const statusColor =
     sale.payment_status === 'paid'
       ? COLORS.success
@@ -576,7 +707,7 @@ function ReceiptShareCard({ sale, business, branch }: { sale: Sale; business: an
     >
       <View style={{ backgroundColor: COLORS.ink, paddingHorizontal: 24, paddingVertical: 24 }}>
         <Text style={{ fontSize: 22, fontFamily: FONT.bold, color: '#FFFDF8', textAlign: 'center' }}>
-          {business.name}
+          {businessName}
         </Text>
         <Text
           style={{
@@ -587,7 +718,7 @@ function ReceiptShareCard({ sale, business, branch }: { sale: Sale; business: an
             marginTop: 6,
           }}
         >
-          {[branch.name, business.address, business.phone].filter(Boolean).join(' · ')}
+          {[branchName, businessAddress, businessPhone].filter(Boolean).join(' · ')}
         </Text>
       </View>
 
@@ -651,7 +782,7 @@ function ReceiptShareCard({ sale, business, branch }: { sale: Sale; business: an
             ITEMS
           </Text>
           <View style={{ marginTop: 6 }}>
-            {sale.items.map((item, index) => (
+            {sale.items.map((item: any, index: number) => (
               <View
                 key={item.id ?? `${item.product_id}-${index}`}
                 style={{

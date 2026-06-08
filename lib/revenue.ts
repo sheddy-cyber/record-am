@@ -11,6 +11,10 @@ type SaleRow = Sale & {
     name?: string;
     phone?: string;
   } | null;
+  items?: {
+    quantity: number;
+    product?: { name: string } | null;
+  }[];
 };
 
 type DebtJoin = {
@@ -42,7 +46,7 @@ export async function fetchRevenueActivities(
     const [salesResponse, repaymentsResponse] = await Promise.all([
       supabase
         .from('sales')
-        .select('*, customer:customers(name, phone)')
+        .select('*, customer:customers(name, phone), items:sale_items(quantity, product:products(name))')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .order('created_at', { ascending: false })
@@ -94,6 +98,10 @@ export async function fetchRevenueActivities(
         payment_status: sale.payment_status,
         payment_method: sale.payment_method,
         notes: sale.notes,
+        items_summary: (sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')) &&
+          ((sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')?.length ?? 0) > 40
+            ? (sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')?.substring(0, 40) + '...')
+            : sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')),
         created_at: sale.created_at,
         sale_id: sale.id,
       }));

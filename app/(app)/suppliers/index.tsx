@@ -11,8 +11,8 @@ import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
 
-const formatCurrency = (value: number) =>
-  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+const formatCurrency = (value: number | undefined | null) =>
+  `${CURRENCY_SYMBOL}${(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
 export default function SuppliersScreen() {
   const { currentBusiness } = useAuthStore();
@@ -27,7 +27,11 @@ export default function SuppliersScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      load();
+      import('react-native').then(({ InteractionManager }) => {
+        InteractionManager.runAfterInteractions(() => {
+          load();
+        });
+      });
     }, [load]),
   );
 
@@ -37,9 +41,6 @@ export default function SuppliersScreen() {
       (supplier.phone ?? '').includes(search),
   );
 
-  if (isLoading && !suppliers.length) {
-    return <LoadingScreen message="Loading suppliers..." />;
-  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
