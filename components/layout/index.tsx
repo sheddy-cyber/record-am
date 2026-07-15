@@ -6,13 +6,14 @@ import {
   ViewStyle,
   Platform,
   Animated,
+  Image,
+  ImageStyle,
+  TextStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { Feather } from "@expo/vector-icons";
-import Svg, { Rect, Path } from "react-native-svg";
 import { BRAND, COLORS, FONT, RADIUS, SP, TYPE } from "@/constants";
-import { useOfflineStore } from "@/store/offlineStore";
 
 type StatusBarMode = "light" | "dark";
 
@@ -37,38 +38,16 @@ export function ScreenShell({
 // ─── Brand Mark (Logo) ──────────────────────────────────────────────────────
 export function BrandMark({
   size = 36,
-  accent = COLORS.accent,
-  background = COLORS.ink,
+  style,
 }: {
   size?: number;
-  accent?: string;
-  background?: string;
+  style?: ImageStyle;
 }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 48 48">
-      <Rect width="48" height="48" rx="12" fill={background} />
-      <Rect
-        x="3"
-        y="3"
-        width="42"
-        height="42"
-        rx="10"
-        fill="none"
-        stroke={accent}
-        strokeWidth="0.5"
-        strokeOpacity="0.4"
-      />
-      <Path d="M28 8L18 24h8l-6 16 16-20h-9L28 8Z" fill={accent} />
-      <Rect
-        x="10"
-        y="20"
-        width="5"
-        height="5"
-        rx="2.5"
-        fill={accent}
-        fillOpacity="0.5"
-      />
-    </Svg>
+    <Image
+      source={require("@/assets/logo.png")}
+      style={[{ width: size, height: size, resizeMode: "contain", backgroundColor: "#efefd0", borderRadius: 8 }, style]}
+    />
   );
 }
 
@@ -110,6 +89,44 @@ export function BrandWordmark({
   );
 }
 
+// ─── Business Avatar ──────────────────────────────────────────────────────────
+export function BusinessAvatar({ name, size = 40 }: { name: string; size?: number }) {
+  const initials = (name || '')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+    .map((w) => w.charAt(0))
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: 'rgba(239, 239, 208, 0.15)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(239, 239, 208, 0.3)',
+      }}
+    >
+      <Text
+        style={{
+          fontSize: size * 0.45,
+          fontFamily: FONT.bold,
+          color: COLORS.text.inverse,
+          letterSpacing: 1,
+        }}
+      >
+        {initials || 'B'}
+      </Text>
+    </View>
+  );
+}
+
 // ─── Screen Header ──────────────────────────────────────────────────────────
 export function ScreenHeader({
   title,
@@ -118,6 +135,7 @@ export function ScreenHeader({
   left,
   theme = "dark",
   style,
+  titleStyle,
 }: {
   title: string;
   subtitle?: string;
@@ -125,6 +143,7 @@ export function ScreenHeader({
   left?: React.ReactNode;
   theme?: "dark" | "light";
   style?: ViewStyle;
+  titleStyle?: TextStyle;
 }) {
   const insets = useSafeAreaInsets();
   const isDark = theme === "dark";
@@ -132,8 +151,6 @@ export function ScreenHeader({
   const titleColor = isDark ? COLORS.text.inverse : COLORS.text.primary;
   const subtitleColor = isDark ? "rgba(250,250,248,0.5)" : COLORS.text.muted;
   const statusBarStyle: StatusBarMode = isDark ? "light" : "dark";
-  const { isOnline, isSyncing, pendingCount } = useOfflineStore();
-
   return (
     <View
       style={[
@@ -160,13 +177,13 @@ export function ScreenHeader({
         {left ? <View style={{ minWidth: 40 }}>{left}</View> : null}
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={{ ...TYPE.h2, color: titleColor }}>{title}</Text>
-            {!isOnline && (
-              <Feather name="cloud-off" size={14} color={COLORS.danger} style={{ opacity: 0.8 }} />
-            )}
-            {isOnline && (isSyncing || pendingCount > 0) && (
-              <Feather name="refresh-cw" size={14} color={COLORS.accent} style={{ opacity: 0.8 }} />
-            )}
+            <Text 
+              style={[{ ...TYPE.h2, color: titleColor }, titleStyle]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {title}
+            </Text>
           </View>
           {subtitle ? (
             <Text
@@ -207,6 +224,7 @@ export function HeaderAction({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
+      delayPressIn={0}
       style={{
         minHeight: 38,
         minWidth: 38,

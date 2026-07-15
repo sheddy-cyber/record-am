@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -33,6 +33,7 @@ export default function AddStockScreen() {
   } = useBusinessStore();
 
   const [loading, setLoading] = useState(false);
+  const [isReady, setIsReady] = useState(false);
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
   const [costPrice, setCostPrice] = useState('');
@@ -46,16 +47,10 @@ export default function AddStockScreen() {
 
   const load = useCallback(async () => {
     if (!currentBusiness) return;
-
     if (useBusinessStore.getState().products.length === 0) {
-      setLoading(true);
+      // Products should already be fetched by bootloader
     }
-    try {
-      void fetchProducts(currentBusiness.id);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentBusiness, fetchProducts]);
+  }, [currentBusiness]);
 
   useEffect(() => {
     load();
@@ -250,11 +245,8 @@ export default function AddStockScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
         <KeyboardAwareScrollView
+          style={{ flex: 1 }}
           contentContainerStyle={{
             padding: 20,
             paddingBottom: insets.bottom + 32,
@@ -286,7 +278,6 @@ export default function AddStockScreen() {
             size="lg"
           />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
     </ScreenShell>
   );
 }

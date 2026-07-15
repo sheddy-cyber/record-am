@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, Linking, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
-import { Button, Card, ConfirmDialog, IconBox, ListRow, SectionHeader } from '@/components/ui';
+import { Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
 import { BrandMark, FlatSection, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
-import { APP_FOOTER_TEXT, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
+import { APP_VERSION, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
 
 type MenuSection = {
   title: string;
@@ -28,7 +28,6 @@ function MoreScreen() {
   const businessCurrency = useAuthStore((s) => s.currentBusiness?.currency);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
   const signOut = useAuthStore((s) => s.signOut);
-  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const sections: MenuSection[] = [
     {
@@ -125,7 +124,23 @@ function MoreScreen() {
           icon: 'log-out',
           label: 'Sign Out',
           subtitle: `Log out of ${BRAND.name}`,
-          onPress: () => setShowSignOutConfirm(true),
+          onPress: () => {
+            Alert.alert(
+              'Sign Out',
+              'Are you sure you want to sign out?',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { 
+                  text: 'Sign Out', 
+                  style: 'destructive',
+                  onPress: async () => {
+                    await signOut();
+                    router.replace('/(auth)/login');
+                  }
+                }
+              ]
+            );
+          },
           iconBg: COLORS.dangerLight,
           iconColor: COLORS.danger,
         },
@@ -161,6 +176,7 @@ function MoreScreen() {
       <ScrollView
         contentContainerStyle={{ padding: SP.page, gap: 24, paddingBottom: insets.bottom + 92 }}
         showsVerticalScrollIndicator={false}
+        delaysContentTouches={false}
       >
         <FlatSection style={{ padding: 16, flexDirection: 'row', gap: 14, alignItems: 'center' }}>
           <BrandMark size={42} />
@@ -197,23 +213,17 @@ function MoreScreen() {
           </View>
         ))}
 
-        <Text style={{ fontFamily: FONT.regular, textAlign: 'center', fontSize: 12, color: COLORS.text.muted }}>
-          {APP_FOOTER_TEXT}
-        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
+            v{APP_VERSION} · Created by{' '}
+          </Text>
+          <TouchableOpacity onPress={() => Linking.openURL('https://krisshedrach.dev')}>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: COLORS.accent }}>
+              Kris Shedrach
+            </Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
-      <ConfirmDialog
-        visible={showSignOutConfirm}
-        title="Sign Out"
-        message="Are you sure you want to sign out?"
-        confirmLabel="Sign Out"
-        onConfirm={async () => {
-          setShowSignOutConfirm(false);
-          await signOut();
-          router.replace('/(auth)/login');
-        }}
-        onCancel={() => setShowSignOutConfirm(false)}
-        variant="danger"
-      />
     </ScreenShell>
     </SwipeableTabScreen>
   );

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -7,6 +8,8 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useSupplierStore } from '@/store/supplierStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useDashboardStore } from '@/store/dashboardStore';
 import {
   calculatePurchaseSubtotal,
   calculatePurchaseTotals,
@@ -101,10 +104,21 @@ export default function RecordPurchaseScreen() {
   const isEditing = Boolean(purchaseId);
   const isSyncFlowActive = syncFlow === '1';
 
-  const { currentBusiness, currentBranch, user } = useAuthStore();
-  const { products, fetchProducts } = useBusinessStore();
-  const { suppliers, fetchSuppliers } = useSupplierStore();
-  const { isLoading, isSaving, fetchPurchaseById, recordPurchase, updatePurchase } = usePurchaseStore();
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const currentBranch = useAuthStore((s) => s.currentBranch);
+  const user = useAuthStore((s) => s.user);
+
+  const products = useBusinessStore((s) => s.products);
+  const fetchProducts = useBusinessStore((s) => s.fetchProducts);
+
+  const suppliers = useSupplierStore((s) => s.suppliers);
+  const fetchSuppliers = useSupplierStore((s) => s.fetchSuppliers);
+
+  const isLoading = usePurchaseStore((s) => s.isLoading);
+  const isSaving = usePurchaseStore((s) => s.isSaving);
+  const fetchPurchaseById = usePurchaseStore((s) => s.fetchPurchaseById);
+  const recordPurchase = usePurchaseStore((s) => s.recordPurchase);
+  const updatePurchase = usePurchaseStore((s) => s.updatePurchase);
 
   const [productSearch, setProductSearch] = useState('');
   const [supplierId, setSupplierId] = useState('');
@@ -229,11 +243,6 @@ export default function RecordPurchaseScreen() {
       setPurchaseMissing(false);
 
       try {
-        await Promise.all([
-          fetchProducts(currentBusiness.id),
-          fetchSuppliers(currentBusiness.id),
-        ]);
-
         if (!active) return;
 
         const latestProducts = useBusinessStore.getState().products;
@@ -487,6 +496,9 @@ export default function RecordPurchaseScreen() {
           await removeMismatch(mismatchId);
         }
 
+        void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+        void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+
         const { getAppSettings } = await import('@/lib/appSettings');
         const settings = await getAppSettings();
 
@@ -723,11 +735,12 @@ export default function RecordPurchaseScreen() {
         </View>
 
         <View style={{ flex: 1, flexDirection: 'row' }}>
-          <FlatList
+          <FlashList
             style={{ flex: 1, borderRightWidth: 1, borderRightColor: COLORS.border }}
             data={filteredProducts}
             keyExtractor={(product) => product.id}
             contentContainerStyle={{ padding: 8, gap: 6 }}
+            estimatedItemSize={70}
             ListEmptyComponent={
               <EmptyState
                 icon="package"

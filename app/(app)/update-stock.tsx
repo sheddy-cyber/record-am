@@ -54,8 +54,10 @@ export default function UpdateStockScreen() {
   const isManualReconcile = Boolean(mismatchId);
   const fromPurchase = stockAdjustment !== null || purchasedQty > 0;
 
-  const { currentBusiness, currentBranch } = useAuthStore();
-  const { products, fetchProducts } = useBusinessStore();
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const currentBranch = useAuthStore((s) => s.currentBranch);
+  const products = useBusinessStore((s) => s.products);
+  const fetchProducts = useBusinessStore((s) => s.fetchProducts);
 
   const [loading, setLoading] = useState(false);
   const [productName, setProductName] = useState('');
@@ -143,15 +145,9 @@ export default function UpdateStockScreen() {
     }
 
     if (useBusinessStore.getState().products.length === 0) {
-      setLoading(true);
+      // Products already fetched by Bootloader
     }
-    
-    try {
-      void fetchProducts(currentBusiness.id);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentBusiness, fetchProducts]);
+  }, [currentBusiness]);
 
   useEffect(() => {
     loadProducts();

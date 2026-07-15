@@ -4,12 +4,12 @@
     "slug": "record-am",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0F172A"
+      "backgroundColor": "#efefd0"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -20,13 +20,13 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0F172A"
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#efefd0"
       },
       "package": "com.recordam.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/logo.png",
       "bundler": "metro"
     },
     "plugins": [
@@ -38,7 +38,8 @@
         {
           "faceIDPermission": "Allow Record Am to use Face ID for secure login."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "scheme": "recordam",
     "newArchEnabled": true,

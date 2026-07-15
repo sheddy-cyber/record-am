@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Alert, Platform, InteractionManager, View, Text, ScrollView, KeyboardAvoidingView } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -18,6 +18,7 @@ export default function RecordExpenseScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, user } = useAuthStore();
 
+  const [isReady, setIsReady] = useState(false);
   const [expenseCategory, setExpenseCategory] = useState('rent');
   const [expenseDescription, setExpenseDescription] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
@@ -39,34 +40,46 @@ export default function RecordExpenseScreen() {
     }
 
     setSavingExpense(true);
-    try {
-      await recordExpenseOffline({
-        businessId: currentBusiness.id,
-        branchId: currentBranch.id,
-        userId: user?.id,
-        category: expenseCategory,
-        description: expenseDescription.trim(),
-        amount: parseFloat(expenseAmount),
-        paymentMethod: expenseMethod,
-        expenseDate,
-      });
-
-      Toast.show({
-        type: 'success',
-        text1: 'Expense recorded',
-        text2: `${expenseDescription.trim()} \u00B7 ${CURRENCY_SYMBOL}${parseFloat(expenseAmount).toLocaleString()} queued for sync`,
-      });
-
+    setSavingExpense(true);
+    Toast.show({
+      type: 'success',
+      text1: 'Expense recorded',
+      text2: `${expenseDescription.trim()} \u00B7 ${CURRENCY_SYMBOL}${parseFloat(expenseAmount).toLocaleString()} queued for sync`,
+    });
+    closeScreen();
+    
+    void recordExpenseOffline({
+      businessId: currentBusiness.id,
+      branchId: currentBranch.id,
+      userId: user?.id,
+      category: expenseCategory,
+      description: expenseDescription.trim(),
+      amount: parseFloat(expenseAmount),
+      paymentMethod: expenseMethod,
+      expenseDate,
+    }).then(() => {
       void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
       void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
-
-      closeScreen();
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    } finally {
+    }).catch((err: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Save failed',
+        text2: err.message,
+      });
+      setExpenseAmount('');
+      setExpenseDescription('');
+      router.back();
+    }).finally(() => {
       setSavingExpense(false);
-    }
+    });
   };
+
+  useEffect(() => {
+    InteractionManager.runAfterInteractions(() => {
+      setIsReady(true);
+    });
+  }, []);
+
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
@@ -76,8 +89,11 @@ export default function RecordExpenseScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
           <SelectField label="Category" value={expenseCategory} options={EXPENSE_CATEGORIES} onChange={setExpenseCategory} required />
           <InputField
             label="Description"
@@ -104,7 +120,6 @@ export default function RecordExpenseScreen() {
           <InputField label="Date" value={expenseDate} onChangeText={setExpenseDate} placeholder="YYYY-MM-DD" />
           <Button title="Save Expense" onPress={handleAddExpense} loading={savingExpense} size="lg" />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

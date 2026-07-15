@@ -161,6 +161,19 @@ export async function updateCachedRow<T extends { id: string }>(
   );
 }
 
+export async function removeCachedRow<T extends { id: string }>(
+  scope: OfflineScope,
+  table: string,
+  rowId: string,
+) {
+  const rows = await readCachedRows<T>(scope, table);
+  await replaceCachedRows(
+    scope,
+    table,
+    rows.filter((row) => row.id !== rowId),
+  );
+}
+
 export async function findCachedRow<T extends { id: string }>(
   scope: OfflineScope,
   table: string,
@@ -456,6 +469,12 @@ export async function upsertCachedProducts(businessId: string, products: Product
   await upsertCachedRows<Product>({ businessId }, 'products', products, 1000);
 }
 
+export async function removeCachedProduct(businessId: string, productId: string) {
+  const products = await readCachedProducts(businessId);
+  const nextProducts = products.filter((product) => product.id !== productId);
+  await cacheProducts(businessId, nextProducts);
+}
+
 export async function setCachedProductInventory(
   businessId: string,
   branchId: string,
@@ -651,7 +670,7 @@ export async function buildCachedDashboardData(
       outstanding_debts: openDebts.reduce((sum, debt) => sum + debt.balance, 0),
       total_customers: new Set(openDebts.map((debt) => debt.customer_name.toLowerCase())).size,
     },
-    recentActivities: activities.slice(0, 4),
+    recentActivities: activities.slice(0, 5),
     recentDebts: sortByFreshness(openDebts).slice(0, 3),
   };
 }

@@ -26,6 +26,7 @@ interface CustomerState {
   error: string | null;
 
   fetchCustomers: (businessId: string) => Promise<void>;
+  hydrateCache: (businessId: string) => Promise<void>;
   fetchCustomerDetail: (customerId: string, businessId: string) => Promise<void>;
   createCustomer: (data: Partial<Customer>) => Promise<Customer | null>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
@@ -42,10 +43,25 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
   isSaving: false,
   error: null,
 
+  hydrateCache: async (businessId) => {
+    try {
+      const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
+      if (cachedCustomers.length > 0) {
+        if (JSON.stringify(cachedCustomers) !== JSON.stringify(get().customers)) {
+          set({ customers: cachedCustomers });
+        }
+      }
+    } catch {}
+  },
+
   fetchCustomers: async (businessId) => {
     try {
       const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
-      if (cachedCustomers.length > 0) set({ customers: cachedCustomers });
+      if (cachedCustomers.length > 0) {
+        if (JSON.stringify(cachedCustomers) !== JSON.stringify(get().customers)) {
+          set({ customers: cachedCustomers });
+        }
+      }
     } catch {}
 
     const currentCustomers = get().customers;
@@ -91,12 +107,18 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         })
       );
 
-      set({ customers: customersWithStats });
+      if (JSON.stringify(customersWithStats) !== JSON.stringify(get().customers)) {
+        set({ customers: customersWithStats });
+      }
       await upsertCachedRows({ businessId }, 'customers', customersWithStats);
     } catch (err: any) {
       const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
       if (cachedCustomers.length > 0) {
-        set({ customers: cachedCustomers, error: null });
+        if (JSON.stringify(cachedCustomers) !== JSON.stringify(get().customers)) {
+          set({ customers: cachedCustomers, error: null });
+        } else {
+          set({ error: null });
+        }
       } else {
         set({ error: err.message });
       }
@@ -122,10 +144,15 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
 
-      set({
-        customerSales: (sales as Sale[]) ?? [],
-        customerDebts: (debts as CustomerDebt[]) ?? [],
-      });
+      const newSales = (sales as Sale[]) ?? [];
+      const newDebts = (debts as CustomerDebt[]) ?? [];
+      
+      if (
+        JSON.stringify(newSales) !== JSON.stringify(get().customerSales) ||
+        JSON.stringify(newDebts) !== JSON.stringify(get().customerDebts)
+      ) {
+        set({ customerSales: newSales, customerDebts: newDebts });
+      }
     } catch (err: any) {
       // Try loading from cache if server fails
       try {
@@ -133,10 +160,15 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
           readCachedRows<Sale>({ businessId }, 'sales'),
           readCachedRows<CustomerDebt>({ businessId }, 'customer_debts'),
         ]);
-        set({
-          customerSales: cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20),
-          customerDebts: cachedDebts.filter((d) => d.customer_id === customerId),
-        });
+        const newSales = cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20);
+        const newDebts = cachedDebts.filter((d) => d.customer_id === customerId);
+
+        if (
+          JSON.stringify(newSales) !== JSON.stringify(get().customerSales) ||
+          JSON.stringify(newDebts) !== JSON.stringify(get().customerDebts)
+        ) {
+          set({ customerSales: newSales, customerDebts: newDebts });
+        }
       } catch {
         set({ error: err.message });
       }

@@ -90,16 +90,19 @@ function buildSnapshotFromRows(params: {
     .reduce((sum: number, sale: any) => sum + sale.amount_paid, 0);
   const totalExpenses = params.expenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalRepayments = branchRepayments.reduce((sum: number, repayment: any) => sum + repayment.amount, 0);
+  const totalCashRepayments = branchRepayments
+    .filter((repayment: any) => repayment.payment_method === 'cash')
+    .reduce((sum: number, repayment: any) => sum + repayment.amount, 0);
   const saleIds = new Set(revenueSales.map((sale: any) => sale.id));
   const totalCOGS = params.saleItems
     .filter((item: any) => saleIds.has(item.sale_id))
     .reduce((sum: number, item: any) => sum + (item.cost_price ?? 0) * item.quantity, 0);
-  const grossProfit = totalSales - totalCOGS;
+  const grossProfit = (totalSales + totalRepayments) - totalCOGS;
   const netProfit = grossProfit - totalExpenses;
   const cashExpenses = params.expenses
     .filter((expense) => expense.payment_method === 'cash')
     .reduce((sum, expense) => sum + expense.amount, 0);
-  const expectedCash = totalCashSales + totalRepayments - cashExpenses;
+  const expectedCash = totalCashSales + totalCashRepayments - cashExpenses;
   const actualCash = existingSummary?.cash_in_hand_actual;
   const timestamp = nowIso();
 

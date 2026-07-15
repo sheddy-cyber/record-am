@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Pressable, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -13,19 +14,13 @@ const formatCurrency = (value: number | undefined | null) =>
   `${CURRENCY_SYMBOL}${(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
 export default function CustomersScreen() {
-  const { currentBusiness } = useAuthStore();
-  const { customers, isLoading, fetchCustomers, setSelectedCustomer } = useCustomerStore();
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const customers = useCustomerStore((s) => s.customers);
+  const isLoading = useCustomerStore((s) => s.isLoading);
+  const setSelectedCustomer = useCustomerStore((s) => s.setSelectedCustomer);
   const [search, setSearch] = useState('');
 
-  const load = useCallback(() => {
-    if (currentBusiness) {
-      fetchCustomers(currentBusiness.id);
-    }
-  }, [currentBusiness, fetchCustomers]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  // Data is hydrated on app boot. No need to fetch on mount.
 
   const filtered = customers.filter(
     (customer) =>
@@ -109,12 +104,14 @@ export default function CustomersScreen() {
             action={{ label: 'Add Customer', onPress: () => router.push('/(app)/customer-create') }}
           />
         ) : (
-          <FlatList
+          <FlashList
             data={filtered}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+            estimatedItemSize={70}
             renderItem={({ item, index }) => (
-              <TouchableOpacity
+              <Pressable
+                delayPressIn={150}
                 onPress={() => {
                   setSelectedCustomer(item);
                   router.push({ pathname: '/(app)/customer-detail', params: { customerId: item.id } });
@@ -174,7 +171,7 @@ export default function CustomersScreen() {
                     ) : null}
                   </View>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             )}
           />
         )}

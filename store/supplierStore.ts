@@ -26,6 +26,7 @@ interface SupplierState {
   error: string | null;
 
   fetchSuppliers: (businessId: string) => Promise<void>;
+  hydrateCache: (businessId: string) => Promise<void>;
   fetchSupplierDetail: (supplierId: string, businessId: string) => Promise<void>;
   createSupplier: (data: Partial<Supplier>) => Promise<Supplier | null>;
   updateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
@@ -42,10 +43,25 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
   isSaving: false,
   error: null,
 
+  hydrateCache: async (businessId) => {
+    try {
+      const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
+      if (cachedSuppliers.length > 0) {
+        if (JSON.stringify(cachedSuppliers) !== JSON.stringify(get().suppliers)) {
+          set({ suppliers: cachedSuppliers });
+        }
+      }
+    } catch {}
+  },
+
   fetchSuppliers: async (businessId) => {
     try {
       const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
-      if (cachedSuppliers.length > 0) set({ suppliers: cachedSuppliers });
+      if (cachedSuppliers.length > 0) {
+        if (JSON.stringify(cachedSuppliers) !== JSON.stringify(get().suppliers)) {
+          set({ suppliers: cachedSuppliers });
+        }
+      }
     } catch {}
 
     const currentSuppliers = get().suppliers;
@@ -86,12 +102,18 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
         })
       );
 
-      set({ suppliers: suppliersWithStats });
+      if (JSON.stringify(suppliersWithStats) !== JSON.stringify(get().suppliers)) {
+        set({ suppliers: suppliersWithStats });
+      }
       await upsertCachedRows({ businessId }, 'suppliers', suppliersWithStats);
     } catch (err: any) {
       const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
       if (cachedSuppliers.length > 0) {
-        set({ suppliers: cachedSuppliers, error: null });
+        if (JSON.stringify(cachedSuppliers) !== JSON.stringify(get().suppliers)) {
+          set({ suppliers: cachedSuppliers, error: null });
+        } else {
+          set({ error: null });
+        }
       } else {
         set({ error: err.message });
       }
@@ -117,10 +139,15 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
         .eq('supplier_id', supplierId)
         .order('created_at', { ascending: false });
 
-      set({
-        supplierPurchases: (purchases as Purchase[]) ?? [],
-        supplierDebts: (debts as SupplierDebt[]) ?? [],
-      });
+      const newPurchases = (purchases as Purchase[]) ?? [];
+      const newDebts = (debts as SupplierDebt[]) ?? [];
+
+      if (
+        JSON.stringify(newPurchases) !== JSON.stringify(get().supplierPurchases) ||
+        JSON.stringify(newDebts) !== JSON.stringify(get().supplierDebts)
+      ) {
+        set({ supplierPurchases: newPurchases, supplierDebts: newDebts });
+      }
     } catch (err: any) {
       set({ error: err.message });
     } finally {

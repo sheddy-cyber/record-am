@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,7 +10,8 @@ import { useBusinessStore } from '@/store/businessStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { useTabStore } from '@/store/tabStore';
 import { deleteProductRecord } from '@/lib/recordDeletion';
-import { Badge, Button, ConfirmDialog, EmptyState, LoadingScreen } from '@/components/ui';
+import { removeCachedProduct } from '@/lib/offlineStore';
+import { Badge, Button, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
@@ -36,10 +38,8 @@ function InventoryScreen() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [deleteActionProductId, setDeleteActionProductId] = useState<string | null>(null);
-  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
-
   const openCreateProduct = () => router.push('/(app)/add-stock');
 
   const load = useCallback(async () => {
@@ -49,27 +49,13 @@ function InventoryScreen() {
       return;
     }
 
-    if (useBusinessStore.getState().products.length === 0) {
-      setLoading(true);
-    }
-    
     void fetchProducts(businessId);
     
     setLoading(false);
     setRefreshing(false);
   }, [businessId, fetchProducts]);
 
-  const activeTab = useTabStore((s) => s.activeTab);
 
-  useEffect(() => {
-    if (activeTab === 'inventory') {
-      import('react-native').then(({ InteractionManager }) => {
-        InteractionManager.runAfterInteractions(() => {
-          load();
-        });
-      });
-    }
-  }, [activeTab, load]);
 
   // Refetch handled by activeTab selector above — no focus listener needed
 
@@ -112,7 +98,29 @@ function InventoryScreen() {
   };
 
   const handleDeleteProduct = (product: Product) => {
-    setProductToDelete(product);
+    Alert.alert(
+      'Delete product',
+      `Remove ${product.name} from inventory?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteProductRecord(product.id);
+              if (currentBusiness) {
+                await removeCachedProduct(currentBusiness.id, product.id);
+              }
+              await load();
+              Toast.show({ type: 'success', text1: 'Product deleted' });
+            } catch (err: any) {
+              Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+            }
+          }
+        }
+      ]
+    );
   };
 
   // Render instantly without blocking UI. RefreshControl handles background loading state.
@@ -152,7 +160,12 @@ function InventoryScreen() {
           />
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8 }}
+          delaysContentTouches={false}
+        >
           {([
             { key: 'all', label: 'All' },
             { key: 'low_stock', label: 'Low Stock' },
@@ -161,6 +174,7 @@ function InventoryScreen() {
             <TouchableOpacity
               key={item.key}
               onPress={() => setFilter(item.key)}
+              delayPressIn={0}
               activeOpacity={0.8}
               style={{
                 minWidth: 92,
@@ -190,14 +204,11 @@ function InventoryScreen() {
           action={!search ? { label: 'Add Product', onPress: openCreateProduct } : undefined}
         />
       ) : (
-        <FlatList
+        <FlashList
           data={filteredProducts}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={5}
-          removeClippedSubviews={true}
+          estimatedItemSize={80}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -292,26 +303,6 @@ function InventoryScreen() {
           }}
         />
       )}
-      <ConfirmDialog
-        visible={productToDelete !== null}
-        title="Delete product"
-        message={`Remove ${productToDelete?.name ?? ''} from inventory?`}
-        confirmLabel="Delete"
-        onConfirm={async () => {
-          if (!productToDelete) return;
-          const targetProduct = productToDelete;
-          setProductToDelete(null);
-          try {
-            await deleteProductRecord(targetProduct.id);
-            await load();
-            Toast.show({ type: 'success', text1: 'Product deleted' });
-          } catch (err: any) {
-            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
-          }
-        }}
-        onCancel={() => setProductToDelete(null)}
-        variant="danger"
-      />
     </ScreenShell>
     </SwipeableTabScreen>
   );

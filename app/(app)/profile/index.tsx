@@ -82,15 +82,14 @@ export default function ProfileScreen() {
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScreenHeader
-          title="My Profile"
-          subtitle={user?.email ?? 'Account'}
-          theme="dark"
-          left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
-        />
+      <ScreenHeader
+        title="My Profile"
+        subtitle={user?.email ?? 'Account'}
+        theme="dark"
+        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+      />
 
-        <KeyboardAwareScrollView contentContainerStyle={{ padding: 20, gap: 20 }}>
+      <KeyboardAwareScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 20 }}>
           <Card>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
               <View
@@ -182,7 +181,6 @@ export default function ProfileScreen() {
             ))}
           </Card>
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

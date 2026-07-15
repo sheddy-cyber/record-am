@@ -27,14 +27,14 @@ const fetchTrackedProducts = async (businessId: string) => {
         inventory(quantity, branch_id)
       `)
       .eq('business_id', businessId)
-      .eq('is_active', true)
       .eq('is_service', false);
 
     if (error) throw error;
 
-    const products = (data ?? []) as Product[];
-    await upsertCachedProducts(businessId, products);
-    return products;
+    const allProducts = (data ?? []) as Product[];
+    const activeProducts = allProducts.filter(p => p.is_active);
+    await cacheProducts(businessId, activeProducts); // Use cacheProducts instead of upsert to clean out deleted ones
+    return activeProducts;
   } catch {
     const cachedProducts = await readCachedProducts(businessId);
     return cachedProducts.filter((product) => product.is_active && !product.is_service);
@@ -52,6 +52,7 @@ interface BusinessState {
   // Actions
   fetchBusinesses: (userId: string) => Promise<void>;
   fetchBranches: (businessId: string) => Promise<void>;
+  hydrateCache: (businessId: string) => Promise<void>;
   fetchCategories: (businessId: string) => Promise<void>;
   fetchProducts: (businessId: string) => Promise<void>;
   createBusiness: (data: Partial<Business>, userId: string) => Promise<Business | null>;
@@ -123,10 +124,25 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     }
   },
 
+  hydrateCache: async (businessId) => {
+    try {
+      const cachedProducts = await readCachedProducts(businessId);
+      if (cachedProducts.length > 0) {
+        if (JSON.stringify(cachedProducts) !== JSON.stringify(get().products)) {
+          set({ products: cachedProducts });
+        }
+      }
+    } catch {}
+  },
+
   fetchProducts: async (businessId) => {
     try {
       const cachedProducts = await readCachedProducts(businessId);
-      if (cachedProducts.length > 0) set({ products: cachedProducts });
+      if (cachedProducts.length > 0) {
+        if (JSON.stringify(cachedProducts) !== JSON.stringify(get().products)) {
+          set({ products: cachedProducts });
+        }
+      }
     } catch {}
 
     const currentProducts = get().products;
@@ -141,7 +157,6 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
           inventory(*)
         `)
         .eq('business_id', businessId)
-        .eq('is_active', true)
         .order('name');
 
       if (error) throw error;
@@ -149,13 +164,22 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       const cachedProducts = await readCachedProducts(businessId);
       const serverProductIds = new Set(serverProducts.map((product) => product.id));
       const localOnlyProducts = cachedProducts.filter((product) => !serverProductIds.has(product.id));
-      const products = [...serverProducts, ...localOnlyProducts].sort((a, b) => a.name.localeCompare(b.name));
-      set({ products });
-      await cacheProducts(businessId, products);
+      const allMerged = [...serverProducts, ...localOnlyProducts].sort((a, b) => a.name.localeCompare(b.name));
+      
+      const activeProducts = allMerged.filter(p => p.is_active);
+      
+      if (JSON.stringify(activeProducts) !== JSON.stringify(get().products)) {
+        set({ products: activeProducts });
+      }
+      await cacheProducts(businessId, activeProducts);
     } catch (err: any) {
       const cachedProducts = await readCachedProducts(businessId);
       if (cachedProducts.length > 0) {
-        set({ products: cachedProducts, error: null });
+        if (JSON.stringify(cachedProducts) !== JSON.stringify(get().products)) {
+          set({ products: cachedProducts, error: null });
+        } else {
+          set({ error: null });
+        }
       } else {
         set({ error: err.message });
       }
@@ -168,7 +192,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       // Step 1: Insert business
-      console.log('[createBusiness] inserting business for user:', userId);
+
       const { data: business, error: bizError } = await supabase
         .from('businesses')
         .insert({ ...data, owner_id: userId })
@@ -179,7 +203,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         console.error('[createBusiness] business insert error:', JSON.stringify(bizError));
         throw new Error(`Business insert failed: ${bizError.message} (code: ${bizError.code})`);
       }
-      console.log('[createBusiness] business created:', business.id);
+
 
       // Step 2: Create main branch
       const { data: branch, error: branchError } = await supabase
@@ -196,7 +220,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         console.error('[createBusiness] branch insert error:', JSON.stringify(branchError));
         throw new Error(`Branch insert failed: ${branchError.message} (code: ${branchError.code})`);
       }
-      console.log('[createBusiness] branch created:', branch.id);
+
 
       // Step 3: Add owner as business member
       const { error: memberError } = await supabase.from('business_members').insert({
@@ -211,7 +235,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         console.error('[createBusiness] member insert error:', JSON.stringify(memberError));
         throw new Error(`Member insert failed: ${memberError.message} (code: ${memberError.code})`);
       }
-      console.log('[createBusiness] member created successfully');
+
 
       set((state) => ({ businesses: [...state.businesses, business] }));
       return business;
@@ -226,15 +250,25 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   updateBusiness: async (id, data) => {
     try {
-      const { error } = await supabase
-        .from('businesses')
-        .update(data)
-        .eq('id', id);
-
-      if (error) throw error;
+      const timestamp = nowIso();
+      const patch = { ...data, updated_at: timestamp };
+      
+      // Optimistic update for instant UI feedback
       set((state) => ({
-        businesses: state.businesses.map((b) => (b.id === id ? { ...b, ...data } : b)),
+        businesses: state.businesses.map((b) => (b.id === id ? { ...b, ...patch } : b)),
       }));
+
+      // Background network sync
+      void enqueueMutations([
+        {
+          operation: 'update',
+          table: 'businesses',
+          payload: patch,
+          match: { id },
+          conflictPolicy: 'server-wins-if-newer',
+          description: 'Sync business update',
+        },
+      ]);
     } catch (err: any) {
       set({ error: err.message });
     }

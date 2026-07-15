@@ -35,10 +35,8 @@ export default function CustomerEditScreen() {
   const closeScreen = () => router.back();
 
   useEffect(() => {
-    if (currentBusiness && !customers.length) {
-      fetchCustomers(currentBusiness.id);
-    }
-  }, [currentBusiness, customers.length, fetchCustomers]);
+    // Customers are hydrated globally by bootloader
+  }, [currentBusiness]);
 
   const customer = useMemo(() => {
     if (selectedCustomer?.id === customerId) return selectedCustomer;
@@ -65,10 +63,10 @@ export default function CustomerEditScreen() {
 
     await updateCustomer(customer.id, {
       name: name.trim(),
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-      address: address.trim() || undefined,
-      notes: notes.trim() || undefined,
+      phone: phone.trim() || null,
+      email: email.trim() || null,
+      address: address.trim() || null,
+      notes: notes.trim() || null,
     });
 
     Toast.show({ type: 'success', text1: 'Customer updated' });
@@ -102,11 +100,11 @@ export default function CustomerEditScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
-          showsVerticalScrollIndicator={false}
-        >
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
           <InputField
             label="Full Name"
             value={name}
@@ -147,7 +145,6 @@ export default function CustomerEditScreen() {
           />
           <Button title="Save Changes" onPress={handleEdit} loading={isSaving} size="lg" style={{ marginTop: 8 }} />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

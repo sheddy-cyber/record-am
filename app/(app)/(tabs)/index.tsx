@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, View, Pressable, StyleSheet, Animated, useWindowDimensions, BackHandler } from 'react-native';
+import React, { useCallback, useEffect, useRef } from 'react';
+import { Platform, View, Pressable, StyleSheet, BackHandler } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { TabView, SceneMap } from 'react-native-tab-view';
 import { Feather } from '@expo/vector-icons';
 import { COLORS } from '@/constants';
 import { useTabStore } from '@/store/tabStore';
+import PagerView from 'react-native-pager-view';
 
 // Import screens directly
 import DashboardScreen from './_dashboard';
@@ -12,16 +12,6 @@ import InventoryScreen from './_inventory';
 import SalesScreen from './_sales';
 import DebtsScreen from './_debts';
 import MoreScreen from './_more';
-
-const renderScene = SceneMap({
-  dashboard: DashboardScreen,
-  inventory: InventoryScreen,
-  sales: SalesScreen,
-  debts: DebtsScreen,
-  more: MoreScreen,
-});
-
-const AnimatedFeather = Animated.createAnimatedComponent(Feather);
 
 const TAB_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
   dashboard: 'aperture',
@@ -31,133 +21,175 @@ const TAB_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
   more: 'grid',
 };
 
-function TabItem({
-  route,
-  index,
-  position,
-  jumpTo,
+const ROUTES = [
+  { key: 'dashboard', component: DashboardScreen },
+  { key: 'inventory', component: InventoryScreen },
+  { key: 'sales', component: SalesScreen },
+  { key: 'debts', component: DebtsScreen },
+  { key: 'more', component: MoreScreen },
+];
+
+// ─── Individual tab icon (never re-renders unless its own isActive changes) ───
+const TabIcon = React.memo(function TabIcon({
+  routeKey,
+  isActive,
+  onPressIn,
 }: {
-  route: any;
-  index: number;
-  position: Animated.AnimatedInterpolation<number>;
-  jumpTo: (key: string) => void;
+  routeKey: string;
+  isActive: boolean;
+  onPressIn: () => void;
 }) {
-  const iconName = TAB_ICONS[route.key] || 'circle';
-
-  // Use a very sharp interpolation to avoid "ghost" highlights.
-  // The highlight only appears when the position is very close to the index.
-  const activeOpacity = position.interpolate({
-    inputRange: [index - 0.01, index, index + 0.01],
-    outputRange: [0, 1, 0],
-    extrapolate: 'clamp',
-  });
-
-  const inactiveOpacity = position.interpolate({
-    inputRange: [index - 0.01, index, index + 0.01],
-    outputRange: [1, 0, 1],
-    extrapolate: 'clamp',
-  });
+  const iconName = TAB_ICONS[routeKey] || 'circle';
 
   return (
     <Pressable
-      onPress={() => jumpTo(route.key)}
+      onPressIn={onPressIn}
       android_ripple={null}
       style={styles.tabItem}
     >
       <View style={styles.iconWrapper}>
-        <Animated.View style={[styles.activeCircle, { opacity: activeOpacity }]} />
-        <Animated.View style={[styles.iconLayer, { opacity: inactiveOpacity }]}>
-          <Feather name={iconName} size={22} color="rgba(255,255,255,0.4)" />
-        </Animated.View>
-        <Animated.View style={[styles.iconLayer, { opacity: activeOpacity }]}>
-          <Feather name={iconName} size={22} color={COLORS.accent} />
-        </Animated.View>
+        {isActive && <View style={styles.activeCircle} />}
+        <Feather 
+          name={iconName} 
+          size={22} 
+          color={isActive ? COLORS.accent : "rgba(255,255,255,0.4)"} 
+          style={{ position: 'absolute' }}
+        />
       </View>
     </Pressable>
   );
-}
+});
 
-export default function TabsScreen() {
-  const layout = useWindowDimensions();
+// ─── Tab bar: isolated component — only these 5 icons re-render on tab switch ───
+function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
   const activeTab = useTabStore((s) => s.activeTab);
   const setActiveTab = useTabStore((s) => s.setActiveTab);
-  const isFocused = useIsFocused();
+  const isOwnPressRef = useRef(false);
 
-  const [routes] = useState([
-    { key: 'dashboard', title: 'Dashboard' },
-    { key: 'inventory', title: 'Inventory' },
-    { key: 'sales', title: 'Sales' },
-    { key: 'debts', title: 'Debts' },
-    { key: 'more', title: 'More' },
-  ]);
-
-  // We use local state for the index to ensure the UI (both TabView and Highlights)
-  // reacts instantly to taps and swipes.
-  const [localIndex, setLocalIndex] = useState(() => {
-    const idx = routes.findIndex(r => r.key === activeTab);
-    return idx === -1 ? 0 : idx;
-  });
-
-  // Keep local index in sync with store changes (like hardware back button)
+  // Sync PagerView when activeTab changes from an EXTERNAL source
+  // (e.g. dashboard quick-link calling setActiveTab('inventory') directly)
   useEffect(() => {
-    const idx = routes.findIndex(r => r.key === activeTab);
-    if (idx !== -1 && idx !== localIndex) {
-      setLocalIndex(idx);
+    if (isOwnPressRef.current) {
+      // Change came from our own handleTabPress — PagerView is already there
+      isOwnPressRef.current = false;
+      return;
     }
-  }, [activeTab, routes]);
+    // External change — move PagerView to match
+    const idx = ROUTES.findIndex((r) => r.key === activeTab);
+    if (idx !== -1) {
+      pagerRef.current?.setPageWithoutAnimation(idx);
+    }
+  }, [activeTab, pagerRef]);
 
-  const handleIndexChange = useCallback((newIndex: number) => {
-    setLocalIndex(newIndex);
-    const newTab = routes[newIndex].key;
-    // Update store in the background
-    setActiveTab(newTab);
-  }, [routes, setActiveTab]);
+  const handleTabPress = useCallback((routeKey: string) => {
+    // Skip if already on this tab
+    if (routeKey === useTabStore.getState().activeTab) return;
+
+    const index = ROUTES.findIndex((r) => r.key === routeKey);
+    if (index !== -1) {
+      // Mark as our own press so the useEffect above doesn't double-fire
+      isOwnPressRef.current = true;
+      // Native page swap (instant, runs on UI thread before React re-renders)
+      pagerRef.current?.setPageWithoutAnimation(index);
+      // Update JS state so tab icons highlight
+      setActiveTab(routeKey);
+    }
+  }, [pagerRef, setActiveTab]);
+
+  return (
+    <View style={styles.tabBar}>
+      {ROUTES.map((route) => (
+        <TabIcon
+          key={route.key}
+          routeKey={route.key}
+          isActive={activeTab === route.key}
+          onPressIn={() => handleTabPress(route.key)}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ─── Tab scene: memoized so it never re-renders from parent ───
+const TabScene = React.memo(({ component: Component }: { component: React.ComponentType<any> }) => {
+  return <Component />;
+});
+
+// ─── Main tabs container: does NOT subscribe to activeTab — zero re-renders on tab switch ───
+export default function TabsScreen() {
+  const isFocused = useIsFocused();
+  const pagerRef = useRef<any>(null);
+  // Tracks whether the user is actively swiping (dragging or settling).
+  // PagerView reports: dragging → settling → onPageSelected → idle for swipes,
+  // but fires NO scroll state changes for setPageWithoutAnimation() — only onPageSelected.
+  // So we use this to distinguish swipes from programmatic page changes.
+  const isUserSwipingRef = useRef(false);
 
   // Hardware Back Button: Return to Dashboard if not there, otherwise exit
   useEffect(() => {
     if (!isFocused) return;
 
     const onBackPress = () => {
-      if (activeTab !== 'dashboard') {
-        setActiveTab('dashboard');
+      const currentTab = useTabStore.getState().activeTab;
+      if (currentTab !== 'dashboard') {
+        pagerRef.current?.setPageWithoutAnimation(0);
+        useTabStore.getState().setActiveTab('dashboard');
         return true; 
       }
-      
-      return false; // Allow default (exit app)
+      return false;
     };
 
     const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
     return () => backHandler.remove();
-  }, [isFocused, activeTab, setActiveTab]);
+  }, [isFocused]);
 
-  const renderTabBar = (props: any) => {
-    return (
-      <View style={styles.tabBar}>
-        {props.navigationState.routes.map((route: any, i: number) => (
-          <TabItem
-            key={route.key}
-            route={route}
-            index={i}
-            position={props.position}
-            jumpTo={props.jumpTo}
-          />
-        ))}
-      </View>
-    );
-  };
+  // Track PagerView scroll state to distinguish user swipes from programmatic changes
+  const handlePageScrollStateChanged = useCallback((e: any) => {
+    const state = e.nativeEvent.pageScrollState;
+    if (state === 'dragging') {
+      isUserSwipingRef.current = true;
+    } else if (state === 'idle') {
+      isUserSwipingRef.current = false;
+    }
+  }, []);
+
+  // Only update tab state for genuine user swipes.
+  // Programmatic setPageWithoutAnimation() also fires onPageSelected, but
+  // without a preceding 'dragging' state — so isUserSwipingRef stays false.
+  const handlePageSelected = useCallback((e: any) => {
+    if (!isUserSwipingRef.current) return;
+
+    const index = e.nativeEvent.position;
+    const targetRoute = ROUTES[index];
+    if (targetRoute) {
+      const currentTab = useTabStore.getState().activeTab;
+      if (currentTab !== targetRoute.key) {
+        useTabStore.getState().setActiveTab(targetRoute.key);
+      }
+    }
+  }, []);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
-      <TabView
-        navigationState={{ index: localIndex, routes }}
-        renderScene={renderScene}
-        renderTabBar={renderTabBar}
-        onIndexChange={handleIndexChange}
-        initialLayout={{ width: layout.width }}
-        tabBarPosition="bottom"
-        animationEnabled={true}
-        lazy={true}
-      />
+      <View style={{ flex: 1, paddingBottom: Platform.OS === 'ios' ? 88 : 72 }}>
+        <PagerView
+          ref={pagerRef}
+          style={{ flex: 1 }}
+          initialPage={0}
+          onPageSelected={handlePageSelected}
+          onPageScrollStateChanged={handlePageScrollStateChanged}
+          overdrag={false}
+          offscreenPageLimit={4}
+        >
+          {ROUTES.map((route) => (
+            <View key={route.key} style={{ flex: 1 }}>
+              <TabScene component={route.component} />
+            </View>
+          ))}
+        </PagerView>
+      </View>
+
+      <TabBar pagerRef={pagerRef} />
     </View>
   );
 }
@@ -201,10 +233,5 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(255,107,53,0.15)',
     borderRadius: 22,
-  },
-  iconLayer: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

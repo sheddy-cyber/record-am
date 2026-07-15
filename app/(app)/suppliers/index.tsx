@@ -1,5 +1,6 @@
 import React, { useCallback, useState } from 'react';
-import { FlatList, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Pressable, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
@@ -15,25 +16,13 @@ const formatCurrency = (value: number | undefined | null) =>
   `${CURRENCY_SYMBOL}${(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
 export default function SuppliersScreen() {
-  const { currentBusiness } = useAuthStore();
-  const { suppliers, isLoading, fetchSuppliers, setSelectedSupplier } = useSupplierStore();
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const suppliers = useSupplierStore((s) => s.suppliers);
+  const isLoading = useSupplierStore((s) => s.isLoading);
+  const setSelectedSupplier = useSupplierStore((s) => s.setSelectedSupplier);
   const [search, setSearch] = useState('');
 
-  const load = useCallback(() => {
-    if (currentBusiness) {
-      fetchSuppliers(currentBusiness.id);
-    }
-  }, [currentBusiness, fetchSuppliers]);
-
-  useFocusEffect(
-    useCallback(() => {
-      import('react-native').then(({ InteractionManager }) => {
-        InteractionManager.runAfterInteractions(() => {
-          load();
-        });
-      });
-    }, [load]),
-  );
+  // Data is hydrated on app boot. No need to fetch on mount.
 
   const filtered = suppliers.filter(
     (supplier) =>
@@ -110,7 +99,7 @@ export default function SuppliersScreen() {
         </View>
 
         <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
-          <ReconcileWarningBanner onReconciled={load} />
+          <ReconcileWarningBanner onReconciled={() => { if (currentBusiness) fetchSuppliers(currentBusiness.id); }} />
         </View>
 
         {filtered.length === 0 ? (
@@ -121,12 +110,14 @@ export default function SuppliersScreen() {
             action={{ label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') }}
           />
         ) : (
-          <FlatList
+          <FlashList
             data={filtered}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+            estimatedItemSize={70}
             renderItem={({ item, index }) => (
-              <TouchableOpacity
+              <Pressable
+                delayPressIn={150}
                 onPress={() => {
                   setSelectedSupplier(item);
                   router.push({ pathname: '/(app)/supplier-detail', params: { supplierId: item.id } });
@@ -188,7 +179,7 @@ export default function SuppliersScreen() {
                     ) : null}
                   </View>
                 </View>
-              </TouchableOpacity>
+              </Pressable>
             )}
           />
         )}

@@ -66,6 +66,7 @@ export const Button: React.FC<ButtonProps> = ({
       onPress={onPress}
       disabled={disabled || loading}
       activeOpacity={0.7}
+      delayPressIn={0}
     >
       {loading ? <ActivityIndicator color={textColors[variant]} size="small" /> : null}
       {!loading && icon ? <Feather name={icon} size={fontSizes[size] + 1} color={textColors[variant]} /> : null}
@@ -97,7 +98,7 @@ export const Card: React.FC<CardProps> = ({ children, style, onPress, variant = 
 
   if (onPress) {
     return (
-      <TouchableOpacity style={[baseStyle, style]} onPress={onPress} activeOpacity={0.7}>
+      <TouchableOpacity style={[baseStyle, style]} onPress={onPress} activeOpacity={0.7} delayPressIn={0}>
         {children}
       </TouchableOpacity>
     );
@@ -363,93 +364,3 @@ export const PaymentSummary: React.FC<{
   );
 };
 
-// ─── Confirm Dialog ─────────────────────────────────────────────────────────
-
-interface ConfirmDialogProps {
-  visible: boolean;
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  cancelLabel?: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'accent';
-  loading?: boolean;
-}
-
-export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
-  visible,
-  title,
-  message,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
-  onConfirm,
-  onCancel,
-  variant = 'primary',
-  loading = false,
-}) => {
-  return (
-    <Modal
-      transparent
-      visible={visible}
-      animationType="fade"
-      onRequestClose={onCancel}
-    >
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: 'rgba(15, 17, 28, 0.75)',
-          justifyContent: 'center',
-          alignItems: 'center',
-          padding: 24,
-        }}
-      >
-        <View
-          style={{
-            backgroundColor: COLORS.card,
-            borderRadius: 20,
-            borderWidth: 1,
-            borderColor: COLORS.border,
-            width: '100%',
-            maxWidth: 320,
-            padding: 24,
-            gap: 16,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.1,
-            shadowRadius: 12,
-            elevation: 5,
-          }}
-        >
-          <View style={{ gap: 6 }}>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-              {title}
-            </Text>
-            <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.secondary, lineHeight: 20 }}>
-              {message}
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-            <Button
-              title={cancelLabel}
-              onPress={onCancel}
-              variant="secondary"
-              size="sm"
-              style={{ flex: 1 }}
-              disabled={loading}
-            />
-            <Button
-              title={confirmLabel}
-              onPress={onConfirm}
-              variant={variant}
-              size="sm"
-              style={{ flex: 1 }}
-              loading={loading}
-            />
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-};

@@ -8,6 +8,7 @@ import {
   TextInput,
   ScrollView,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,6 +39,14 @@ const MOVEMENT_CONFIG: Record<
 };
 
 const formatCurrency = (value: number) => `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+const formatCount = (value: number) => {
+  if (Number.isInteger(value)) return `${value}`;
+  return value
+    .toFixed(2)
+    .replace(/\.00$/, '')
+    .replace(/(\.\d*[1-9])0+$/, '$1');
+};
 
 export default function StockHistoryScreen() {
   const insets = useSafeAreaInsets();
@@ -85,8 +94,8 @@ export default function StockHistoryScreen() {
     });
   }, [filter, movements, search]);
 
-  const totalIn = filteredMovements.filter((movement) => movement.type === 'stock_in').reduce((sum, movement) => sum + movement.quantity, 0);
-  const totalOut = filteredMovements.filter((movement) => ['stock_out', 'damage', 'wastage'].includes(movement.type)).reduce((sum, movement) => sum + movement.quantity, 0);
+  const totalIn = formatCount(filteredMovements.filter((movement) => movement.type === 'stock_in').reduce((sum, movement) => sum + movement.quantity, 0));
+  const totalOut = formatCount(filteredMovements.filter((movement) => ['stock_out', 'damage', 'wastage'].includes(movement.type)).reduce((sum, movement) => sum + movement.quantity, 0));
 
 
   return (
@@ -98,7 +107,7 @@ export default function StockHistoryScreen() {
         left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
       />
 
-      <View style={{ padding: 16, gap: 12 }}>
+      <View style={{ padding: 16, gap: 12, paddingBottom: 8 }}>
         <View style={{ borderWidth: 1, borderRadius: 14, borderColor: COLORS.border, backgroundColor: COLORS.card, paddingHorizontal: 14, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <Feather name="search" size={16} color={COLORS.text.muted} />
           <TextInput
@@ -154,58 +163,61 @@ export default function StockHistoryScreen() {
         </ScrollView>
       </View>
 
-      {filteredMovements.length === 0 ? (
-        <EmptyState
-          icon="clipboard"
-          title="No movements found"
-          description="Stock activity will appear here as you record sales and inventory adjustments."
-        />
-      ) : (
-        <FlatList
+      <View style={{ flex: 1 }}>
+        <FlashList
           data={filteredMovements}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 92 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 92, paddingTop: 8 }}
+          estimatedItemSize={70}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.ink} />}
-          renderItem={({ item, index }) => {
-            const config = MOVEMENT_CONFIG[item.type] ?? MOVEMENT_CONFIG.adjustment;
-            const isIn = item.type === 'stock_in';
-            const isOut = ['stock_out', 'damage', 'wastage'].includes(item.type);
-            const displayUnit = readAltUnitNote(item.notes, (item.product as any)?.unit ?? '');
+          ListEmptyComponent={
+            <EmptyState
+              icon="clipboard"
+              title="No movements found"
+              description="Stock activity will appear here as you record sales and inventory adjustments."
+            />
+          }
 
-            return (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, borderBottomWidth: index === filteredMovements.length - 1 ? 0 : 1, borderBottomColor: COLORS.border }}>
-                <View style={{ width: 42, height: 42, backgroundColor: `${config.color}18`, borderWidth: 1, borderRadius: 14, borderColor: `${config.color}30`, alignItems: 'center', justifyContent: 'center' }}>
-                  <Feather name={config.icon} size={16} color={config.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
-                    {(item.product as any)?.name ?? 'Unknown Product'}
-                  </Text>
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
-                    {format(new Date(item.created_at), 'MMM d, yyyy \u00B7 h:mm a')}
-                  </Text>
-                  {item.reference ? <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 4 }}>Ref: {item.reference}</Text> : null}
-                  {item.notes && !item.notes.startsWith('[record-am-unit]') ? (
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.secondary, marginTop: 4 }} numberOfLines={1}>
-                      {item.notes}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                  <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: isIn ? COLORS.success : isOut ? COLORS.danger : COLORS.accent }}>
-                    {isIn ? '+' : isOut ? '-' : '±'}
-                    {item.quantity} {displayUnit}
-                  </Text>
-                  <Badge label={config.label} variant={config.variant} />
-                  {item.total_cost !== undefined && item.total_cost > 0 ? (
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{formatCurrency(item.total_cost)}</Text>
-                  ) : null}
-                </View>
+        renderItem={({ item, index }) => {
+          const config = MOVEMENT_CONFIG[item.type] ?? MOVEMENT_CONFIG.adjustment;
+          const isIn = item.type === 'stock_in';
+          const isOut = ['stock_out', 'damage', 'wastage'].includes(item.type);
+          const displayUnit = readAltUnitNote(item.notes, (item.product as any)?.unit ?? '');
+
+          return (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, borderBottomWidth: index === filteredMovements.length - 1 ? 0 : 1, borderBottomColor: COLORS.border }}>
+              <View style={{ width: 42, height: 42, backgroundColor: `${config.color}18`, borderWidth: 1, borderRadius: 14, borderColor: `${config.color}30`, alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name={config.icon} size={16} color={config.color} />
               </View>
-            );
-          }}
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+                  {(item.product as any)?.name ?? 'Unknown Product'}
+                </Text>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
+                  {format(new Date(item.created_at), 'MMM d, yyyy \u00B7 h:mm a')}
+                </Text>
+                {item.reference ? <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 4 }}>Ref: {item.reference}</Text> : null}
+                {item.notes && !item.notes.startsWith('[record-am-unit]') ? (
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.secondary, marginTop: 4 }} numberOfLines={1}>
+                    {item.notes}
+                  </Text>
+                ) : null}
+              </View>
+              <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: isIn ? COLORS.success : isOut ? COLORS.danger : COLORS.accent }}>
+                  {isIn ? '+' : isOut ? '-' : '±'}
+                  {item.quantity} {displayUnit}
+                </Text>
+                <Badge label={config.label} variant={config.variant} />
+                {item.total_cost !== undefined && item.total_cost > 0 ? (
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{formatCurrency(item.total_cost)}</Text>
+                ) : null}
+              </View>
+            </View>
+          );
+        }}
         />
-      )}
+      </View>
     </ScreenShell>
   );
 }

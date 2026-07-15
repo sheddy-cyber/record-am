@@ -277,7 +277,7 @@ export async function shareDebtReminderViaWhatsApp(
     (dueDate ? ` which was due on *${format(new Date(dueDate), 'MMMM d, yyyy')}*` : '') +
     `.\n\n` +
     `Please make payment at your earliest convenience.\n\n` +
-    `Thank you.\n_${businessName}_\n_Powered by Record Am - Designed by PYTHRON_`;
+    `Thank you.\n_${businessName}_`;
 
   try {
     await Share.share({

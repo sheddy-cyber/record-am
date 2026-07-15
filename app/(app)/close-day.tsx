@@ -109,11 +109,11 @@ export default function CloseDayScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
-          showsVerticalScrollIndicator={false}
-        >
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
           <Card style={{ backgroundColor: '#F0F9FF', marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary, marginBottom: 12 }}>
               Day Summary
@@ -194,7 +194,6 @@ export default function CloseDayScreen() {
             style={{ marginTop: 8 }}
           />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

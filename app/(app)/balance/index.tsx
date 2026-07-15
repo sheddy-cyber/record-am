@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { addDays, format, subDays } from 'date-fns';
@@ -7,7 +8,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDailyReport } from '@/lib/reports';
-import { Badge, Button, Card, ConfirmDialog, EmptyState, LoadingScreen, SectionHeader } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, LoadingScreen, SectionHeader } from '@/components/ui';
 import { ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
@@ -26,7 +27,7 @@ export default function DailyBalanceScreen() {
     fetchDailyBalance,
     reopenDay,
   } = useDailyBalanceStore();
-  const [showReopenConfirm, setShowReopenConfirm] = useState(false);
+  const [showPicker, setShowPicker] = useState(false);
 
   const load = useCallback(() => {
     if (currentBusiness && currentBranch) {
@@ -65,7 +66,23 @@ export default function DailyBalanceScreen() {
 
   const handleReopenDay = () => {
     if (!currentBusiness || !currentBranch || !summary?.is_closed) return;
-    setShowReopenConfirm(true);
+    Alert.alert(
+      'Reopen Day',
+      `Are you sure you want to reopen the balance for ${format(new Date(selectedDate), 'MMM d, yyyy')}? This will unlock editing for that day.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Reopen Day', 
+          style: 'destructive',
+          onPress: async () => {
+            const success = await reopenDay(currentBusiness.id, currentBranch.id);
+            if (!success) {
+              Alert.alert('Error', 'Failed to reopen the balance. Please try again.');
+            }
+          }
+        }
+      ]
+    );
   };
 
 
@@ -120,14 +137,14 @@ export default function DailyBalanceScreen() {
             <TouchableOpacity onPress={() => changeDate(-1)} activeOpacity={0.8} style={{ padding: 4 }}>
               <Feather name="chevron-left" size={18} color={COLORS.text.inverse} />
             </TouchableOpacity>
-            <View style={{ alignItems: 'center' }}>
+            <TouchableOpacity style={{ alignItems: 'center', padding: 4 }} onPress={() => setShowPicker(true)} activeOpacity={0.8}>
               <Text style={{ color: COLORS.text.inverse, fontFamily: FONT.bold, fontSize: 16 }}>
                 {format(new Date(selectedDate), 'EEEE')}
               </Text>
               <Text style={{ fontFamily: FONT.regular, color: 'rgba(255,253,248,0.62)', fontSize: 13 }}>
                 {format(new Date(selectedDate), 'MMMM d, yyyy')}
               </Text>
-            </View>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={() => changeDate(1)}
               activeOpacity={0.8}
@@ -375,23 +392,20 @@ export default function DailyBalanceScreen() {
             <View style={{ height: 20 }} />
           </View>
         </ScrollView>
-
-        <ConfirmDialog
-          visible={showReopenConfirm}
-          title="Reopen balance?"
-          message="This will unlock the daily balance so you can make updates and close it again."
-          confirmLabel="Reopen"
-          onConfirm={async () => {
-            setShowReopenConfirm(false);
-            if (!currentBusiness || !currentBranch) return;
-            const success = await reopenDay(currentBusiness.id, currentBranch.id);
-            if (!success) {
-              Alert.alert('Error', 'Failed to reopen the balance. Please try again.');
+      {showPicker && (
+        <DateTimePicker
+          value={new Date(selectedDate)}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(event, date) => {
+            setShowPicker(Platform.OS === 'ios');
+            if (date) {
+              setSelectedDate(format(date, 'yyyy-MM-dd'));
             }
           }}
-          onCancel={() => setShowReopenConfirm(false)}
-          variant="primary"
+          maximumDate={new Date()}
         />
+      )}
       </View>
     </ScreenShell>
   );

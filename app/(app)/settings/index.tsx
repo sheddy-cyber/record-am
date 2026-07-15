@@ -65,23 +65,23 @@ export default function SettingsScreen() {
     }
 
     setSaving(true);
-    try {
-      const updates = {
-        name: bizName.trim(),
-        type: bizType,
-        phone: bizPhone.trim() || undefined,
-        address: bizAddress.trim() || undefined,
-        tax_rate: parseFloat(taxRate) || 0,
-      };
-
-      await updateBusiness(currentBusiness.id, updates);
-      setCurrentBusiness({ ...currentBusiness, ...updates });
-      Toast.show({ type: 'success', text1: 'Business settings saved' });
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    } finally {
+    setSaving(true);
+    const updates = {
+      name: bizName.trim(),
+      type: bizType,
+      phone: bizPhone.trim() || undefined,
+      address: bizAddress.trim() || undefined,
+      tax_rate: parseFloat(taxRate) || 0,
+    };
+    
+    Toast.show({ type: 'success', text1: 'Business settings saved' });
+    setCurrentBusiness({ ...currentBusiness, ...updates });
+    
+    void updateBusiness(currentBusiness.id, updates).catch((err: any) => {
+      Toast.show({ type: 'error', text1: 'Failed to save', text2: err.message });
+    }).finally(() => {
       setSaving(false);
-    }
+    });
   };
 
   const handleSaveDailyCloseSettings = async () => {
@@ -169,15 +169,14 @@ export default function SettingsScreen() {
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScreenHeader
-          title="Business Settings"
-          subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(" \u00B7 ")}
-          theme="dark"
-          left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
-        />
+      <ScreenHeader
+        title="Business Settings"
+        subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(" \u00B7 ")}
+        theme="dark"
+        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+      />
 
-        <KeyboardAwareScrollView contentContainerStyle={{ padding: 20, gap: 20 }}>
+      <KeyboardAwareScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 20 }}>
           <Card>
             <SectionHeader title="Business Information" />
             <InputField label="Business Name" value={bizName} onChangeText={setBizName} placeholder="Your business name" required />
@@ -367,7 +366,6 @@ export default function SettingsScreen() {
             </View>
           </Card>
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

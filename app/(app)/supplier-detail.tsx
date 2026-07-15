@@ -8,7 +8,7 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
 import { deletePurchaseRecord } from '@/lib/recordDeletion';
-import { Badge, Button, Card, ConfirmDialog, EmptyState, LoadingScreen, PaymentSummary, SectionHeader } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
@@ -30,29 +30,9 @@ export default function SupplierDetailScreen() {
     setSelectedSupplier,
   } = useSupplierStore();
 
-  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
-  const [purchaseToDelete, setPurchaseToDelete] = useState<string | null>(null);
-
   const closeScreen = () => router.back();
 
-  const load = useCallback(async () => {
-    if (!currentBusiness || !supplierId) return;
-
-    await Promise.all([
-      fetchSuppliers(currentBusiness.id),
-      fetchSupplierDetail(supplierId, currentBusiness.id),
-    ]);
-  }, [currentBusiness, fetchSupplierDetail, fetchSuppliers, supplierId]);
-
-  useFocusEffect(
-    useCallback(() => {
-      import('react-native').then(({ InteractionManager }) => {
-        InteractionManager.runAfterInteractions(() => {
-          load();
-        });
-      });
-    }, [load]),
-  );
+  // Data is hydrated on app boot. No need to fetch on mount.
 
   const supplier = useMemo(() => {
     return suppliers.find((item) => item.id === supplierId)
@@ -65,13 +45,54 @@ export default function SupplierDetailScreen() {
     }
   }, [setSelectedSupplier, supplier]);
 
+  useEffect(() => {
+    if (currentBusiness && supplierId) {
+      fetchSupplierDetail(supplierId, currentBusiness.id);
+    }
+  }, [currentBusiness, supplierId, fetchSupplierDetail]);
+
   const handleDelete = () => {
     if (!supplier) return;
-    setShowRemoveConfirm(true);
+    Alert.alert(
+      'Remove Supplier',
+      `Remove ${supplier.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Remove', 
+          style: 'destructive',
+          onPress: async () => {
+            await deleteSupplier(supplier.id);
+            setSelectedSupplier(null);
+            Toast.show({ type: 'success', text1: 'Supplier removed' });
+            closeScreen();
+          }
+        }
+      ]
+    );
   };
 
   const handleDeletePurchase = (purchaseId: string) => {
-    setPurchaseToDelete(purchaseId);
+    Alert.alert(
+      'Delete record',
+      'Delete this supplier goods record?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deletePurchaseRecord(purchaseId);
+              await load();
+              Toast.show({ type: 'success', text1: 'Goods record deleted' });
+            } catch (err: any) {
+              Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+            }
+          }
+        }
+      ]
+    );
   };
 
 
@@ -291,44 +312,6 @@ export default function SupplierDetailScreen() {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {supplier && (
-        <ConfirmDialog
-          visible={showRemoveConfirm}
-          title="Remove Supplier"
-          message={`Remove ${supplier.name}?`}
-          confirmLabel="Remove"
-          onConfirm={async () => {
-            setShowRemoveConfirm(false);
-            await deleteSupplier(supplier.id);
-            setSelectedSupplier(null);
-            Toast.show({ type: 'success', text1: 'Supplier removed' });
-            closeScreen();
-          }}
-          onCancel={() => setShowRemoveConfirm(false)}
-          variant="danger"
-        />
-      )}
-
-      <ConfirmDialog
-        visible={!!purchaseToDelete}
-        title="Delete record"
-        message="Delete this supplier goods record?"
-        confirmLabel="Delete"
-        onConfirm={async () => {
-          if (!purchaseToDelete) return;
-          const pId = purchaseToDelete;
-          setPurchaseToDelete(null);
-          try {
-            await deletePurchaseRecord(pId);
-            await load();
-            Toast.show({ type: 'success', text1: 'Goods record deleted' });
-          } catch (err: any) {
-            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
-          }
-        }}
-        onCancel={() => setPurchaseToDelete(null)}
-        variant="danger"
-      />
     </ScreenShell>
   );
 }

@@ -33,12 +33,12 @@ if (!isExpoGo()) {
 // ─────────────────────────────────────────────────────────────────
 export async function registerForPushNotifications(): Promise<string | null> {
   if (isExpoGo()) {
-    console.log('[notifications] Skipped — not supported in Expo Go');
+
     return null;
   }
 
   if (!Device.isDevice) {
-    console.log('[notifications] Physical device required');
+
     return null;
   }
 
@@ -52,7 +52,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     }
 
     if (finalStatus !== 'granted') {
-      console.log('[notifications] Permission denied');
+
       return null;
     }
 
@@ -68,7 +68,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const tokenData = await Notifications.getExpoPushTokenAsync();
     return tokenData.data;
   } catch (err) {
-    console.log('[notifications] Token fetch failed:', err);
+    // Silently ignore
     return null;
   }
 }
@@ -94,7 +94,7 @@ export async function scheduleDailySummaryNotification(hour = 20, minute = 0) {
       },
     });
   } catch (err) {
-    console.log('[notifications] scheduleDailySummary failed:', err);
+    // Silently ignore
   }
 }
 
@@ -116,7 +116,7 @@ export async function scheduleLowStockNotification(productName: string, currentS
       trigger: null,
     });
   } catch (err) {
-    console.log('[notifications] scheduleLowStock failed:', err);
+    // Silently ignore
   }
 }
 
@@ -134,7 +134,7 @@ export async function scheduleDebtReminderNotification(customerName: string, bal
       trigger: null,
     });
   } catch (err) {
-    console.log('[notifications] scheduleDebtReminder failed:', err);
+    // Silently ignore
   }
 }
 
@@ -146,7 +146,7 @@ export async function sendImmediateNotification(title: string, body: string, dat
       trigger: null,
     });
   } catch (err) {
-    console.log('[notifications] sendImmediate failed:', err);
+    // Silently ignore
   }
 }
 
@@ -163,7 +163,7 @@ async function cancelNotificationsByTag(tag: string) {
       }
     }
   } catch (err) {
-    console.log('[notifications] cancelByTag failed:', err);
+    // Silently ignore
   }
 }
 
@@ -172,7 +172,7 @@ export async function cancelAllNotifications() {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
   } catch (err) {
-    console.log('[notifications] cancelAll failed:', err);
+    // Silently ignore
   }
 }
 
@@ -199,7 +199,7 @@ export async function checkAndNotifyLowStock(businessId: string, branchId: strin
       }
     }
   } catch (err) {
-    console.log('[notifications] checkLowStock failed:', err);
+    // Silently ignore
   }
 }
 
@@ -224,6 +224,6 @@ export async function checkAndNotifyOverdueDebts(businessId: string) {
       await scheduleDebtReminderNotification(debt.customer_name, debt.balance, daysOverdue);
     }
   } catch (err) {
-    console.log('[notifications] checkOverdueDebts failed:', err);
+    // Silently ignore
   }
 }

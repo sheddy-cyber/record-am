@@ -17,7 +17,6 @@ import { useAuthStore } from '@/store/authStore';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { GlobalDialog } from '@/components/ui/GlobalDialog';
-import '../global.css';
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -275,7 +274,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: COLORS.surface }}>
-        <Stack screenOptions={{ headerShown: false, animation: 'none' }}>
+        <Stack screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 150 }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(app)" />

@@ -35,10 +35,8 @@ export default function SupplierEditScreen() {
   const closeScreen = () => router.back();
 
   useEffect(() => {
-    if (currentBusiness && !suppliers.length) {
-      fetchSuppliers(currentBusiness.id);
-    }
-  }, [currentBusiness, fetchSuppliers, suppliers.length]);
+    // Suppliers are hydrated globally by bootloader
+  }, [currentBusiness]);
 
   const supplier = useMemo(() => {
     if (selectedSupplier?.id === supplierId) return selectedSupplier;
@@ -65,10 +63,10 @@ export default function SupplierEditScreen() {
 
     await updateSupplier(supplier.id, {
       name: name.trim(),
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-      address: address.trim() || undefined,
-      notes: notes.trim() || undefined,
+      phone: phone.trim() || null,
+      email: email.trim() || null,
+      address: address.trim() || null,
+      notes: notes.trim() || null,
     });
 
     Toast.show({ type: 'success', text1: 'Supplier updated' });
@@ -102,11 +100,11 @@ export default function SupplierEditScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
-          showsVerticalScrollIndicator={false}
-        >
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
           <InputField
             label="Supplier or Business Name"
             value={name}
@@ -147,7 +145,6 @@ export default function SupplierEditScreen() {
           />
           <Button title="Save Changes" onPress={handleEdit} loading={isSaving} size="lg" style={{ marginTop: 8 }} />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

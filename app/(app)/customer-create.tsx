@@ -61,11 +61,11 @@ export default function CustomerCreateScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
-          showsVerticalScrollIndicator={false}
-        >
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
           <InputField
             label="Full Name"
             value={name}
@@ -106,7 +106,6 @@ export default function CustomerCreateScreen() {
           />
           <Button title="Add Customer" onPress={handleAdd} loading={isSaving} size="lg" style={{ marginTop: 8 }} />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

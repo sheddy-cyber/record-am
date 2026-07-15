@@ -6,6 +6,7 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useDebtStore } from '@/store/debtStore';
 import { supabase } from '@/lib/supabase';
 import { recordRepaymentOffline } from '@/lib/offlineRecords';
 import { readCachedCustomerDebts } from '@/lib/offlineStore';
@@ -33,47 +34,14 @@ export default function RecordPaymentScreen() {
 
   const closeScreen = () => router.back();
 
-  const loadDebt = useCallback(async () => {
-    if (!debtId) {
-      setLoading(false);
-      return;
-    }
-
-    if (currentBusiness && currentBranch) {
-      const cachedDebts = await readCachedCustomerDebts(currentBusiness.id, currentBranch.id);
-      const cached = cachedDebts.find((debt) => debt.id === debtId);
-      if (cached) {
-        setSelectedDebt(cached);
-        setLoading(false); // Instantly remove loading screen
-      } else {
-        setLoading(true);
-      }
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('customer_debts')
-        .select('*')
-        .eq('id', debtId)
-        .single();
-
-      if (error) throw error;
-      setSelectedDebt((data as CustomerDebt) ?? null);
-    } catch (err) {
-      console.error(err);
-      if (!selectedDebt) {
-        setSelectedDebt(null);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [currentBranch, currentBusiness, debtId]);
-
   useEffect(() => {
-    loadDebt();
-  }, [loadDebt]);
+    if (debtId) {
+      const debt = useDebtStore.getState().debts.find(d => d.id === debtId);
+      if (debt) {
+        setSelectedDebt(debt);
+      }
+    }
+  }, [debtId]);
 
   const handleRepayment = async () => {
     if (!selectedDebt || !user || !currentBusiness || !currentBranch) return;
@@ -89,35 +57,35 @@ export default function RecordPaymentScreen() {
     }
 
     setSavingRepay(true);
-    try {
-      const { debt } = await recordRepaymentOffline({
-        businessId: currentBusiness.id,
-        branchId: currentBranch.id,
-        userId: user.id,
-        debt: selectedDebt,
-        amount,
-        paymentMethod: repayMethod,
-        notes: repayNotes.trim() || undefined,
-      });
-
-      Toast.show({
-        type: 'success',
-        text1: debt.status === 'settled' ? 'Debt settled' : 'Payment recorded',
-        text2:
-          debt.status === 'settled'
-            ? `${formatCurrency(amount)} queued for sync.`
-            : `${formatCurrency(amount)} queued for sync. Balance remains in debts.`,
-      });
-
+    setSavingRepay(true);
+    Toast.show({
+      type: 'success',
+      text1: 'Payment recorded',
+      text2: `${formatCurrency(amount)} queued for sync.`,
+    });
+    closeScreen();
+    
+    void recordRepaymentOffline({
+      businessId: currentBusiness.id,
+      branchId: currentBranch.id,
+      userId: user.id,
+      debt: selectedDebt,
+      amount,
+      paymentMethod: repayMethod,
+      notes: repayNotes.trim() || undefined,
+    }).then(({ debt }) => {
       void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
       void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
-
-      closeScreen();
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    } finally {
+      void useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id);
+    }).catch((err: any) => {
+      Toast.show({
+        type: 'error',
+        text1: 'Save failed',
+        text2: err.message,
+      });
+    }).finally(() => {
       setSavingRepay(false);
-    }
+    });
   };
 
 
@@ -147,11 +115,11 @@ export default function RecordPaymentScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView
-          contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
-          showsVerticalScrollIndicator={false}
-        >
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
           <FlatSection style={{ padding: 16, marginBottom: 20 }}>
             <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Balance remaining</Text>
             <Text style={{ fontSize: 30, fontFamily: FONT.bold, color: COLORS.danger, marginTop: 6 }}>
@@ -187,7 +155,6 @@ export default function RecordPaymentScreen() {
           />
           <Button title="Confirm Payment" onPress={handleRepayment} loading={savingRepay} size="lg" />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

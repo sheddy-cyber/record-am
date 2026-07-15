@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, InteractionManager, Share, Text, TouchableOpacity, View, RefreshControl, Modal, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { Alert, FlatList, InteractionManager, Share, Text, TouchableOpacity, View, RefreshControl, Modal, ScrollView, StyleSheet, ActivityIndicator, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
@@ -12,10 +12,10 @@ import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
-import { readCachedRows } from '@/lib/offlineStore';
+import { readCachedRows, removeCachedRow } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { useTabStore } from '@/store/tabStore';
-import { Button, ConfirmDialog, EmptyState, LoadingScreen, PaymentSummary } from '@/components/ui';
+import { Button, EmptyState, LoadingScreen, PaymentSummary } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
@@ -24,6 +24,13 @@ import { shareReceiptViaWhatsApp } from '@/lib/reports';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 function SalesScreen() {
   const insets = useSafeAreaInsets();
@@ -35,13 +42,13 @@ function SalesScreen() {
   const branchName = useAuthStore((s) => s.currentBranch?.name);
   // Subscribe only to primitive values so unrelated auth store updates do not refetch this tab.
   const [activities, setActivities] = useState<RevenueActivity[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [previewSale, setPreviewSale] = useState<Sale | null>(null);
   const [generatingReceiptId, setGeneratingReceiptId] = useState<string | null>(null);
   const [isSharingImage, setIsSharingImage] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [activityToDelete, setActivityToDelete] = useState<RevenueActivity | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const receiptCaptureRef = useRef<ViewShot | null>(null);
 
   const openRecordSale = () => router.push('/(app)/record-sale');
@@ -53,7 +60,6 @@ function SalesScreen() {
       return;
     }
 
-    if (!isRefreshing) setLoading(true);
     try {
       const data = await fetchRevenueActivities(businessId, branchId, 60);
       setActivities(data);
@@ -65,17 +71,10 @@ function SalesScreen() {
     }
   }, [businessId, branchId]);
 
-  const activeTab = useTabStore((s) => s.activeTab);
-
   useEffect(() => {
-    if (activeTab === 'sales') {
-      InteractionManager.runAfterInteractions(() => {
-        loadActivities();
-      });
-    }
-  }, [activeTab, loadActivities]);
-
-  // Refetch handled by activeTab selector above — no focus listener needed
+    // Only fetch on initial mount. Realtime and pull-to-refresh handle updates.
+    loadActivities();
+  }, [loadActivities]);
 
   useRealtimeRefresh({
     channelName: `sales-screen-${branchId ?? 'unknown'}`,
@@ -229,91 +228,67 @@ function SalesScreen() {
     }
   };
 
-  const handleDeleteActivity = (activity: RevenueActivity) => {
-    setActivityToDelete(activity);
-  };
-
-  const renderActivityItem = ({ item }: { item: RevenueActivity }) => {
-    const isRepayment = item.kind === 'debt_repayment';
-    const isGenerating = generatingReceiptId === (isRepayment ? item.id : item.sale_id);
-    
-    return (
-      <TouchableOpacity 
-        activeOpacity={0.7}
-        onLongPress={() => handleDeleteActivity(item)}
-        onPress={() => {
-          if (isRepayment) {
-            generateRepaymentReceipt(item.id);
-          } else if (item.sale_id) {
-            generateSaleReceipt(item.sale_id);
+  const handleDeleteActivity = useCallback((activity: RevenueActivity) => {
+    Alert.alert(
+      'Delete record',
+      `Delete this ${activity.kind === 'sale' ? 'sale' : 'debt payment'}? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Delete', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (activity.kind === 'sale') {
+                const saleId = activity.sale_id ?? activity.id;
+                await deleteSaleRecord(saleId);
+                if (businessId && branchId) {
+                  await removeCachedRow({ businessId, branchId }, 'sales', saleId);
+                  await removeCachedRow({ businessId, branchId }, 'revenue_activities', activity.id);
+                }
+              } else {
+                await deleteDebtRepaymentRecord(activity.id);
+                if (businessId && branchId) {
+                  await removeCachedRow({ businessId, branchId }, 'debt_repayments', activity.id);
+                  await removeCachedRow({ businessId, branchId }, 'revenue_activities', activity.id);
+                }
+              }
+              await loadActivities();
+              Toast.show({ type: 'success', text1: 'Record deleted' });
+            } catch (err: any) {
+              Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+            }
           }
-        }}
-        style={styles.card}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.customerInfo}>
-            <View style={[styles.iconContainer, { backgroundColor: isRepayment ? COLORS.successLight : COLORS.accentLight }]}>
-              <Feather 
-                name={isRepayment ? "arrow-down-left" : "shopping-cart"} 
-                size={16} 
-                color={isRepayment ? COLORS.success : COLORS.accent} 
-              />
-            </View>
-            <View>
-              <Text style={styles.customerName} numberOfLines={1}>
-                {item.customer_name}
-              </Text>
-              <Text style={styles.dateText}>
-                {format(new Date(item.created_at), 'MMM d, h:mm a')}
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.amountInfo}>
-            <Text style={[styles.totalAmount, { color: isRepayment ? COLORS.success : COLORS.accent }]}>
-              {formatCurrency(item.total_amount)}
-            </Text>
-            {item.amount_owed > 0 ? (
-              <View style={styles.debtBadge}>
-                <Text style={styles.debtText}>
-                  Owes {formatCurrency(item.amount_owed)}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.paidText}>Fully Paid</Text>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.cardFooter}>
-          <View style={styles.metaRow}>
-            <View style={styles.metaItem}>
-              <Feather name="credit-card" size={12} color={COLORS.text.muted} />
-              <Text style={styles.metaText}>{item.payment_method.replace('_', ' ').toUpperCase()}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Feather name="hash" size={12} color={COLORS.text.muted} />
-              <Text style={styles.metaText}>{item.reference}</Text>
-            </View>
-          </View>
-          
-          {isGenerating ? (
-            <ActivityIndicator size="small" color={COLORS.accent} />
-          ) : (
-            <Feather name="chevron-right" size={16} color={COLORS.text.muted} />
-          )}
-        </View>
-
-        {item.notes ? (
-          <View style={styles.notesContainer}>
-            <Text style={styles.notesText} numberOfLines={1}>
-              "{item.notes}"
-            </Text>
-          </View>
-        ) : null}
-      </TouchableOpacity>
+        }
+      ]
     );
-  };
+  }, []);
+
+  const handleToggleExpand = useCallback((id: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedId((prev) => (prev === id ? null : id));
+  }, []);
+
+  const handleGenerateReceipt = useCallback((item: RevenueActivity) => {
+    if (item.kind === 'debt_repayment') {
+      generateRepaymentReceipt(item.id);
+    } else if (item.sale_id) {
+      generateSaleReceipt(item.sale_id);
+    }
+  }, [businessId, branchId]);
+
+  const renderActivityItem = useCallback(({ item }: { item: RevenueActivity }) => {
+    return (
+      <ActivityItem 
+        item={item}
+        isExpanded={expandedId === item.id}
+        onToggleExpand={handleToggleExpand}
+        onDelete={handleDeleteActivity}
+        generatingReceiptId={generatingReceiptId}
+        onGenerateReceipt={handleGenerateReceipt}
+      />
+    );
+  }, [expandedId, handleToggleExpand, handleDeleteActivity, generatingReceiptId, handleGenerateReceipt]);
 
 
 
@@ -542,30 +517,6 @@ function SalesScreen() {
           </View>
         </View>
       </Modal>
-      <ConfirmDialog
-        visible={activityToDelete !== null}
-        title="Delete record"
-        message={`Delete this ${activityToDelete?.kind === 'sale' ? 'sale' : 'debt payment'}? This cannot be undone.`}
-        confirmLabel="Delete"
-        onConfirm={async () => {
-          if (!activityToDelete) return;
-          const targetActivity = activityToDelete;
-          setActivityToDelete(null);
-          try {
-            if (targetActivity.kind === 'sale') {
-              await deleteSaleRecord(targetActivity.sale_id ?? targetActivity.id);
-            } else {
-              await deleteDebtRepaymentRecord(targetActivity.id);
-            }
-            await loadActivities();
-            Toast.show({ type: 'success', text1: 'Record deleted' });
-          } catch (err: any) {
-            Alert.alert('Unable to delete', err.message ?? 'Please try again.');
-          }
-        }}
-        onCancel={() => setActivityToDelete(null)}
-        variant="danger"
-      />
     </ScreenShell>
     </SwipeableTabScreen>
   );
@@ -670,10 +621,173 @@ const styles = StyleSheet.create({
     color: COLORS.text.muted,
     fontStyle: 'italic',
   },
-
+  expandedContent: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  itemsList: {
+    marginBottom: 16,
+    backgroundColor: '#F7F5F0',
+    borderRadius: RADIUS.md,
+    padding: 12,
+  },
+  itemsHeaderText: {
+    fontSize: 10,
+    fontFamily: FONT.bold,
+    color: COLORS.text.muted,
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.03)',
+  },
+  itemName: {
+    fontSize: 13,
+    fontFamily: FONT.medium,
+    color: COLORS.text.primary,
+    flex: 1,
+    paddingRight: 10,
+  },
+  itemPrice: {
+    fontSize: 13,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  expandedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
 });
 
 export default React.memo(SalesScreen);
+
+const ActivityItem = React.memo(({ 
+  item, 
+  isExpanded, 
+  onToggleExpand, 
+  onDelete, 
+  generatingReceiptId,
+  onGenerateReceipt 
+}: { 
+  item: RevenueActivity;
+  isExpanded: boolean;
+  onToggleExpand: (id: string) => void;
+  onDelete: (item: RevenueActivity) => void;
+  generatingReceiptId: string | null;
+  onGenerateReceipt: (item: RevenueActivity) => void;
+}) => {
+  const isRepayment = item.kind === 'debt_repayment';
+  const isGenerating = generatingReceiptId === (isRepayment ? item.id : item.sale_id);
+  
+  return (
+    <View style={[styles.card, isExpanded && { borderColor: COLORS.accent }]}>
+      <TouchableOpacity 
+        activeOpacity={0.7}
+        onLongPress={() => onDelete(item)}
+        onPress={() => onToggleExpand(item.id)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.customerInfo}>
+            <View style={[styles.iconContainer, { backgroundColor: isRepayment ? COLORS.successLight : COLORS.accentLight }]}>
+              <Feather 
+                name={isRepayment ? "arrow-down-left" : "shopping-cart"} 
+                size={16} 
+                color={isRepayment ? COLORS.success : COLORS.accent} 
+              />
+            </View>
+            <View>
+              <Text style={styles.customerName} numberOfLines={1}>
+                {item.customer_name}
+              </Text>
+              <Text style={styles.dateText}>
+                {format(new Date(item.created_at), 'MMM d, h:mm a')}
+              </Text>
+            </View>
+          </View>
+          
+          <View style={styles.amountInfo}>
+            <Text style={[styles.totalAmount, { color: isRepayment ? COLORS.success : COLORS.accent }]}>
+              {formatCurrency(item.total_amount)}
+            </Text>
+            {item.amount_owed > 0 ? (
+              <View style={styles.debtBadge}>
+                <Text style={styles.debtText}>
+                  Owes {formatCurrency(item.amount_owed)}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.paidText}>Fully Paid</Text>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <View style={styles.metaRow}>
+            <View style={styles.metaItem}>
+              <Feather name="credit-card" size={12} color={COLORS.text.muted} />
+              <Text style={styles.metaText}>{item.payment_method.replace('_', ' ').toUpperCase()}</Text>
+            </View>
+            <View style={styles.metaItem}>
+              <Feather name="hash" size={12} color={COLORS.text.muted} />
+              <Text style={styles.metaText}>{item.reference}</Text>
+            </View>
+          </View>
+          
+          <Feather name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={COLORS.text.muted} />
+        </View>
+
+        {item.notes ? (
+          <View style={styles.notesContainer}>
+            <Text style={styles.notesText} numberOfLines={1}>
+              "{item.notes}"
+            </Text>
+          </View>
+        ) : null}
+      </TouchableOpacity>
+
+      {isExpanded && (
+        <View style={styles.expandedContent}>
+          {item.items && item.items.length > 0 ? (
+            <View style={styles.itemsList}>
+              <Text style={styles.itemsHeaderText}>ITEMS SOLD</Text>
+              {item.items.map((i, idx) => (
+                <View key={idx} style={styles.itemRow}>
+                  <Text style={styles.itemName}>
+                    {i.quantity}x {i.product_name}
+                  </Text>
+                  <Text style={styles.itemPrice}>
+                    {formatCurrency(i.total_price)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={[styles.notesText, { marginTop: 10 }]}>No item details available.</Text>
+          )}
+
+          <View style={styles.expandedActions}>
+            <Button 
+              title={isGenerating ? "Preparing..." : "Get Receipt"}
+              icon="file-text"
+              disabled={isGenerating}
+              loading={isGenerating}
+              onPress={() => onGenerateReceipt(item)}
+              variant="primary"
+              style={{ flex: 1 }}
+            />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+});
 
 function ReceiptShareCard({
   sale,

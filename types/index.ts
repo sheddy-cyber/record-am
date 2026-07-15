@@ -359,6 +359,11 @@ export interface RevenueActivity {
   created_at: string;
   sale_id?: string;
   debt_id?: string;
+  items?: {
+    quantity: number;
+    total_price: number;
+    product_name: string;
+  }[];
 }
 
 // ============================================================

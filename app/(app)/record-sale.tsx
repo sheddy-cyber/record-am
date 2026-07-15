@@ -7,6 +7,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  InteractionManager,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -17,6 +18,8 @@ import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useCustomerStore } from '@/store/customerStore';
+import { useSaleStore } from '@/store/saleStore';
 import { supabase } from '@/lib/supabase';
 import { recordSaleOffline } from '@/lib/offlineRecords';
 import {
@@ -50,118 +53,42 @@ const roundAmount = (value: number) => Number(value.toFixed(2));
 export default function RecordSaleScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, user } = useAuthStore();
-  const products = useBusinessStore((s) => s.products);
-  const fetchProducts = useBusinessStore((s) => s.fetchProducts);
+  const { products } = useBusinessStore();
+  const {
+    pinnedProductIds,
+    soldProductQuantities,
+    togglePinnedProduct,
+    loadPinnedProductIds,
+    loadSoldProductQuantities,
+  } = useSaleStore();
 
-  const [loading, setLoading] = useState(true);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
+  const [discountAmount, setDiscountAmount] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [amountPaid, setAmountPaid] = useState('');
   const [saleNotes, setSaleNotes] = useState('');
   const [savingSale, setSavingSale] = useState(false);
-  const [pinnedProductIds, setPinnedProductIds] = useState<string[]>([]);
-  const [soldProductQuantities, setSoldProductQuantities] = useState<Record<string, number>>({});
+
+  const pinnedProductIdSet = useMemo(() => new Set(pinnedProductIds), [pinnedProductIds]);
 
   const closeScreen = () => router.back();
 
-  const pinnedProductsStorageKey = useMemo(
-    () =>
-      currentBusiness
-        ? `${PINNED_SALE_PRODUCTS_STORAGE_PREFIX}:${currentBusiness.id}:${currentBranch?.id ?? 'default'}`
-        : null,
-    [currentBranch?.id, currentBusiness],
-  );
-
-  const persistPinnedProductIds = useCallback(
-    async (nextPinnedProductIds: string[]) => {
-      if (!pinnedProductsStorageKey) return;
-      await AsyncStorage.setItem(pinnedProductsStorageKey, JSON.stringify(nextPinnedProductIds));
-    },
-    [pinnedProductsStorageKey],
-  );
-
-  const loadPinnedProductIds = useCallback(async () => {
-    if (!pinnedProductsStorageKey) {
-      setPinnedProductIds([]);
-      return;
-    }
-
-    try {
-      const storedValue = await AsyncStorage.getItem(pinnedProductsStorageKey);
-      if (!storedValue) {
-        setPinnedProductIds([]);
-        return;
-      }
-
-      const parsedValue = JSON.parse(storedValue);
-      setPinnedProductIds(
-        Array.isArray(parsedValue)
-          ? parsedValue.filter((productId): productId is string => typeof productId === 'string')
-          : [],
-      );
-    } catch {
-      setPinnedProductIds([]);
-    }
-  }, [pinnedProductsStorageKey]);
-
-  const loadSoldProductQuantities = useCallback(async () => {
-    if (!currentBusiness || !currentBranch) {
-      setSoldProductQuantities({});
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('sale_items')
-        .select(`
-          product_id,
-          quantity,
-          sale:sales!inner(business_id, branch_id)
-        `)
-        .eq('sale.business_id', currentBusiness.id)
-        .eq('sale.branch_id', currentBranch.id);
-
-      if (error) throw error;
-
-      const totals = ((data as Array<{ product_id: string; quantity: number }> | null) ?? []).reduce(
-        (accumulator, item) => {
-          const productId = item.product_id;
-          if (!productId) return accumulator;
-
-          accumulator[productId] = (accumulator[productId] ?? 0) + Number(item.quantity ?? 0);
-          return accumulator;
-        },
-        {} as Record<string, number>,
-      );
-
-      setSoldProductQuantities(totals);
-    } catch {
-      setSoldProductQuantities({});
-    }
-  }, [currentBranch, currentBusiness]);
-
   const loadProducts = useCallback(async () => {
-    if (!currentBusiness) return;
-    
-    // Only show loading state if we have absolutely no products
-    if (useBusinessStore.getState().products.length === 0) {
-      setLoading(true);
-    }
+    if (!currentBusiness || !currentBranch) return;
     
     try {
-      void fetchProducts(currentBusiness.id);
-      await loadPinnedProductIds();
+      await loadPinnedProductIds(currentBusiness.id);
     } finally {
       setLoading(false);
     }
     
-    // Load sold quantities in background - not critical for initial render
-    loadSoldProductQuantities();
-  }, [currentBusiness, fetchProducts, loadPinnedProductIds, loadSoldProductQuantities]);
+    loadSoldProductQuantities(currentBusiness.id, currentBranch.id);
+  }, [currentBusiness, currentBranch, loadPinnedProductIds, loadSoldProductQuantities]);
 
   useEffect(() => {
     loadProducts();
@@ -221,21 +148,6 @@ export default function RecordSaleScreen() {
     [pinnedProductIds],
   );
 
-  const pinnedProductIdSet = useMemo(
-    () => new Set(pinnedProductIds),
-    [pinnedProductIds],
-  );
-
-  useEffect(() => {
-    if (loading) return;
-    const validProductIds = new Set(searchableProducts.map((product) => product.id));
-    const nextPinnedProductIds = pinnedProductIds.filter((productId) => validProductIds.has(productId));
-
-    if (nextPinnedProductIds.length === pinnedProductIds.length) return;
-
-    setPinnedProductIds(nextPinnedProductIds);
-    void persistPinnedProductIds(nextPinnedProductIds);
-  }, [loading, persistPinnedProductIds, pinnedProductIds, searchableProducts]);
 
   const prioritizedDefaultProducts = useMemo(() => {
     const productById = new Map(searchableProducts.map((product) => [product.id, product]));
@@ -321,18 +233,12 @@ export default function RecordSaleScreen() {
     return searchableProducts.filter((product) => product.name.toLowerCase().includes(query)).length > productResults.length;
   }, [productResults.length, search, searchableProducts]);
 
-  const togglePinnedProduct = useCallback(
+  const handleTogglePinnedProduct = useCallback(
     (productId: string) => {
-      setPinnedProductIds((previousPinnedProductIds) => {
-        const nextPinnedProductIds = previousPinnedProductIds.includes(productId)
-          ? previousPinnedProductIds.filter((currentProductId) => currentProductId !== productId)
-          : [productId, ...previousPinnedProductIds.filter((currentProductId) => currentProductId !== productId)];
-
-        void persistPinnedProductIds(nextPinnedProductIds);
-        return nextPinnedProductIds;
-      });
+      if (!currentBusiness) return;
+      togglePinnedProduct(currentBusiness.id, productId);
     },
-    [persistPinnedProductIds],
+    [currentBusiness, togglePinnedProduct],
   );
 
   const removeProductFromCart = (productId: string) => {
@@ -492,41 +398,49 @@ export default function RecordSaleScreen() {
     }
 
     setSavingSale(true);
-    try {
-      const { sale } = await recordSaleOffline({
-        businessId: currentBusiness.id,
-        branchId: currentBranch.id,
-        userId: user.id,
-        cart,
-        customerName,
-        customerPhone,
-        paymentMethod,
-        notes: saleNotes.trim() || undefined,
-        subtotal: roundAmount(subtotal),
-        discountAmount: roundAmount(totalDiscount),
-        totalAmount: roundAmount(cartTotal),
-        amountPaid: roundAmount(paidAmount),
-        amountOwed: roundAmount(amountOwed),
-        paymentStatus,
+    
+    // Optimistically finish UI
+    const saleNumber = `OFF-${Date.now().toString(36).toUpperCase()}`;
+    Toast.show({
+      type: 'success',
+      text1: 'Sale recorded',
+      text2: `${saleNumber} \u00B7 ${formatCurrency(cartTotal)} queued for sync`,
+    });
+    closeScreen();
+
+    // Fire and forget background sync
+    void recordSaleOffline({
+      businessId: currentBusiness.id,
+      branchId: currentBranch.id,
+      userId: user.id,
+      cart,
+      customerName,
+      customerPhone,
+      paymentMethod,
+      notes: saleNotes.trim() || undefined,
+      subtotal: roundAmount(subtotal),
+      discountAmount: roundAmount(totalDiscount),
+      totalAmount: roundAmount(cartTotal),
+      amountPaid: roundAmount(paidAmount),
+      amountOwed: roundAmount(amountOwed),
+      paymentStatus,
+      saleNumber,
+    })
+      .then(() => {
+        // Instantly refresh analytics with the new cached data
+        void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+        void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+      })
+      .catch((err: any) => {
+        Toast.show({
+          type: 'error',
+          text1: 'Save failed',
+          text2: err.message,
+        });
       });
-
-      Toast.show({
-        type: 'success',
-        text1: 'Sale recorded',
-        text2: `${sale.sale_number} \u00B7 ${formatCurrency(cartTotal)} queued for sync`,
-      });
-
-      // Instantly refresh analytics with the new cached data
-      void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
-      void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
-
-      closeScreen();
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    } finally {
-      setSavingSale(false);
-    }
+    setSavingSale(false);
   };
+
 
 
   return (
@@ -537,8 +451,11 @@ export default function RecordSaleScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }} showsVerticalScrollIndicator={false}>
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
+        showsVerticalScrollIndicator={false}
+      >
           <InputField
             label="Find Product"
             value={search}
@@ -599,7 +516,7 @@ export default function RecordSaleScreen() {
                         <TouchableOpacity
                           onPress={(event) => {
                             event.stopPropagation();
-                            togglePinnedProduct(product.id);
+                            handleTogglePinnedProduct(product.id);
                           }}
                           activeOpacity={0.8}
                           hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
@@ -631,7 +548,7 @@ export default function RecordSaleScreen() {
           {cart.length === 0 ? (
             <FlatSection style={{ padding: 20, marginBottom: 20 }}>
               <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center' }}>
-                Products you add from search will appear here.
+                Products you add to the cart will appear here.
               </Text>
             </FlatSection>
           ) : (
@@ -855,7 +772,6 @@ export default function RecordSaleScreen() {
             </View>
           ) : null}
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
-    </ScreenShell>
+      </ScreenShell>
   );
 }

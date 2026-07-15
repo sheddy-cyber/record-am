@@ -20,6 +20,7 @@ import {
   enqueueMutations,
   nowIso,
   readCachedProducts,
+  readCachedRows,
   setCachedProductInventory,
   upsertCachedCustomerDebts,
   upsertCachedExpenses,
@@ -111,16 +112,26 @@ export async function recordSaleOffline(params: {
   amountPaid: number;
   amountOwed: number;
   paymentStatus: PaymentStatus;
+  saleNumber?: string;
 }) {
   const timestamp = nowIso();
   const saleId = createLocalId();
   const customerName = params.customerName.trim();
   const customerPhone = params.customerPhone.trim();
-  const customerId = customerName ? createLocalId() : undefined;
-  const saleNumber = `OFF-${Date.now().toString(36).toUpperCase()}`;
+  const saleNumber = params.saleNumber || `OFF-${Date.now().toString(36).toUpperCase()}`;
 
-  const customer: Customer | null = customerId
-    ? {
+  let customerId: string | undefined = undefined;
+  let customer: Customer | null = null;
+
+  if (customerName) {
+    const cachedCustomers = await readCachedRows<Customer>({ businessId: params.businessId }, 'customers');
+    const existingCustomer = cachedCustomers.find(c => c.name.toLowerCase() === customerName.toLowerCase());
+    
+    if (existingCustomer) {
+      customerId = existingCustomer.id;
+    } else {
+      customerId = createLocalId();
+      customer = {
         id: customerId,
         business_id: params.businessId,
         name: customerName,
@@ -128,8 +139,9 @@ export async function recordSaleOffline(params: {
         is_active: true,
         created_at: timestamp,
         updated_at: timestamp,
-      }
-    : null;
+      };
+    }
+  }
 
   const sale: CachedSale = {
     id: saleId,
@@ -352,11 +364,31 @@ export async function recordDebtOffline(params: {
   notes?: string;
 }) {
   const timestamp = nowIso();
+  const customerNameStr = params.customerName.trim();
+  
+  const cachedCustomers = await readCachedRows<Customer>({ businessId: params.businessId }, 'customers');
+  let customerId = cachedCustomers.find(c => c.name.toLowerCase() === customerNameStr.toLowerCase())?.id;
+  
+  let newCustomer: Customer | null = null;
+  if (!customerId) {
+    customerId = createLocalId();
+    newCustomer = {
+      id: customerId,
+      business_id: params.businessId,
+      name: customerNameStr,
+      phone: params.customerPhone?.trim() || undefined,
+      is_active: true,
+      created_at: timestamp,
+      updated_at: timestamp,
+    };
+  }
+
   const debt: CustomerDebt = {
     id: createLocalId(),
     business_id: params.businessId,
     branch_id: params.branchId,
-    customer_name: params.customerName,
+    customer_id: customerId,
+    customer_name: customerNameStr,
     customer_phone: params.customerPhone || undefined,
     original_amount: roundAmount(params.amount),
     amount_paid: 0,
@@ -368,17 +400,30 @@ export async function recordDebtOffline(params: {
     updated_at: timestamp,
   };
 
+  const mutations: Parameters<typeof enqueueMutations>[0] = [];
+  
+  if (newCustomer) {
+    mutations.push({
+      operation: 'upsert',
+      table: 'customers',
+      payload: newCustomer,
+      onConflict: 'id',
+      description: `Sync customer ${newCustomer.name}`,
+    });
+  }
+  
+  mutations.push({
+    operation: 'upsert',
+    table: 'customer_debts',
+    payload: debt,
+    onConflict: 'id',
+    description: `Sync debt for ${debt.customer_name}`,
+  });
+
   await Promise.all([
+    newCustomer ? upsertCachedRows({ businessId: params.businessId }, 'customers', [newCustomer]) : Promise.resolve(),
     upsertCachedCustomerDebts(params.businessId, params.branchId, [debt]),
-    enqueueMutations([
-      {
-        operation: 'upsert',
-        table: 'customer_debts',
-        payload: debt,
-        onConflict: 'id',
-        description: `Sync debt for ${debt.customer_name}`,
-      },
-    ]),
+    enqueueMutations(mutations),
   ]);
 
   return debt;

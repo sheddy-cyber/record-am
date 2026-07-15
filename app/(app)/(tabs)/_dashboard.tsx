@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated, Pressable, InteractionManager } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,7 +14,7 @@ import { isDebtSettlementSale } from '@/lib/records';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { Badge, Card, EmptyState, LoadingScreen, SectionHeader, StatCard, PaymentSummary } from '@/components/ui';
-import { BrandMark, ScreenShell, ScreenHeader, HeaderAction } from '@/components/layout';
+import { BrandMark, ScreenShell, ScreenHeader, HeaderAction, BusinessAvatar } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { CustomerDebt, DashboardStats, RevenueActivity } from '@/types';
@@ -31,6 +31,7 @@ function DashboardScreen() {
   const insets = useSafeAreaInsets();
   // Use ID-only selectors — stable primitives that don't change reference on unrelated store updates
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
+  const businessName = useAuthStore((s) => s.currentBusiness?.name) ?? 'My Business';
   const branchId = useAuthStore((s) => s.currentBranch?.id);
   const profileName = useAuthStore((s) => s.profile?.full_name);
   const getStockAlerts = useBusinessStore((s) => s.getStockAlerts);
@@ -42,6 +43,10 @@ function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [revenueVisible, setRevenueVisible] = useState(true);
 
+  const isOnline = useOfflineStore((s) => s.isOnline);
+  const pendingCount = useOfflineStore((s) => s.pendingCount);
+  const isSyncing = useOfflineStore((s) => s.isSyncing);
+
   // Deps are stable primitives (IDs), so this callback only recreates when business/branch actually changes
   const fetchData = useCallback(async () => {
     if (!businessId || !branchId) return;
@@ -49,19 +54,37 @@ function DashboardScreen() {
     setRefreshing(false);
   }, [businessId, branchId, getStockAlerts, fetchDashboardData]);
 
-  const activeTab = useTabStore((s) => s.activeTab);
-
+  // Refetch when the dashboard tab becomes active — without subscribing to activeTab
+  // (subscribing would re-render this entire heavy component on EVERY tab switch)
   useEffect(() => {
-    if (activeTab === 'dashboard') {
-      import('react-native').then(({ InteractionManager }) => {
-        InteractionManager.runAfterInteractions(() => {
-          fetchData();
-        });
-      });
-    }
-  }, [activeTab, fetchData]);
+    let fetchTimeout: ReturnType<typeof setTimeout>;
+    const unsub = useTabStore.subscribe(
+      (state) => state.activeTab,
+      (activeTab, prevActiveTab) => {
+        // Clear any pending fetch from a previous rapid tap
+        clearTimeout(fetchTimeout);
+        if (activeTab === 'dashboard' && prevActiveTab !== 'dashboard') {
+          // Debounce: wait 150ms before fetching, so rapid tapping through
+          // the dashboard tab doesn't queue up multiple network requests
+          fetchTimeout = setTimeout(() => {
+            InteractionManager.runAfterInteractions(() => {
+              fetchData();
+            });
+          }, 150);
+        }
+      }
+    );
+    // Also fetch on initial mount
+    InteractionManager.runAfterInteractions(() => {
+      fetchData();
+    });
+    return () => {
+      clearTimeout(fetchTimeout);
+      unsub();
+    };
+  }, [fetchData]);
 
-  // Refetch handled by activeTab selector above — no focus listener needed
+  // Refetch handled by subscribe above — no focus listener needed
 
   useRealtimeRefresh({
     channelName: `dashboard-${branchId ?? 'unknown'}`,
@@ -109,29 +132,70 @@ function DashboardScreen() {
     <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
       <ScreenHeader
         title={`${greeting()}`}
-        subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEE, MMM d')}`}
+        titleStyle={{ fontSize: 22, fontFamily: FONT.black, letterSpacing: -0.5 }}
+        subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEEE, d MMM')}`}
         theme="dark"
-        left={<BrandMark size={36} />}
-        right={
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={{
-              minHeight: 38,
-              minWidth: 38,
-              borderRadius: RADIUS.md,
-              backgroundColor: 'rgba(239,239,208,0.12)',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Feather name="bell" size={18} color={COLORS.text.inverse} />
+        left={
+          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/(app)/settings')}>
+            <BusinessAvatar name={businessName} size={40} />
           </TouchableOpacity>
+        }
+        right={
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push('/(app)/settings')}
+              style={{
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 36,
+                height: 36,
+                borderRadius: RADIUS.md,
+                backgroundColor: isSyncing
+                  ? 'rgba(56, 189, 248, 0.12)'
+                  : !isOnline
+                    ? 'rgba(239, 68, 68, 0.12)'
+                    : pendingCount > 0
+                      ? 'rgba(245, 158, 11, 0.12)'
+                      : 'rgba(34, 197, 94, 0.12)',
+              }}
+            >
+              <Feather 
+                name={!isOnline ? "wifi-off" : isSyncing ? "refresh-cw" : pendingCount > 0 ? "upload-cloud" : "cloud"} 
+                size={16} 
+                color={
+                  isSyncing
+                    ? '#38bdf8'
+                    : !isOnline
+                      ? COLORS.danger
+                      : pendingCount > 0
+                        ? '#f59e0b'
+                        : COLORS.success
+                } 
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={{
+                minHeight: 38,
+                minWidth: 38,
+                borderRadius: RADIUS.md,
+                backgroundColor: 'rgba(239,239,208,0.12)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Feather name="bell" size={18} color={COLORS.text.inverse} />
+            </TouchableOpacity>
+          </View>
         }
       />
 
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        delaysContentTouches={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -164,7 +228,16 @@ function DashboardScreen() {
             numberOfLines={1}
             adjustsFontSizeToFit
           >
-            {revenueVisible ? fmtFull(stats?.today_sales ?? 0) : '₦****'}
+            {revenueVisible ? (
+              <>
+                {fmtFull(stats?.today_sales ?? 0).split('.')[0]}
+                <Text style={{ fontSize: 40, fontFamily: FONT.bold, letterSpacing: 0, opacity: 0.85 }}>
+                  .{fmtFull(stats?.today_sales ?? 0).split('.')[1]}
+                </Text>
+              </>
+            ) : (
+              '₦****'
+            )}
           </Text>
           {/* Glowing Aura Effect */}
           <View
@@ -183,7 +256,12 @@ function DashboardScreen() {
         </View>
 
         {/* ── Quick Actions (Sleek Horizontal Pills) ────────────────────── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: SP.page, paddingBottom: 30 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 12, paddingHorizontal: SP.page, paddingBottom: 30 }}
+          delaysContentTouches={false}
+        >
           {[
             { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale' },
             { icon: 'plus' as const, label: 'Add Stock', route: '/(app)/add-stock' },
@@ -194,6 +272,7 @@ function DashboardScreen() {
               key={action.label}
               onPress={() => router.push(action.route as any)}
               activeOpacity={0.7}
+              delayPressIn={0}
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
@@ -223,27 +302,36 @@ function DashboardScreen() {
               marginHorizontal: SP.page,
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 12,
+              gap: 16,
               borderWidth: 1,
-              borderRadius: RADIUS.md,
-              borderColor: 'rgba(239, 68, 68, 0.2)',
-              backgroundColor: 'rgba(239, 68, 68, 0.05)',
-              padding: 14,
+              borderRadius: RADIUS.xl,
+              borderColor: 'rgba(255, 255, 255, 0.06)',
+              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+              padding: 18,
               marginBottom: 30,
             }}
           >
-            <Feather name="alert-triangle" size={16} color={COLORS.danger} />
+            <View style={{
+              width: 44,
+              height: 44,
+              borderRadius: RADIUS.full,
+              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Feather name="alert-circle" size={20} color="#ef4444" />
+            </View>
             <View style={{ flex: 1, gap: 4 }}>
-              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.danger }}>
-                Inventory alert
+              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: '#ef4444', letterSpacing: 0.5 }}>
+                INVENTORY ALERT
               </Text>
               {stockAlertMessages.map((message) => (
-                <Text key={message} style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.danger }}>
+                <Text key={message} style={{ fontSize: 14, fontFamily: FONT.medium, color: 'rgba(255,255,255,0.85)' }}>
                   {message}
                 </Text>
               ))}
             </View>
-            <Feather name="chevron-right" size={14} color={COLORS.danger} />
+            <Feather name="arrow-right" size={18} color="rgba(255,255,255,0.3)" />
           </TouchableOpacity>
         ) : null}
 

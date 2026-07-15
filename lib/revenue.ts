@@ -13,6 +13,7 @@ type SaleRow = Sale & {
   } | null;
   items?: {
     quantity: number;
+    total_price: number;
     product?: { name: string } | null;
   }[];
 };
@@ -26,6 +27,13 @@ type DebtJoin = {
   status: string;
   business_id: string;
   branch_id: string;
+  sale?: {
+    items?: {
+      quantity: number;
+      total_price: number;
+      product?: { name: string } | null;
+    }[];
+  } | null;
 };
 
 type DebtRepaymentRow = {
@@ -46,7 +54,7 @@ export async function fetchRevenueActivities(
     const [salesResponse, repaymentsResponse] = await Promise.all([
       supabase
         .from('sales')
-        .select('*, customer:customers(name, phone), items:sale_items(quantity, product:products(name))')
+        .select('*, customer:customers(name, phone), items:sale_items(quantity, total_price, product:products(name))')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .order('created_at', { ascending: false })
@@ -67,7 +75,14 @@ export async function fetchRevenueActivities(
             balance,
             status,
             business_id,
-            branch_id
+            branch_id,
+            sale:sales(
+              items:sale_items(
+                quantity,
+                total_price,
+                product:products(name)
+              )
+            )
           )
         `)
         .eq('debt.business_id', businessId)
@@ -104,6 +119,11 @@ export async function fetchRevenueActivities(
             : sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')),
         created_at: sale.created_at,
         sale_id: sale.id,
+        items: sale.items?.map((item) => ({
+          quantity: item.quantity,
+          total_price: item.total_price ?? 0,
+          product_name: item.product?.name ?? 'Unknown Item'
+        })),
       }));
 
     const repaymentActivities: RevenueActivity[] = ((repaymentsResponse.data as DebtRepaymentRow[]) ?? [])
@@ -127,6 +147,11 @@ export async function fetchRevenueActivities(
         created_at: repayment.created_at,
         sale_id: repayment.debtRecord?.sale_id ?? undefined,
         debt_id: repayment.debtRecord?.id,
+        items: repayment.debtRecord?.sale?.items?.map((item) => ({
+          quantity: item.quantity,
+          total_price: item.total_price ?? 0,
+          product_name: item.product?.name ?? 'Unknown Item'
+        })),
       }));
 
     const serverActivities = [...saleActivities, ...repaymentActivities]

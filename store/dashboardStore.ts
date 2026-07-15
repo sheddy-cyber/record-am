@@ -123,7 +123,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           .neq('status', 'settled')
           .order('created_at', { ascending: false })
           .limit(3),
-        fetchRevenueActivities(businessId, branchId, 4),
+        fetchRevenueActivities(businessId, branchId, 5),
       ]);
 
       const totalSales = todaySalesRes.data
@@ -137,7 +137,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       set({
         stats: {
           today_sales: totalSales + totalRepayments,
-          today_profit: totalSales - totalExpenses,
+          today_profit: totalSales + totalRepayments - totalExpenses,
           today_expenses: totalExpenses,
           total_products: productCountRes.count ?? 0,
           low_stock_count: stockAlerts.lowStockProducts.length,
