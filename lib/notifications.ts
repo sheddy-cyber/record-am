@@ -103,51 +103,85 @@ export async function cancelDailySummaryNotification() {
   await cancelNotificationsByTag('daily_summary');
 }
 
+import { useNotificationStore, NotificationType } from '@/store/notificationStore';
+
 export async function scheduleLowStockNotification(productName: string, currentStock: number, unit: string) {
+  const title = 'Low Stock Alert';
+  const body = `${productName} is running low — only ${currentStock} ${unit}(s) left.`;
+
+  try {
+    await useNotificationStore.getState().addNotification({
+      title,
+      body,
+      type: 'low_stock',
+      actionRoute: '/(app)/(tabs)/_inventory',
+      data: { product: productName },
+    });
+  } catch (_) {}
+
   if (isExpoGo()) return;
   try {
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Low Stock Alert',
-        body: `${productName} is running low — only ${currentStock} ${unit}(s) left.`,
+        title,
+        body,
         data: { type: 'low_stock', product: productName },
         sound: true,
       },
       trigger: null,
     });
-  } catch (err) {
-    // Silently ignore
-  }
+  } catch (err) {}
 }
 
 export async function scheduleDebtReminderNotification(customerName: string, balance: number, daysOverdue: number) {
+  const fmt = (n: number) => `${CURRENCY_SYMBOL}${n.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+  const title = 'Overdue Debt';
+  const body = `${customerName} owes ${fmt(balance)} — ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue.`;
+
+  try {
+    await useNotificationStore.getState().addNotification({
+      title,
+      body,
+      type: 'debt_reminder',
+      actionRoute: '/(app)/(tabs)/_debts',
+      data: { customer: customerName },
+    });
+  } catch (_) {}
+
   if (isExpoGo()) return;
   try {
-    const fmt = (n: number) => `${CURRENCY_SYMBOL}${n.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: 'Overdue Debt',
-        body: `${customerName} owes ${fmt(balance)} — ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue.`,
+        title,
+        body,
         data: { type: 'debt_reminder', customer: customerName },
         sound: true,
       },
       trigger: null,
     });
-  } catch (err) {
-    // Silently ignore
-  }
+  } catch (err) {}
 }
 
-export async function sendImmediateNotification(title: string, body: string, data?: Record<string, unknown>) {
+export async function sendImmediateNotification(title: string, body: string, data?: Record<string, unknown>, actionRoute?: string) {
+  const type: NotificationType = (data?.type as NotificationType) || 'system';
+
+  try {
+    await useNotificationStore.getState().addNotification({
+      title,
+      body,
+      type,
+      actionRoute: actionRoute || (data?.actionRoute as string) || undefined,
+      data,
+    });
+  } catch (_) {}
+
   if (isExpoGo()) return;
   try {
     await Notifications.scheduleNotificationAsync({
       content: { title, body, data, sound: true },
       trigger: null,
     });
-  } catch (err) {
-    // Silently ignore
-  }
+  } catch (err) {}
 }
 
 // ─────────────────────────────────────────────────────────────────

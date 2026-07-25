@@ -39,14 +39,41 @@ export function ScreenShell({
 export function BrandMark({
   size = 36,
   style,
+  badge = true,
+  badgeBg = '#efefd0',
 }: {
   size?: number;
   style?: ImageStyle;
+  badge?: boolean;
+  badgeBg?: string;
 }) {
+  const borderRadius = Math.max(6, Math.round(size * 0.22));
+
+  if (badge) {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius,
+          backgroundColor: badgeBg,
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: Math.max(3, Math.round(size * 0.08)),
+        }}
+      >
+        <Image
+          source={require("@/assets/logo.png")}
+          style={[{ width: '100%', height: '100%', resizeMode: "contain" }, style]}
+        />
+      </View>
+    );
+  }
+
   return (
     <Image
       source={require("@/assets/logo.png")}
-      style={[{ width: size, height: size, resizeMode: "contain", backgroundColor: "#efefd0", borderRadius: 8 }, style]}
+      style={[{ width: size, height: size, resizeMode: "contain" }, style]}
     />
   );
 }

@@ -1060,7 +1060,7 @@ function ReceiptShareCard({
           </Text>
         ) : null}
         <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 10 }}>
-          Powered by Record Am · {format(new Date(sale.created_at), 'yyyy')}
+          Powered by <Text style={{ fontStyle: 'italic' }}>Record Am</Text> · {format(new Date(sale.created_at), 'yyyy')}
         </Text>
       </View>
     </View>

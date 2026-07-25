@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { View, Text, Animated, KeyboardAvoidingView, Platform, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useOfflineStore } from '@/store/offlineStore';
 import { useAlertStore } from '@/store/alertStore';
+import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { BrandMark, ScreenShell } from '@/components/layout';
@@ -14,12 +16,20 @@ import { BRAND, COLORS, FONT, RADIUS, TYPE } from '@/constants';
 const STEPS = ['Name', 'Contact', 'Password'];
 
 const HEADINGS = [
-  { title: "What's your name?", subtitle: `Let's get your ${BRAND.name} account started.` },
+  {
+    title: "What's your name?",
+    subtitle: (
+      <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.55)' }}>
+        Let&apos;s get your <Text style={{ fontStyle: 'italic' }}>{BRAND.name}</Text> account started.
+      </Text>
+    ),
+  },
   { title: 'How can we reach you?', subtitle: "We'll use these to secure your account." },
   { title: 'Create a password', subtitle: 'Make it strong and easy for you to remember.' },
 ];
 
 export default function RegisterScreen() {
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -70,17 +80,44 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: { data: { full_name: fullName.trim(), phone: phone.trim() } },
       });
       if (error) throw error;
-      useAlertStore.getState().showAlert('Account created', "Let's set up your business.", {
-        confirmText: 'Continue',
-        onConfirm: () => router.replace('/(auth)/onboarding'),
-        type: 'info'
-      });
+
+      let session = data?.session ?? null;
+
+      if (!session) {
+        try {
+          const { data: signInData } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password,
+          });
+          session = signInData?.session ?? null;
+        } catch (_) {}
+      }
+
+      if (session) {
+        useAuthStore.getState().setSession(session);
+        await useAuthStore.getState().initialize();
+        useAlertStore.getState().showAlert('Account created', "Let's set up your business.", {
+          confirmText: 'Continue',
+          onConfirm: () => router.replace('/(auth)/onboarding'),
+          type: 'info',
+        });
+      } else {
+        useAlertStore.getState().showAlert(
+          'Confirm Email',
+          'Account created! Please check your email to confirm your account, or sign in if already confirmed.',
+          {
+            confirmText: 'Sign In',
+            onConfirm: () => router.replace('/(auth)/login'),
+            type: 'info',
+          }
+        );
+      }
     } catch (err: any) {
       useAlertStore.getState().showAlert('Registration failed', err.message, { type: 'danger' });
     } finally {
@@ -91,10 +128,10 @@ export default function RegisterScreen() {
   const heading = HEADINGS[step];
 
   return (
-    <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1 }}>
-          <View style={{ paddingTop: 48, paddingHorizontal: 28, paddingBottom: 28, gap: 18 }}>
+        <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: COLORS.surface }}>
+          <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: 28, paddingBottom: 28, gap: 18 }}>
             <AuthBackButton onPress={handleBack} />
             {step === 0 ? <BrandMark size={46} /> : null}
             <AuthProgress step={step} total={STEPS.length} />
@@ -168,7 +205,7 @@ export default function RegisterScreen() {
                     leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
                     rightElement={
                       <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
-                        <Feather name={showPassword ? 'eye-off' : 'eye'} size={16} color={COLORS.text.muted} />
+                        <Feather name={showPassword ? 'eye' : 'eye-off'} size={16} color={COLORS.text.muted} />
                       </TouchableOpacity>
                     }
                   />
@@ -184,6 +221,11 @@ export default function RegisterScreen() {
                     error={errors.confirmPassword}
                     required
                     leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
+                    rightElement={
+                      <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
+                        <Feather name={showPassword ? 'eye' : 'eye-off'} size={16} color={COLORS.text.muted} />
+                      </TouchableOpacity>
+                    }
                   />
                 </>
               ) : null}

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, Animated, KeyboardAvoidingView, Platform, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { useAlertStore } from '@/store/alertStore';
@@ -15,6 +16,7 @@ import { COLORS, FONT, RADIUS, TYPE } from '@/constants';
 const STEPS = ['Email', 'Password'];
 
 export default function LoginScreen() {
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(0);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,6 +24,7 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const { initialize } = useAuthStore();
+  const isOnline = useOfflineStore((s) => s.isOnline);
   const transition = useStepTransition(step);
 
   const validateEmail = () => {
@@ -63,10 +66,10 @@ export default function LoginScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1 }}>
-          <View style={{ paddingTop: 56, paddingHorizontal: 28, paddingBottom: 30, gap: 18 }}>
+        <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: COLORS.surface }}>
+          <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: 28, paddingBottom: 30, gap: 18 }}>
             {step === 0 ? <BrandMark size={48} /> : <AuthBackButton onPress={handleBack} />}
             <AuthProgress step={step} total={STEPS.length} />
             <View>
@@ -126,7 +129,7 @@ export default function LoginScreen() {
                     leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
                     rightElement={
                       <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ padding: 4 }}>
-                        <Feather name={showPassword ? 'eye-off' : 'eye'} size={16} color={COLORS.text.muted} />
+                        <Feather name={showPassword ? 'eye' : 'eye-off'} size={16} color={COLORS.text.muted} />
                       </TouchableOpacity>
                     }
                   />

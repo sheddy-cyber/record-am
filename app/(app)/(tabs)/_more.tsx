@@ -123,7 +123,11 @@ function MoreScreen() {
         {
           icon: 'log-out',
           label: 'Sign Out',
-          subtitle: `Log out of ${BRAND.name}`,
+          subtitle: (
+            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+              Log out of <Text style={{ fontStyle: 'italic' }}>{BRAND.name}</Text>
+            </Text>
+          ),
           onPress: () => {
             Alert.alert(
               'Sign Out',

@@ -65,13 +65,19 @@ export const InputField: React.FC<InputFieldProps> = ({
         {displayPrefix ? <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.secondary }}>{displayPrefix}</Text> : null}
         <TextInput
           ref={inputRef}
-          style={{
-            flex: 1,
-            fontSize: 15,
-            fontFamily: FONT.regular,
-            color: COLORS.text.primary,
-            paddingVertical: 12,
-          }}
+          style={[
+            {
+              flex: 1,
+              fontSize: 15,
+              fontFamily: FONT.regular,
+              color: COLORS.text.primary,
+              paddingVertical: 12,
+              backgroundColor: 'transparent',
+            },
+            props.style,
+          ]}
+          underlineColorAndroid="transparent"
+          selectionColor={COLORS.accent}
           placeholderTextColor={COLORS.text.muted}
           onFocus={(event) => {
             setFocused(true);

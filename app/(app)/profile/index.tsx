@@ -6,8 +6,10 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { router } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { Button, Card } from '@/components/ui';
@@ -25,6 +27,8 @@ export default function ProfileScreen() {
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
 
   const handleSaveProfile = async () => {
@@ -133,14 +137,26 @@ export default function ProfileScreen() {
               value={newPassword}
               onChangeText={setNewPassword}
               placeholder="Minimum 6 characters"
-              secureTextEntry
+              secureTextEntry={!showNewPassword}
+              leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
+              rightElement={
+                <TouchableOpacity onPress={() => setShowNewPassword(!showNewPassword)} style={{ padding: 4 }}>
+                  <Feather name={showNewPassword ? 'eye' : 'eye-off'} size={16} color={COLORS.text.muted} />
+                </TouchableOpacity>
+              }
             />
             <InputField
               label="Confirm New Password"
               value={confirmPassword}
               onChangeText={setConfirmPassword}
               placeholder="Repeat new password"
-              secureTextEntry
+              secureTextEntry={!showConfirmPassword}
+              leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
+              rightElement={
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={{ padding: 4 }}>
+                  <Feather name={showConfirmPassword ? 'eye' : 'eye-off'} size={16} color={COLORS.text.muted} />
+                </TouchableOpacity>
+              }
             />
             <Button
               title="Update Password"

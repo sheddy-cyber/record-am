@@ -156,7 +156,9 @@ function InventoryScreen() {
             onChangeText={setSearch}
             placeholder="Search products"
             placeholderTextColor={COLORS.text.muted}
-            style={{ flex: 1, fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.primary, paddingVertical: 10 }}
+            underlineColorAndroid="transparent"
+            selectionColor={COLORS.accent}
+            style={{ flex: 1, fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.primary, paddingVertical: 10, backgroundColor: 'transparent' }}
           />
         </View>
 

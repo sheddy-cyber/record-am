@@ -16,6 +16,7 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { Badge, Card, EmptyState, LoadingScreen, SectionHeader, StatCard, PaymentSummary } from '@/components/ui';
 import { BrandMark, ScreenShell, ScreenHeader, HeaderAction, BusinessAvatar } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
+import { useNotificationStore } from '@/store/notificationStore';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { CustomerDebt, DashboardStats, RevenueActivity } from '@/types';
 
@@ -35,6 +36,13 @@ function DashboardScreen() {
   const branchId = useAuthStore((s) => s.currentBranch?.id);
   const profileName = useAuthStore((s) => s.profile?.full_name);
   const getStockAlerts = useBusinessStore((s) => s.getStockAlerts);
+
+  const notifications = useNotificationStore((s) => s.notifications);
+  const unreadCount = notifications.filter((n) => !n.read).length;
+
+  useEffect(() => {
+    useNotificationStore.getState().loadNotifications();
+  }, []);
 
   const stats = useDashboardStore((s) => s.stats);
   const recentActivities = useDashboardStore((s) => s.recentActivities);
@@ -133,7 +141,7 @@ function DashboardScreen() {
       <ScreenHeader
         title={`${greeting()}`}
         titleStyle={{ fontSize: 22, fontFamily: FONT.black, letterSpacing: -0.5 }}
-        subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEEE, d MMM')}`}
+        subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEE, d MMM')}`}
         theme="dark"
         left={
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/(app)/settings')}>
@@ -177,6 +185,7 @@ function DashboardScreen() {
 
             <TouchableOpacity
               activeOpacity={0.7}
+              onPress={() => router.push('/(app)/notifications')}
               style={{
                 minHeight: 38,
                 minWidth: 38,
@@ -184,9 +193,38 @@ function DashboardScreen() {
                 backgroundColor: 'rgba(239,239,208,0.12)',
                 alignItems: 'center',
                 justifyContent: 'center',
+                position: 'relative',
               }}
             >
               <Feather name="bell" size={18} color={COLORS.text.inverse} />
+              {unreadCount > 0 ? (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    backgroundColor: COLORS.danger,
+                    borderRadius: 10,
+                    minWidth: 18,
+                    height: 18,
+                    paddingHorizontal: 4,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1.5,
+                    borderColor: COLORS.ink,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 10,
+                      fontFamily: FONT.bold,
+                    }}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </Text>
+                </View>
+              ) : null}
             </TouchableOpacity>
           </View>
         }

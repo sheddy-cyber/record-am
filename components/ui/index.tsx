@@ -364,3 +364,140 @@ export const PaymentSummary: React.FC<{
   );
 };
 
+// ─── Confirm Dialog ─────────────────────────────────────────────────────────
+
+export interface ConfirmDialogProps {
+  visible: boolean;
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+  onConfirm: () => void;
+  onCancel?: () => void;
+  type?: 'info' | 'success' | 'warning' | 'danger';
+}
+
+export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
+  visible,
+  title,
+  message,
+  confirmText = 'OK',
+  cancelText,
+  onConfirm,
+  onCancel,
+  type = 'info',
+}) => {
+  const iconNames: Record<string, keyof typeof Feather.glyphMap> = {
+    info: 'info',
+    success: 'check-circle',
+    warning: 'alert-triangle',
+    danger: 'alert-circle',
+  };
+
+  const iconColors: Record<string, { bg: string; icon: string }> = {
+    info: { bg: COLORS.infoLight, icon: COLORS.info },
+    success: { bg: COLORS.successLight, icon: COLORS.success },
+    warning: { bg: COLORS.warningLight, icon: COLORS.warning },
+    danger: { bg: COLORS.dangerLight, icon: COLORS.danger },
+  };
+
+  const colors = iconColors[type] || iconColors.info;
+  const iconName = iconNames[type] || 'info';
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onCancel || onConfirm}
+    >
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          padding: 24,
+        }}
+      >
+        <View
+          style={{
+            width: '100%',
+            maxWidth: 340,
+            backgroundColor: COLORS.card,
+            borderRadius: RADIUS.lg,
+            padding: 24,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.15,
+            shadowRadius: 12,
+            elevation: 8,
+          }}
+        >
+          <View
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              backgroundColor: colors.bg,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 16,
+            }}
+          >
+            <Feather name={iconName} size={26} color={colors.icon} />
+          </View>
+
+          <Text
+            style={{
+              fontSize: 18,
+              fontFamily: FONT.bold,
+              color: COLORS.text.primary,
+              textAlign: 'center',
+              marginBottom: 8,
+            }}
+          >
+            {title}
+          </Text>
+
+          <Text
+            style={{
+              fontSize: 14,
+              fontFamily: FONT.regular,
+              color: COLORS.text.muted,
+              textAlign: 'center',
+              lineHeight: 20,
+              marginBottom: 24,
+            }}
+          >
+            {message}
+          </Text>
+
+          <View style={{ flexDirection: 'row', gap: 12, width: '100%' }}>
+            {cancelText ? (
+              <View style={{ flex: 1 }}>
+                <Button
+                  title={cancelText}
+                  onPress={onCancel || (() => {})}
+                  variant="secondary"
+                  size="md"
+                />
+              </View>
+            ) : null}
+            <View style={{ flex: 1 }}>
+              <Button
+                title={confirmText}
+                onPress={onConfirm}
+                variant={type === 'danger' ? 'danger' : 'primary'}
+                size="md"
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+

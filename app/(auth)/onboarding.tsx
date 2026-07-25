@@ -3,6 +3,7 @@ import { View, Text, Animated, KeyboardAvoidingView, Platform, TouchableOpacity,
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useAlertStore } from '@/store/alertStore';
@@ -37,10 +38,22 @@ export default function OnboardingScreen() {
   };
 
   const handleFinish = async () => {
-    if (!user) return;
     setLoading(true);
 
     try {
+      let currentUser = user;
+      if (!currentUser) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          useAuthStore.getState().setSession(session);
+          currentUser = session.user;
+        }
+      }
+
+      if (!currentUser) {
+        throw new Error('User session not found. Please log in to complete business setup.');
+      }
+
       const business = await createBusiness(
         {
           name: businessName.trim(),
@@ -50,13 +63,17 @@ export default function OnboardingScreen() {
           currency: 'NGN',
           currency_symbol: CURRENCY_SYMBOL,
         },
-        user.id
+        currentUser.id
       );
 
       if (!business) throw new Error('Could not create business');
 
-      const { supabase } = await import('@/lib/supabase');
-      const { data: branch } = await supabase.from('branches').select('*').eq('business_id', business.id).eq('is_main', true).single();
+      const { data: branch } = await supabase
+        .from('branches')
+        .select('*')
+        .eq('business_id', business.id)
+        .eq('is_main', true)
+        .single();
 
       setCurrentBusiness(business);
       if (branch) setCurrentBranch(branch);
@@ -70,8 +87,8 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
-      <View style={{ paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
+    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
         <BrandWordmark invert size={24} />
         <AuthProgress step={step} total={STEPS.length} />
         <View>
@@ -84,7 +101,11 @@ export default function OnboardingScreen() {
           <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.5)', marginTop: 6 }}>
             {step === 0 && 'Tell us what your business is called and what you sell.'}
             {step === 1 && 'Add your location now or skip and fill it in later.'}
-            {step === 2 && `${BRAND.name} is ready for your business.`}
+            {step === 2 && (
+              <Text style={{ color: 'rgba(250,250,248,0.5)' }}>
+                <Text style={{ fontStyle: 'italic' }}>{BRAND.name}</Text> is ready for your business.
+              </Text>
+            )}
           </Text>
         </View>
       </View>

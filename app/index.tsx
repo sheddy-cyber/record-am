@@ -11,8 +11,8 @@ export default function Index() {
     return (
       <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
         <View style={styles.splash}>
-          <BrandMark size={72} />
-          <BrandWordmark invert size={40} />
+          <BrandMark size={52} />
+          <BrandWordmark invert size={26} />
         </View>
       </ScreenShell>
     );
