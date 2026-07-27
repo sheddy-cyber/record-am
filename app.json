@@ -27,6 +27,7 @@
         "backgroundColor": "#efefd0"
       },
       "package": "com.recordam.app",
+      "versionCode": 1,
       "enableProguardInReleaseBuilds": true,
       "enableShrinkResourcesInReleaseBuilds": true,
       "jsEngine": "hermes"
