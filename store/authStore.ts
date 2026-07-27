@@ -1,7 +1,8 @@
-﻿import { create } from 'zustand';
+import { create } from 'zustand';
 import { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { useTabStore } from '@/store/tabStore';
 import { Business, Branch, UserProfile, UserRole } from '@/types';
 
 const AUTH_CONTEXT_STORAGE_KEY = 'record-am:auth-context:v1';
@@ -68,6 +69,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   signOut: async () => {
     try { await supabase.auth.signOut(); } catch (_) {}
     try { await AsyncStorage.removeItem(AUTH_CONTEXT_STORAGE_KEY); } catch (_) {}
+    useTabStore.getState().setActiveTab('dashboard');
     set({
       session: null, user: null, profile: null,
       currentBusiness: null, currentBranch: null, userRole: null,

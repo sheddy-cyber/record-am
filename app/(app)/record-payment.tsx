@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Text } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Text, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -24,6 +24,8 @@ export default function RecordPaymentScreen() {
   const params = useLocalSearchParams<{ debtId?: string | string[] }>();
   const debtId = Array.isArray(params.debtId) ? params.debtId[0] : params.debtId;
   const { currentBusiness, currentBranch, user } = useAuthStore();
+  const fetchDebts = useDebtStore((s) => s.fetchDebts);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<CustomerDebt | null>(null);
@@ -33,6 +35,19 @@ export default function RecordPaymentScreen() {
   const [savingRepay, setSavingRepay] = useState(false);
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness || !currentBranch) return;
+    setRefreshing(true);
+    try {
+      await fetchDebts(currentBusiness.id, currentBranch.id);
+      if (debtId) {
+        const debt = useDebtStore.getState().debts.find(d => d.id === debtId);
+        if (debt) setSelectedDebt(debt);
+      }
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBranch, currentBusiness, debtId, fetchDebts]);
 
   useEffect(() => {
     if (debtId) {
@@ -119,6 +134,14 @@ export default function RecordPaymentScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
           <FlatSection style={{ padding: 16, marginBottom: 20 }}>
             <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Balance remaining</Text>

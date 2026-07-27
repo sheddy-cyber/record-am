@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, RefreshControl, BackHandler } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -27,6 +27,7 @@ const roundAmount = (value: number) => Number(value.toFixed(2));
 
 export default function UpdateStockScreen() {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
   const params = useLocalSearchParams<{
     productId?: string | string[];
     purchasedQty?: string | string[];
@@ -59,6 +60,15 @@ export default function UpdateStockScreen() {
   const products = useBusinessStore((s) => s.products);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
 
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness) return;
+    setRefreshing(true);
+    try {
+      await fetchProducts(currentBusiness.id);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness, fetchProducts]);
+
   const [loading, setLoading] = useState(false);
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
@@ -70,7 +80,58 @@ export default function UpdateStockScreen() {
   const [saving, setSaving] = useState(false);
   const [prefilledStockQty, setPrefilledStockQty] = useState<number | null>(null);
 
+  const hasSavedRef = useRef(false);
+
   const closeScreen = () => router.back();
+
+  const handleCancelOrBack = useCallback(async () => {
+    if (!hasSavedRef.current && (isSyncFlowActive || purchaseId) && currentBranch && currentBusiness) {
+      hasSavedRef.current = true;
+      if (productId && purchasedQty > 0) {
+        const productObj = products.find((p) => p.id === productId);
+        await addMismatch({
+          type: 'purchase_to_stock_declined',
+          productId: productId,
+          productName: productObj?.name || productName || 'Purchased Item',
+          branchId: currentBranch.id,
+          businessId: currentBusiness.id,
+          quantity: purchasedQty,
+          unitCost: purchasedUnitCost,
+          purchaseId: purchaseId || undefined,
+        });
+      }
+      if (pendingQueue) {
+        try {
+          const queue = JSON.parse(pendingQueue);
+          for (const item of queue) {
+            const pObj = products.find((p) => p.id === item.productId);
+            await addMismatch({
+              type: 'purchase_to_stock_declined',
+              productId: item.productId,
+              productName: pObj?.name || 'Purchased Item',
+              branchId: currentBranch.id,
+              businessId: currentBusiness.id,
+              quantity: item.quantity,
+              unitCost: item.unitCost,
+              purchaseId: purchaseId || undefined,
+            });
+          }
+        } catch (_) {}
+      }
+    }
+    closeScreen();
+  }, [isSyncFlowActive, purchaseId, currentBranch, currentBusiness, productId, purchasedQty, products, productName, purchasedUnitCost, pendingQueue]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if ((isSyncFlowActive || purchaseId) && !hasSavedRef.current) {
+        void handleCancelOrBack();
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [isSyncFlowActive, purchaseId, handleCancelOrBack]);
 
   const maybeOpenPurchaseSync = async (params: {
     productId: string;
@@ -264,7 +325,7 @@ export default function UpdateStockScreen() {
         await updateProductAndInventoryOffline({
           businessId: currentBusiness.id,
           branchId: currentBranch?.id,
-          product,
+          product: product,
           productPatch: {
             name: cleanProductName,
             unit: cleanProductUnit,
@@ -288,6 +349,8 @@ export default function UpdateStockScreen() {
                 }
               : undefined,
         });
+
+        hasSavedRef.current = true;
 
         Toast.show({
           type: 'success',
@@ -371,10 +434,14 @@ export default function UpdateStockScreen() {
         ]
       );
     } else {
-      await executeSave(false);
+      executeSave(false);
     }
   };
 
+
+  if (loading) {
+    return <LoadingScreen message="Loading product details..." />;
+  }
 
   if (!product) {
     return (
@@ -382,13 +449,13 @@ export default function UpdateStockScreen() {
         <ScreenHeader
           title="Update Stock"
           theme="dark"
-          left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+          left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
         />
         <EmptyState
           icon="package"
           title="Product not found"
           description="This stock item could not be loaded."
-          action={{ label: 'Go Back', onPress: closeScreen }}
+          action={{ label: 'Go Back', onPress: handleCancelOrBack }}
         />
       </ScreenShell>
     );
@@ -400,12 +467,19 @@ export default function UpdateStockScreen() {
         title="Update Stock"
         subtitle="Edit the product details and current branch quantity."
         theme="dark"
-        left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+        left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
       />
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <KeyboardAwareScrollView
           contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={COLORS.accent}
+              colors={[COLORS.accent]}
+            />
+          }
         >
           <ProductFormFields
             productName={productName}
@@ -442,7 +516,6 @@ export default function UpdateStockScreen() {
             size="lg"
           />
         </KeyboardAwareScrollView>
-      </KeyboardAvoidingView>
     </ScreenShell>
   );
 }

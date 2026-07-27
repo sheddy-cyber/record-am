@@ -37,9 +37,9 @@ export function ScreenShell({
 
 // ─── Brand Mark (Logo) ──────────────────────────────────────────────────────
 export function BrandMark({
-  size = 36,
+  size = 48,
   style,
-  badge = true,
+  badge = false,
   badgeBg = '#efefd0',
 }: {
   size?: number;
@@ -47,7 +47,7 @@ export function BrandMark({
   badge?: boolean;
   badgeBg?: string;
 }) {
-  const borderRadius = Math.max(6, Math.round(size * 0.22));
+  const borderRadius = Math.max(8, Math.round(size * 0.22));
 
   if (badge) {
     return (
@@ -59,7 +59,7 @@ export function BrandMark({
           backgroundColor: badgeBg,
           alignItems: 'center',
           justifyContent: 'center',
-          padding: Math.max(3, Math.round(size * 0.08)),
+          padding: 4,
         }}
       >
         <Image

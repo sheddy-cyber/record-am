@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, Text, View, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -17,6 +17,7 @@ const formatCurrency = (value: number) =>
 export default function CloseDayScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, user } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
   const {
     summary,
     entries,
@@ -31,6 +32,15 @@ export default function CloseDayScreen() {
   const [closeNotes, setCloseNotes] = useState('');
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness || !currentBranch) return;
+    setRefreshing(true);
+    try {
+      await fetchDailyBalance(currentBusiness.id, currentBranch.id, selectedDate);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate]);
 
   useEffect(() => {
     if (!summary && currentBusiness && currentBranch) {
@@ -113,6 +123,14 @@ export default function CloseDayScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
           <Card style={{ backgroundColor: '#F0F9FF', marginBottom: 20 }}>
             <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary, marginBottom: 12 }}>

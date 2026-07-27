@@ -82,10 +82,16 @@ export async function addMismatch(mismatch: Omit<Mismatch, 'id' | 'timestamp'>):
     body = `Stock update for ${mismatch.productName} doesn't match the purchase (${mismatch.targetQuantity} vs ${mismatch.quantity}).`;
   }
 
-  await sendImmediateNotification(title, body, {
-    type: 'sync_mismatch',
-    mismatchId: newMismatch.id,
-  });
+  await sendImmediateNotification(
+    title,
+    body,
+    {
+      type: 'mismatch',
+      mismatchId: newMismatch.id,
+      productId: mismatch.productId,
+    },
+    '/(app)/(tabs)/_inventory'
+  );
 }
 
 export async function removeMismatch(id: string): Promise<void> {

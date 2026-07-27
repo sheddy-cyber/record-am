@@ -7,23 +7,29 @@
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#004e89"
+      "backgroundColor": "#efefd0"
     },
+    "jsEngine": "hermes",
     "assetBundlePatterns": [
-      "**/*"
+      "assets/fonts/*.otf",
+      "assets/*.png"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.recordam.app"
+      "bundleIdentifier": "com.recordam.app",
+      "jsEngine": "hermes"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#efefd0"
       },
-      "package": "com.recordam.app"
+      "package": "com.recordam.app",
+      "enableProguardInReleaseBuilds": true,
+      "enableShrinkResourcesInReleaseBuilds": true,
+      "jsEngine": "hermes"
     },
     "web": {
       "favicon": "./assets/logo.png",

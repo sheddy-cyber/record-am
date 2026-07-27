@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
@@ -19,6 +19,7 @@ export default function SupplierDetailScreen() {
   const params = useLocalSearchParams<{ supplierId?: string | string[] }>();
   const supplierId = Array.isArray(params.supplierId) ? params.supplierId[0] : params.supplierId;
   const { currentBusiness } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
   const {
     suppliers,
     selectedSupplier,
@@ -31,6 +32,15 @@ export default function SupplierDetailScreen() {
   } = useSupplierStore();
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness || !supplierId) return;
+    setRefreshing(true);
+    try {
+      await fetchSupplierDetail(supplierId, currentBusiness.id);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness, supplierId, fetchSupplierDetail]);
 
   // Data is hydrated on app boot. No need to fetch on mount.
 
@@ -84,7 +94,9 @@ export default function SupplierDetailScreen() {
           onPress: async () => {
             try {
               await deletePurchaseRecord(purchaseId);
-              await load();
+              if (supplierId && currentBusiness) {
+                await fetchSupplierDetail(supplierId, currentBusiness.id);
+              }
               Toast.show({ type: 'success', text1: 'Goods record deleted' });
             } catch (err: any) {
               Alert.alert('Unable to delete', err.message ?? 'Please try again.');
@@ -128,7 +140,17 @@ export default function SupplierDetailScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 20 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, gap: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
+      >
         <Card style={{ backgroundColor: COLORS.ink }}>
           <View style={{ gap: 10 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>

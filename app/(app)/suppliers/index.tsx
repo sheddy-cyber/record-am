@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Pressable, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,11 +18,19 @@ const formatCurrency = (value: number | undefined | null) =>
 export default function SuppliersScreen() {
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
   const suppliers = useSupplierStore((s) => s.suppliers);
-  const isLoading = useSupplierStore((s) => s.isLoading);
+  const fetchSuppliers = useSupplierStore((s) => s.fetchSuppliers);
   const setSelectedSupplier = useSupplierStore((s) => s.setSelectedSupplier);
   const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Data is hydrated on app boot. No need to fetch on mount.
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness?.id) return;
+    setRefreshing(true);
+    try {
+      await fetchSuppliers(currentBusiness.id);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness?.id, fetchSuppliers]);
 
   const filtered = suppliers.filter(
     (supplier) =>
@@ -55,12 +63,16 @@ export default function SuppliersScreen() {
             onChangeText={setSearch}
             placeholder="Search by name or phone..."
             placeholderTextColor={COLORS.text.muted}
+            underlineColorAndroid="transparent"
+            selectionColor={COLORS.accent}
+            cursorColor={COLORS.accent}
+            importantForAutofill="no"
             style={{
               fontFamily: FONT.regular,
               borderWidth: 1,
               borderRadius: RADIUS.md,
               borderColor: COLORS.border,
-              backgroundColor: COLORS.surface,
+              backgroundColor: '#FFFFFF',
               paddingHorizontal: 14,
               paddingVertical: 12,
               color: COLORS.text.primary,
@@ -103,17 +115,37 @@ export default function SuppliersScreen() {
         </View>
 
         {filtered.length === 0 ? (
-          <EmptyState
-            icon="truck"
-            title="No suppliers yet"
-            description="Add suppliers to track goods bought from them and what you owe them."
-            action={{ label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') }}
-          />
+          <ScrollView
+            contentContainerStyle={{ flexGrow: 1 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={COLORS.accent}
+                colors={[COLORS.accent]}
+              />
+            }
+          >
+            <EmptyState
+              icon="truck"
+              title="No suppliers yet"
+              description="Add suppliers to track goods bought from them and what you owe them."
+              action={{ label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') }}
+            />
+          </ScrollView>
         ) : (
           <FlashList
             data={filtered}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={COLORS.accent}
+                colors={[COLORS.accent]}
+              />
+            }
             estimatedItemSize={70}
             renderItem={({ item, index }) => (
               <Pressable

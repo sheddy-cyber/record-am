@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ScrollView, Text, View, TouchableOpacity, Linking, Alert } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { ScrollView, Text, View, TouchableOpacity, Linking, Alert, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,11 +23,21 @@ type MenuSection = {
 
 function MoreScreen() {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
+  const initialize = useAuthStore((s) => s.initialize);
   const profileName = useAuthStore((s) => s.profile?.full_name);
   const businessName = useAuthStore((s) => s.currentBusiness?.name);
   const businessCurrency = useAuthStore((s) => s.currentBusiness?.currency);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
   const signOut = useAuthStore((s) => s.signOut);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await initialize();
+    } catch (_) {}
+    setRefreshing(false);
+  }, [initialize]);
 
   const sections: MenuSection[] = [
     {
@@ -181,9 +191,17 @@ function MoreScreen() {
         contentContainerStyle={{ padding: SP.page, gap: 24, paddingBottom: insets.bottom + 92 }}
         showsVerticalScrollIndicator={false}
         delaysContentTouches={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
         <FlatSection style={{ padding: 16, flexDirection: 'row', gap: 14, alignItems: 'center' }}>
-          <BrandMark size={42} />
+          <BrandMark size={58} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
               {businessName}

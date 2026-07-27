@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { KeyboardAwareScrollView as LibraryKeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import { TextInput, TextInputProps, Keyboard, Platform, StyleSheet } from "react-native";
+import { COLORS } from "@/constants";
 
 export type KeyboardAwareScrollViewProps = React.ComponentProps<typeof LibraryKeyboardAwareScrollView>;
 
@@ -12,8 +13,9 @@ export const KeyboardAwareScrollView = React.forwardRef<
     children,
     keyboardShouldPersistTaps = "handled",
     enableOnAndroid = true,
-    extraScrollHeight = 130,
-    extraHeight = 130,
+    extraScrollHeight = 56,
+    extraHeight = 56,
+    enableResetScrollToCoords = false,
     contentContainerStyle,
     ...props
   },
@@ -25,21 +27,21 @@ export const KeyboardAwareScrollView = React.forwardRef<
     const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
-    const showSubscription = Keyboard.addListener(showEvent, (e) => {
+    const showSub = Keyboard.addListener(showEvent, (e) => {
       setKeyboardHeight(e.endCoordinates.height);
     });
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+    const hideSub = Keyboard.addListener(hideEvent, () => {
       setKeyboardHeight(0);
     });
 
     return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
+      showSub.remove();
+      hideSub.remove();
     };
   }, []);
 
   const flatStyle = StyleSheet.flatten(contentContainerStyle) || {};
-  const basePaddingBottom = typeof flatStyle.paddingBottom === "number" ? flatStyle.paddingBottom : 20;
+  const basePaddingBottom = typeof flatStyle.paddingBottom === "number" ? flatStyle.paddingBottom : 24;
 
   const mergedContentContainerStyle = {
     ...flatStyle,
@@ -61,6 +63,7 @@ export const KeyboardAwareScrollView = React.forwardRef<
       enableOnAndroid={enableOnAndroid}
       extraScrollHeight={extraScrollHeight}
       extraHeight={extraHeight}
+      enableResetScrollToCoords={enableResetScrollToCoords}
       contentContainerStyle={mergedContentContainerStyle}
       {...props}
     >
@@ -71,7 +74,22 @@ export const KeyboardAwareScrollView = React.forwardRef<
 
 export const KeyboardAwareTextInput = React.forwardRef<TextInput, TextInputProps>(
   function KeyboardAwareTextInput(props, ref) {
-    return <TextInput ref={ref} {...props} />;
+    return (
+      <TextInput
+        ref={ref}
+        underlineColorAndroid="transparent"
+        selectionColor={COLORS.accent}
+        cursorColor={COLORS.accent}
+        importantForAutofill="no"
+        {...props}
+        style={[
+          {
+            backgroundColor: '#FFFFFF',
+          },
+          props.style,
+        ]}
+      />
+    );
   }
 );
 

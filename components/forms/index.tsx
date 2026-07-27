@@ -16,6 +16,7 @@ interface InputFieldProps extends TextInputProps {
   required?: boolean;
   leftIcon?: React.ReactNode;
   rightElement?: React.ReactNode;
+  isPassword?: boolean;
 }
 
 export const InputField: React.FC<InputFieldProps> = ({
@@ -28,11 +29,14 @@ export const InputField: React.FC<InputFieldProps> = ({
   required,
   leftIcon,
   rightElement,
+  isPassword,
+  secureTextEntry,
   onFocus,
   onBlur,
   ...props
 }) => {
   const [focused, setFocused] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const keyboardAware = useKeyboardAwareScroll();
   const displayPrefix = prefix?.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
@@ -41,6 +45,31 @@ export const InputField: React.FC<InputFieldProps> = ({
   const displaySuffix = suffix?.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
     String.fromCharCode(parseInt(hex, 16)),
   );
+
+  const effectiveSecureTextEntry = isPassword ? !showPassword : secureTextEntry;
+
+  const renderRightElement = () => {
+    if (isPassword) {
+      return (
+        <Pressable
+          onPress={() => setShowPassword((prev) => !prev)}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={({ pressed }) => ({
+            padding: 6,
+            opacity: pressed ? 0.6 : 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            cursor: 'pointer' as any,
+          })}
+          accessibilityRole="button"
+          accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+        >
+          <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color={COLORS.text.muted} />
+        </Pressable>
+      );
+    }
+    return rightElement;
+  };
 
   return (
     <View style={[{ marginBottom: SP.card }, containerStyle]}>
@@ -65,6 +94,13 @@ export const InputField: React.FC<InputFieldProps> = ({
         {displayPrefix ? <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.secondary }}>{displayPrefix}</Text> : null}
         <TextInput
           ref={inputRef}
+          secureTextEntry={effectiveSecureTextEntry}
+          underlineColorAndroid="transparent"
+          selectionColor={COLORS.accent}
+          cursorColor={COLORS.accent}
+          placeholderTextColor={COLORS.text.muted}
+          importantForAutofill="no"
+          {...props}
           style={[
             {
               flex: 1,
@@ -72,27 +108,23 @@ export const InputField: React.FC<InputFieldProps> = ({
               fontFamily: FONT.regular,
               color: COLORS.text.primary,
               paddingVertical: 12,
-              backgroundColor: 'transparent',
+              backgroundColor: '#FFFFFF',
             },
             props.style,
           ]}
-          underlineColorAndroid="transparent"
-          selectionColor={COLORS.accent}
-          placeholderTextColor={COLORS.text.muted}
           onFocus={(event) => {
             setFocused(true);
-            keyboardAware?.scrollToInput(inputRef.current);
+            (keyboardAware as any)?.scrollToInput?.(inputRef.current);
             onFocus?.(event);
           }}
           onBlur={(event) => {
             setFocused(false);
-            keyboardAware?.clearFocusedInput(inputRef.current);
+            (keyboardAware as any)?.clearFocusedInput?.(inputRef.current);
             onBlur?.(event);
           }}
-          {...props}
         />
         {displaySuffix ? <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted }}>{displaySuffix}</Text> : null}
-        {rightElement}
+        {renderRightElement()}
       </View>
       {error ? <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.danger, marginTop: 4 }}>{error}</Text> : null}
       {!error && hint ? <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>{hint}</Text> : null}

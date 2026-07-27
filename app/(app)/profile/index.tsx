@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   TouchableOpacity,
+  RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -19,11 +20,20 @@ import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 import Toast from 'react-native-toast-message';
 
 export default function ProfileScreen() {
-  const { profile, user, setProfile } = useAuthStore();
+  const { profile, user, setProfile, initialize } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [phone, setPhone] = useState(profile?.phone ?? '');
   const [saving, setSaving] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await initialize();
+    } catch (_) {}
+    setRefreshing(false);
+  }, [initialize]);
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -93,7 +103,18 @@ export default function ProfileScreen() {
         left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
       />
 
-      <KeyboardAwareScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 20 }}>
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, gap: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
+      >
           <Card>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
               <View

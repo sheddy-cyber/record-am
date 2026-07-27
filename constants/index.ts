@@ -41,8 +41,8 @@ export const COLORS = {
   // Semantic
   success: '#2ecc71',
   successLight: '#eafaf1',
-  warning: '#f7c59f',         // peach glow — warm alerts
-  warningLight: '#fef9f5',
+  warning: '#d97706',         // lively warm amber-orange — vibrant alerts & actions
+  warningLight: '#fff8f0',
   danger: '#e74c3c',
   dangerLight: '#fdf0ef',
   info: '#1a659e',            // baltic blue

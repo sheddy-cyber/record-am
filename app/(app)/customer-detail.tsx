@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -17,6 +17,7 @@ export default function CustomerDetailScreen() {
   const params = useLocalSearchParams<{ customerId?: string | string[] }>();
   const customerId = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
   const { currentBusiness } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
   const {
     customers,
     selectedCustomer,
@@ -30,6 +31,15 @@ export default function CustomerDetailScreen() {
   } = useCustomerStore();
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness || !customerId) return;
+    setRefreshing(true);
+    try {
+      await fetchCustomerDetail(customerId, currentBusiness.id);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness, customerId, fetchCustomerDetail]);
 
   // Data is hydrated on app boot.
 
@@ -97,7 +107,17 @@ export default function CustomerDetailScreen() {
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 20 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: 16, gap: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
+      >
         <Card style={{ backgroundColor: COLORS.ink }}>
           <View style={{ gap: 10 }}>
             {customer.phone ? (

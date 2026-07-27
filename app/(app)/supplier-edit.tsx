@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -15,6 +15,7 @@ export default function SupplierEditScreen() {
   const params = useLocalSearchParams<{ supplierId?: string | string[] }>();
   const supplierId = Array.isArray(params.supplierId) ? params.supplierId[0] : params.supplierId;
   const { currentBusiness } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
   const {
     suppliers,
     selectedSupplier,
@@ -33,6 +34,15 @@ export default function SupplierEditScreen() {
   const [notes, setNotes] = useState('');
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness) return;
+    setRefreshing(true);
+    try {
+      await fetchSuppliers(currentBusiness.id);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness, fetchSuppliers]);
 
   useEffect(() => {
     // Suppliers are hydrated globally by bootloader
@@ -63,10 +73,10 @@ export default function SupplierEditScreen() {
 
     await updateSupplier(supplier.id, {
       name: name.trim(),
-      phone: phone.trim() || null,
-      email: email.trim() || null,
-      address: address.trim() || null,
-      notes: notes.trim() || null,
+      phone: phone.trim() || undefined,
+      email: email.trim() || undefined,
+      address: address.trim() || undefined,
+      notes: notes.trim() || undefined,
     });
 
     Toast.show({ type: 'success', text1: 'Supplier updated' });
@@ -104,6 +114,14 @@ export default function SupplierEditScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
           <InputField
             label="Supplier or Business Name"

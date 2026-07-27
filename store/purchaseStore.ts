@@ -819,7 +819,7 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
   return purchase;
 }
 
-export const usePurchaseStore = create<PurchaseState>((set) => ({
+export const usePurchaseStore = create<PurchaseState>((set, get) => ({
   purchases: [],
   isLoading: false,
   isSaving: false,

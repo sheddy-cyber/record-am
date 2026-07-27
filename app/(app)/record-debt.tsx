@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View, InteractionManager } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View, InteractionManager, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -19,6 +19,7 @@ const formatCurrency = (value: number) =>
 export default function RecordDebtScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
 
   const [isReady, setIsReady] = useState(false);
   const [debtCustomerName, setDebtCustomerName] = useState('');
@@ -29,6 +30,16 @@ export default function RecordDebtScreen() {
   const [savingDebt, setSavingDebt] = useState(false);
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setDebtCustomerName('');
+    setDebtCustomerPhone('');
+    setDebtAmount('');
+    setDebtDueDate('');
+    setDebtNotes('');
+    setTimeout(() => setRefreshing(false), 300);
+  }, []);
 
   const handleAddDebt = async () => {
     if (!currentBusiness || !currentBranch) return;
@@ -97,6 +108,14 @@ export default function RecordDebtScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
           <View style={{
             backgroundColor: '#F0F5F2',

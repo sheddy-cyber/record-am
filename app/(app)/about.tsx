@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, ScrollView } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, ScrollView, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,12 @@ import { APP_VERSION, BRAND, COLORS, FONT, RADIUS } from '@/constants';
 
 export default function AboutScreen() {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setTimeout(() => setRefreshing(false), 400);
+  }, []);
 
   const features = [
     { icon: 'package', title: 'Inventory & Stock', desc: 'Track stock levels, record restocks, and get early low-stock alerts.' },
@@ -33,28 +39,18 @@ export default function AboutScreen() {
           paddingTop: 32,
           paddingBottom: insets.bottom + 40,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
         {/* Hero Brand Section */}
         <View style={{ alignItems: 'center', marginBottom: 32 }}>
-          <View
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: 20,
-              backgroundColor: '#efefd0',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 16,
-              shadowColor: COLORS.ink,
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.1,
-              shadowRadius: 12,
-              elevation: 4,
-            }}
-          >
-            <BrandMark size={56} badge={false} />
-          </View>
-
+          <BrandMark size={80} badge={false} style={{ marginBottom: 16 }} />
           <BrandWordmark size={30} />
 
           <Text

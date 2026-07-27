@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Text, TouchableOpacity, View, RefreshControl, BackHandler } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -113,6 +113,19 @@ export default function RecordPurchaseScreen() {
 
   const suppliers = useSupplierStore((s) => s.suppliers);
   const fetchSuppliers = useSupplierStore((s) => s.fetchSuppliers);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        fetchProducts(currentBusiness.id),
+        fetchSuppliers(currentBusiness.id),
+      ]);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness, fetchProducts, fetchSuppliers]);
 
   const isLoading = usePurchaseStore((s) => s.isLoading);
   const isSaving = usePurchaseStore((s) => s.isSaving);
@@ -136,7 +149,41 @@ export default function RecordPurchaseScreen() {
   const [purchaseMissing, setPurchaseMissing] = useState(false);
   const [prefillOriginals, setPrefillOriginals] = useState<Record<string, { quantity: number; unit_cost: number }>>({});
 
+  const hasSavedRef = useRef(false);
+
   const closeScreen = () => router.back();
+
+  const handleCancelOrBack = useCallback(async () => {
+    if (!hasSavedRef.current && isSyncFlowActive && originalProductId && currentBranch && currentBusiness) {
+      hasSavedRef.current = true;
+      const productObj = products.find((p) => p.id === originalProductId);
+      const cartObj = cart.find((item) => item.product?.id === originalProductId);
+      const pName = productObj?.name || cartObj?.product?.name || 'Stock Item';
+
+      await addMismatch({
+        type: 'stock_to_purchase_declined',
+        productId: originalProductId,
+        productName: pName,
+        branchId: currentBranch.id,
+        businessId: currentBusiness.id,
+        quantity: parseFloat(originalStockQty || '0'),
+        unitCost: parseFloat(originalUnitCost || '0'),
+      });
+    }
+    closeScreen();
+  }, [isSyncFlowActive, originalProductId, currentBranch, currentBusiness, products, cart, originalStockQty, originalUnitCost]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (isSyncFlowActive && !hasSavedRef.current) {
+        void handleCancelOrBack();
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [isSyncFlowActive, handleCancelOrBack]);
+
   const newItemUnitIsPreset = PRODUCT_UNITS.some((unit) => unit.value === newItemUnit);
   const selectedNewItemUnit = newItemUnitIsPreset ? newItemUnit : CUSTOM_UNIT_VALUE;
 
@@ -486,6 +533,8 @@ export default function RecordPurchaseScreen() {
           return;
         }
 
+        hasSavedRef.current = true;
+
         Toast.show({
           type: 'success',
           text1: isEditing ? 'Purchase updated' : 'Goods recorded',
@@ -585,19 +634,22 @@ export default function RecordPurchaseScreen() {
     };
 
     const originalQtyNum = parseFloat(originalStockQty || '0');
-    const originalCostNum = parseFloat(originalUnitCost || '0');
+    const originalUnitCostNum = parseFloat(originalUnitCost || '0');
     const matchingCartItem = cart.find(
       (item) => item.product?.id === originalProductId
     );
-    const hasMismatch = !mismatchId && isSyncFlowActive && originalProductId && matchingCartItem && (
-      roundAmount(matchingCartItem.quantity) !== roundAmount(originalQtyNum) ||
-      roundAmount(matchingCartItem.unit_cost) !== roundAmount(originalCostNum)
+    const hasMismatch = Boolean(
+      isSyncFlowActive &&
+      originalProductId &&
+      (!matchingCartItem ||
+        roundAmount(matchingCartItem.quantity) !== roundAmount(originalQtyNum) ||
+        roundAmount(matchingCartItem.unit_cost) !== roundAmount(originalUnitCostNum))
     );
 
     if (hasMismatch) {
       Alert.alert(
         'Mismatch Warning',
-        'The quantity or cost price does not match the stock entry. Save anyway?',
+        'The quantity or cost price in the purchase does not match the stock addition. Save anyway?',
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -607,27 +659,23 @@ export default function RecordPurchaseScreen() {
         ]
       );
     } else {
-      await executeSave(false);
+      executeSave(false);
     }
   };
 
-  if (!ready && isEditing) {
-    return <LoadingScreen message="Loading purchase..." />;
-  }
-
-  if (purchaseMissing) {
+  if (ready && purchaseMissing) {
     return (
       <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
         <ScreenHeader
-          title="Edit Purchase"
+          title="Edit Goods Purchase"
           theme="dark"
-          left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+          left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
         />
         <EmptyState
           icon="file-text"
           title="Purchase not found"
           description="This purchase record could not be loaded."
-          action={{ label: 'Go Back', onPress: closeScreen }}
+          action={{ label: 'Go Back', onPress: handleCancelOrBack }}
         />
       </ScreenShell>
     );
@@ -643,7 +691,7 @@ export default function RecordPurchaseScreen() {
             : 'Track goods bought from suppliers. This does not update stock quantity.'
         }
         theme="dark"
-        left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+        left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
       />
 
       <View style={{ flex: 1 }}>
@@ -805,7 +853,17 @@ export default function RecordPurchaseScreen() {
                 </Text>
               </View>
             ) : (
-              <KeyboardAwareScrollView style={{ flex: 1 }}>
+              <KeyboardAwareScrollView
+                style={{ flex: 1 }}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={onRefresh}
+                    tintColor={COLORS.accent}
+                    colors={[COLORS.accent]}
+                  />
+                }
+              >
                 {cart.map((item) => (
                   <View key={item.key} style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>

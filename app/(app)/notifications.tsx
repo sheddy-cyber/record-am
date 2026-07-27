@@ -1,15 +1,17 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
   Pressable,
+  RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, formatDistanceToNow } from 'date-fns';
+import { useTabStore } from '@/store/tabStore';
 import {
   InAppNotification,
   NotificationType,
@@ -52,6 +54,7 @@ const TYPE_CONFIG: Record<
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
+  const [refreshing, setRefreshing] = useState(false);
   const {
     notifications,
     isLoaded,
@@ -61,6 +64,14 @@ export default function NotificationsScreen() {
     deleteNotification,
     clearAll,
   } = useNotificationStore();
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadNotifications();
+    } catch (_) {}
+    setRefreshing(false);
+  }, [loadNotifications]);
 
   useEffect(() => {
     loadNotifications();
@@ -73,8 +84,43 @@ export default function NotificationsScreen() {
       await markAsRead(item.id);
     }
 
+    const type = (item.type || item.data?.type) as string;
+
+    const navigateToTab = (tabKey: 'dashboard' | 'inventory' | 'sales' | 'debts' | 'more', path: string) => {
+      useTabStore.getState().setActiveTab(tabKey);
+      router.push(path as any);
+    };
+
     if (item.actionRoute) {
-      router.push(item.actionRoute as any);
+      if (item.actionRoute.includes('_inventory')) {
+        navigateToTab('inventory', item.actionRoute);
+      } else if (item.actionRoute.includes('_debts')) {
+        navigateToTab('debts', item.actionRoute);
+      } else if (item.actionRoute.includes('_sales')) {
+        navigateToTab('sales', item.actionRoute);
+      } else if (item.actionRoute.includes('_dashboard')) {
+        navigateToTab('dashboard', item.actionRoute);
+      } else {
+        router.push(item.actionRoute as any);
+      }
+      return;
+    }
+
+    // Fallback navigation based on notification payload/type
+    if (type === 'mismatch' || type === 'sync_mismatch') {
+      navigateToTab('inventory', '/(app)/(tabs)/_inventory');
+    } else if (type === 'low_stock') {
+      navigateToTab('inventory', '/(app)/(tabs)/_inventory');
+    } else if (type === 'debt_reminder' || type === 'debt') {
+      navigateToTab('debts', '/(app)/(tabs)/_debts');
+    } else if (type === 'daily_summary' || type === 'close_day') {
+      router.push('/(app)/close-day');
+    } else if (item.data?.customerId) {
+      router.push({ pathname: '/(app)/customer-detail', params: { customerId: String(item.data.customerId) } } as any);
+    } else if (item.data?.supplierId) {
+      router.push({ pathname: '/(app)/supplier-detail', params: { supplierId: String(item.data.supplierId) } } as any);
+    } else if (item.data?.productId) {
+      navigateToTab('inventory', '/(app)/(tabs)/_inventory');
     }
   };
 
@@ -132,6 +178,14 @@ export default function NotificationsScreen() {
           gap: 16,
           paddingBottom: insets.bottom + 32,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
         {/* Header summary bar */}
         {notifications.length > 0 ? (
@@ -175,7 +229,7 @@ export default function NotificationsScreen() {
             <EmptyState
               icon="bell-off"
               title="No Notifications"
-              message="You have no notifications yet. Stock alerts, mismatch warnings, and reminders will appear here."
+              description="You have no notifications yet. Stock alerts, mismatch warnings, and reminders will appear here."
             />
           </View>
         ) : (

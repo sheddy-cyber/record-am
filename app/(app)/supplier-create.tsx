@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -14,6 +14,7 @@ export default function SupplierCreateScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness } = useAuthStore();
   const { createSupplier, isSaving } = useSupplierStore();
+  const [refreshing, setRefreshing] = useState(false);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -22,6 +23,16 @@ export default function SupplierCreateScreen() {
   const [notes, setNotes] = useState('');
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setName('');
+    setPhone('');
+    setEmail('');
+    setAddress('');
+    setNotes('');
+    setTimeout(() => setRefreshing(false), 300);
+  }, []);
 
   const handleAdd = async () => {
     if (!currentBusiness) return;
@@ -65,6 +76,14 @@ export default function SupplierCreateScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
           <InputField
             label="Supplier or Business Name"

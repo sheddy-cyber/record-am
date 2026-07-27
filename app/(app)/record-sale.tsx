@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
   InteractionManager,
+  RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -53,6 +54,19 @@ const roundAmount = (value: number) => Number(value.toFixed(2));
 export default function RecordSaleScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, user } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness) return;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        useBusinessStore.getState().fetchProducts(currentBusiness.id),
+        useCustomerStore.getState().fetchCustomers(currentBusiness.id),
+      ]);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness]);
   const { products } = useBusinessStore();
   const {
     pinnedProductIds,
@@ -455,6 +469,14 @@ export default function RecordSaleScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
           <InputField
             label="Find Product"

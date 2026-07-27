@@ -115,7 +115,11 @@ export default function StockHistoryScreen() {
             onChangeText={setSearch}
             placeholder="Search product or reference"
             placeholderTextColor={COLORS.text.muted}
-            style={{ fontFamily: FONT.regular, flex: 1, fontSize: 14, color: COLORS.text.primary, paddingVertical: 10 }}
+            underlineColorAndroid="transparent"
+            selectionColor={COLORS.accent}
+            cursorColor={COLORS.accent}
+            importantForAutofill="no"
+            style={{ fontFamily: FONT.regular, flex: 1, fontSize: 14, color: COLORS.text.primary, paddingVertical: 10, backgroundColor: '#FFFFFF' }}
           />
         </View>
 

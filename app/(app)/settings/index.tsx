@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, Alert, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
@@ -19,6 +19,7 @@ export default function SettingsScreen() {
   const { currentBusiness, currentBranch, setCurrentBusiness } = useAuthStore();
   const { updateBusiness } = useBusinessStore();
   const { isOnline, pendingCount: pendingMutations, isSyncing: syncing } = useOfflineStore();
+  const [refreshing, setRefreshing] = useState(false);
 
   const [bizName, setBizName] = useState(currentBusiness?.name ?? '');
   const [bizType, setBizType] = useState<BusinessType>((currentBusiness?.type as BusinessType) ?? 'provisions');
@@ -34,6 +35,21 @@ export default function SettingsScreen() {
   const [autoCloseEnabled, setAutoCloseEnabled] = useState(false);
   const [autoCloseTime, setAutoCloseTime] = useState('21:00');
   const [inventoryPurchaseSyncEnabled, setInventoryPurchaseSyncEnabled] = useState(true);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const settings = await getAppSettings();
+      setDailySummaryEnabled(settings.dailySummaryEnabled);
+      setDailySummaryTime(settings.dailySummaryTime);
+      setAutoCloseEnabled(settings.autoCloseEnabled);
+      setAutoCloseTime(settings.autoCloseTime);
+      setInventoryPurchaseSyncEnabled(settings.inventoryPurchaseSyncEnabled);
+      await useOfflineStore.getState().updatePendingCount();
+      await useAuthStore.getState().initialize();
+    } catch (_) {}
+    setRefreshing(false);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -176,7 +192,18 @@ export default function SettingsScreen() {
         left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
       />
 
-      <KeyboardAwareScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, gap: 20 }}>
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, gap: 20 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
+      >
           <Card>
             <SectionHeader title="Business Information" />
             <InputField label="Business Name" value={bizName} onChangeText={setBizName} placeholder="Your business name" required />
@@ -358,7 +385,7 @@ export default function SettingsScreen() {
 
           <Card style={{ backgroundColor: '#F9FAFB' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-              <BrandMark size={52} />
+              <BrandMark size={68} />
               <View style={{ flex: 1 }}>
                 <BrandWordmark size={22} />
                 <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted, marginTop: 6 }}>{APP_FOOTER_TEXT}</Text>

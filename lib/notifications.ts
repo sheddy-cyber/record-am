@@ -163,14 +163,25 @@ export async function scheduleDebtReminderNotification(customerName: string, bal
 }
 
 export async function sendImmediateNotification(title: string, body: string, data?: Record<string, unknown>, actionRoute?: string) {
-  const type: NotificationType = (data?.type as NotificationType) || 'system';
+  let type: NotificationType = (data?.type as NotificationType) || 'system';
+  if ((data?.type as string) === 'sync_mismatch') {
+    type = 'mismatch';
+  }
+
+  let route = actionRoute || (data?.actionRoute as string);
+  if (!route) {
+    if (type === 'mismatch') route = '/(app)/(tabs)/_inventory';
+    else if (type === 'low_stock') route = '/(app)/(tabs)/_inventory';
+    else if (type === 'debt_reminder') route = '/(app)/(tabs)/_debts';
+    else if (type === 'daily_summary') route = '/(app)/close-day';
+  }
 
   try {
     await useNotificationStore.getState().addNotification({
       title,
       body,
       type,
-      actionRoute: actionRoute || (data?.actionRoute as string) || undefined,
+      actionRoute: route,
       data,
     });
   } catch (_) {}
@@ -178,7 +189,7 @@ export async function sendImmediateNotification(title: string, body: string, dat
   if (isExpoGo()) return;
   try {
     await Notifications.scheduleNotificationAsync({
-      content: { title, body, data, sound: true },
+      content: { title, body, data: { ...data, actionRoute: route }, sound: true },
       trigger: null,
     });
   } catch (err) {}

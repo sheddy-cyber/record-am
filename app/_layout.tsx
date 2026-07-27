@@ -18,28 +18,51 @@ import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { GlobalDialog } from '@/components/ui/GlobalDialog';
 
-SplashScreen.preventAutoHideAsync().catch(() => undefined);
+SplashScreen.hideAsync().catch(() => undefined);
 
 const isExpoGo = Constants.executionEnvironment === 'storeClient';
+
+if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const styleId = 'record-am-autofill-styles';
+  if (!document.getElementById(styleId)) {
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus,
+      input:-webkit-autofill:active,
+      textarea:-webkit-autofill,
+      textarea:-webkit-autofill:hover,
+      textarea:-webkit-autofill:focus,
+      textarea:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+        -webkit-text-fill-color: #0F172A !important;
+        transition: background-color 5000000s ease-in-out 0s !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
 
 // ─── Steradian Font Assets ──────────────────────────────────────────────────
 export const STERADIAN_FONT_ASSETS = {
   'Steradian Trial': require('../assets/fonts/SteradianTRIAL-Rg.otf'),
-  'Steradian Trial Italic': require('../assets/fonts/SteradianTRIAL-RgIt.otf'),
+  'Steradian Trial Italic': require('../assets/fonts/SteradianTRIAL-Rg.otf'),
   'Steradian Trial Medium': require('../assets/fonts/SteradianTRIAL-Md.otf'),
-  'Steradian Trial Medium Italic': require('../assets/fonts/SteradianTRIAL-MdIt.otf'),
+  'Steradian Trial Medium Italic': require('../assets/fonts/SteradianTRIAL-Md.otf'),
   'Steradian Trial Bold': require('../assets/fonts/SteradianTRIAL-Bd.otf'),
-  'Steradian Trial Bold Italic': require('../assets/fonts/SteradianTRIAL-BdIt.otf'),
+  'Steradian Trial Bold Italic': require('../assets/fonts/SteradianTRIAL-Bd.otf'),
   'Steradian Trial Black': require('../assets/fonts/SteradianTRIAL-Blk.otf'),
-  'Steradian Trial Black Italic': require('../assets/fonts/SteradianTRIAL-BlkIt.otf'),
+  'Steradian Trial Black Italic': require('../assets/fonts/SteradianTRIAL-Blk.otf'),
   'Steradian Trial Light': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
-  'Steradian Trial Light Italic': require('../assets/fonts/SteradianTRIAL-LtIt.otf'),
+  'Steradian Trial Light Italic': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
   'Steradian Trial Thin': require('../assets/fonts/SteradianTRIAL-Th.otf'),
-  'Steradian Trial Thin Italic': require('../assets/fonts/SteradianTRIAL-ThIt.otf'),
-  'Steradian Trial Extra Light': require('../assets/fonts/SteradianTRIAL-XLt.otf'),
-  'Steradian Trial Extra Light Italic': require('../assets/fonts/SteradianTRIAL-XLtIt.otf'),
-  'Steradian Trial Ultra Light': require('../assets/fonts/SteradianTRIAL-UltLt.otf'),
-  'Steradian Trial Ultra Light Italic': require('../assets/fonts/SteradianTRIAL-UltLtIt.otf'),
+  'Steradian Trial Thin Italic': require('../assets/fonts/SteradianTRIAL-Th.otf'),
+  'Steradian Trial Extra Light': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
+  'Steradian Trial Extra Light Italic': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
+  'Steradian Trial Ultra Light': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
+  'Steradian Trial Ultra Light Italic': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
 } as const;
 
 // ─── Global default font ────────────────────────────────────────────────────
@@ -247,9 +270,23 @@ export default function RootLayout() {
         if (!active) return;
         subscription = Notifications.addNotificationResponseReceivedListener((response) => {
           const data = response.notification.request.content.data;
-          if (data?.type === 'sync_mismatch') {
+          const type = data?.type as string | undefined;
+          const route = data?.actionRoute as string | undefined;
+
+          if (typeof route === 'string' && route) {
+            if (route.includes('_inventory')) useTabStore.getState().setActiveTab('inventory');
+            else if (route.includes('_debts')) useTabStore.getState().setActiveTab('debts');
+            else if (route.includes('_sales')) useTabStore.getState().setActiveTab('sales');
+            else if (route.includes('_dashboard')) useTabStore.getState().setActiveTab('dashboard');
+            router.push(route as any);
+          } else if (type === 'sync_mismatch' || type === 'mismatch' || type === 'low_stock') {
             useTabStore.getState().setActiveTab('inventory');
-            router.push('/(app)/(tabs)');
+            router.push('/(app)/(tabs)/_inventory');
+          } else if (type === 'debt_reminder' || type === 'debt') {
+            useTabStore.getState().setActiveTab('debts');
+            router.push('/(app)/(tabs)/_debts');
+          } else if (type === 'daily_summary' || type === 'close_day') {
+            router.push('/(app)/close-day');
           }
         });
       } catch (err) {
@@ -267,9 +304,7 @@ export default function RootLayout() {
     };
   }, []);
 
-  if (!appInitialized || (!fontsLoaded && !fontError)) {
-    return null;
-  }
+
 
   return (
     <SafeAreaProvider>

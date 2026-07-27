@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Platform, View, Pressable, StyleSheet, BackHandler } from 'react-native';
+import { Platform, View, Text, Pressable, StyleSheet, BackHandler } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
-import { COLORS } from '@/constants';
+import { COLORS, FONT } from '@/constants';
 import { useTabStore } from '@/store/tabStore';
 import PagerView from 'react-native-pager-view';
 
@@ -13,12 +13,12 @@ import SalesScreen from './_sales';
 import DebtsScreen from './_debts';
 import MoreScreen from './_more';
 
-const TAB_ICONS: Record<string, keyof typeof Feather.glyphMap> = {
-  dashboard: 'aperture',
-  inventory: 'box',
-  sales: 'shopping-cart',
-  debts: 'users',
-  more: 'grid',
+const TAB_CONFIG: Record<string, { label: string; icon: keyof typeof Feather.glyphMap }> = {
+  dashboard: { label: 'Hub', icon: 'layout' },
+  inventory: { label: 'Inventory', icon: 'box' },
+  sales: { label: 'Sales', icon: 'shopping-cart' },
+  debts: { label: 'Debts', icon: 'users' },
+  more: { label: 'More', icon: 'grid' },
 };
 
 const ROUTES = [
@@ -39,23 +39,37 @@ const TabIcon = React.memo(function TabIcon({
   isActive: boolean;
   onPressIn: () => void;
 }) {
-  const iconName = TAB_ICONS[routeKey] || 'circle';
+  const config = TAB_CONFIG[routeKey] || { label: '', icon: 'circle' };
 
   return (
     <Pressable
       onPressIn={onPressIn}
       android_ripple={null}
-      style={styles.tabItem}
+      style={[
+        styles.tabItem,
+        isActive && styles.activeTabItem,
+      ]}
     >
-      <View style={styles.iconWrapper}>
+      <View style={[styles.iconWrapper, isActive && styles.activeIconWrapper]}>
         {isActive && <View style={styles.activeCircle} />}
         <Feather 
-          name={iconName} 
-          size={22} 
+          name={config.icon} 
+          size={isActive ? 21 : 18} 
           color={isActive ? COLORS.accent : "rgba(255,255,255,0.4)"} 
           style={{ position: 'absolute' }}
         />
       </View>
+      <Text
+        style={{
+          fontSize: isActive ? 11 : 10,
+          fontFamily: isActive ? FONT.bold : FONT.medium,
+          color: isActive ? COLORS.accent : "rgba(255,255,255,0.45)",
+          marginTop: isActive ? 1 : 3,
+        }}
+        numberOfLines={1}
+      >
+        {config.label}
+      </Text>
     </Pressable>
   );
 });
@@ -97,15 +111,17 @@ function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
   }, [pagerRef, setActiveTab]);
 
   return (
-    <View style={styles.tabBar}>
-      {ROUTES.map((route) => (
-        <TabIcon
-          key={route.key}
-          routeKey={route.key}
-          isActive={activeTab === route.key}
-          onPressIn={() => handleTabPress(route.key)}
-        />
-      ))}
+    <View style={styles.tabBarContainer}>
+      <View style={styles.tabBar}>
+        {ROUTES.map((route) => (
+          <TabIcon
+            key={route.key}
+            routeKey={route.key}
+            isActive={activeTab === route.key}
+            onPressIn={() => handleTabPress(route.key)}
+          />
+        ))}
+      </View>
     </View>
   );
 }
@@ -119,11 +135,18 @@ const TabScene = React.memo(({ component: Component }: { component: React.Compon
 export default function TabsScreen() {
   const isFocused = useIsFocused();
   const pagerRef = useRef<any>(null);
-  // Tracks whether the user is actively swiping (dragging or settling).
-  // PagerView reports: dragging → settling → onPageSelected → idle for swipes,
-  // but fires NO scroll state changes for setPageWithoutAnimation() — only onPageSelected.
-  // So we use this to distinguish swipes from programmatic page changes.
   const isUserSwipingRef = useRef(false);
+  const hasMountedRef = useRef(false);
+
+  useEffect(() => {
+    useTabStore.getState().setActiveTab('dashboard');
+    pagerRef.current?.setPageWithoutAnimation(0);
+
+    const timer = setTimeout(() => {
+      hasMountedRef.current = true;
+    }, 600);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Hardware Back Button: Return to Dashboard if not there, otherwise exit
   useEffect(() => {
@@ -145,6 +168,7 @@ export default function TabsScreen() {
 
   // Track PagerView scroll state to distinguish user swipes from programmatic changes
   const handlePageScrollStateChanged = useCallback((e: any) => {
+    if (!hasMountedRef.current) return;
     const state = e.nativeEvent.pageScrollState;
     if (state === 'dragging') {
       isUserSwipingRef.current = true;
@@ -154,10 +178,9 @@ export default function TabsScreen() {
   }, []);
 
   // Only update tab state for genuine user swipes.
-  // Programmatic setPageWithoutAnimation() also fires onPageSelected, but
-  // without a preceding 'dragging' state — so isUserSwipingRef stays false.
+  // Ignore initial layout/measurement scroll events on mount.
   const handlePageSelected = useCallback((e: any) => {
-    if (!isUserSwipingRef.current) return;
+    if (!hasMountedRef.current || !isUserSwipingRef.current) return;
 
     const index = e.nativeEvent.position;
     const targetRoute = ROUTES[index];
@@ -170,8 +193,8 @@ export default function TabsScreen() {
   }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#0F172A' }}>
-      <View style={{ flex: 1, paddingBottom: Platform.OS === 'ios' ? 88 : 72 }}>
+    <View style={{ flex: 1, backgroundColor: COLORS.surface }}>
+      <View style={{ flex: 1 }}>
         <PagerView
           ref={pagerRef}
           style={{ flex: 1 }}
@@ -195,43 +218,61 @@ export default function TabsScreen() {
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    flexDirection: 'row',
+  tabBarContainer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    height: Platform.OS === 'ios' ? 88 : 72,
-    backgroundColor: '#0F172A',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.05)',
-    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
-    paddingTop: 8,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    elevation: 20,
+    elevation: 24,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -5 },
+    shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.3,
-    shadowRadius: 15,
+    shadowRadius: 16,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: 'transparent',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    height: Platform.OS === 'ios' ? 90 : 76,
+    backgroundColor: '#0F172A',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1.5,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    paddingBottom: Platform.OS === 'ios' ? 22 : 8,
+    paddingTop: 6,
+    overflow: 'hidden',
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 50,
+    height: 56,
+  },
+  activeTabItem: {
+    transform: [{ translateY: -3 }],
   },
   iconWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 28,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
+  activeIconWrapper: {
+    width: 44,
+    height: 32,
+    borderRadius: 16,
+  },
   activeCircle: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255,107,53,0.15)',
-    borderRadius: 22,
+    backgroundColor: 'rgba(255, 107, 53, 0.18)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.28)',
   },
 });

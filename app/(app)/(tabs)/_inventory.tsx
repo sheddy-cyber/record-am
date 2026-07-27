@@ -109,8 +109,8 @@ function InventoryScreen() {
           onPress: async () => {
             try {
               await deleteProductRecord(product.id);
-              if (currentBusiness) {
-                await removeCachedProduct(currentBusiness.id, product.id);
+              if (businessId) {
+                await removeCachedProduct(businessId, product.id);
               }
               await load();
               Toast.show({ type: 'success', text1: 'Product deleted' });
@@ -158,7 +158,9 @@ function InventoryScreen() {
             placeholderTextColor={COLORS.text.muted}
             underlineColorAndroid="transparent"
             selectionColor={COLORS.accent}
-            style={{ flex: 1, fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.primary, paddingVertical: 10, backgroundColor: 'transparent' }}
+            cursorColor={COLORS.accent}
+            importantForAutofill="no"
+            style={{ flex: 1, fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.primary, paddingVertical: 10, backgroundColor: '#FFFFFF' }}
           />
         </View>
 

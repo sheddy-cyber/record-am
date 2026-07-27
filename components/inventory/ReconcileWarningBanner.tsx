@@ -233,14 +233,20 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => handleReconcile(mismatch)}
+                activeOpacity={0.8}
                 style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
                   borderRadius: RADIUS.sm,
-                  backgroundColor: COLORS.warning,
+                  backgroundColor: '#d97706',
+                  shadowColor: '#d97706',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.2,
+                  shadowRadius: 4,
+                  elevation: 2,
                 }}
               >
-                <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: '#FFFFFF' }}>
+                <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: '#FFFFFF' }}>
                   Reconcile
                 </Text>
               </TouchableOpacity>

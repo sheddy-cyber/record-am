@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -34,6 +34,16 @@ export default function AddStockScreen() {
 
   const [loading, setLoading] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    if (!currentBusiness) return;
+    setRefreshing(true);
+    try {
+      await fetchProducts(currentBusiness.id);
+    } catch (_) {}
+    setRefreshing(false);
+  }, [currentBusiness, fetchProducts]);
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
   const [costPrice, setCostPrice] = useState('');
@@ -252,6 +262,14 @@ export default function AddStockScreen() {
             paddingBottom: insets.bottom + 32,
           }}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={COLORS.accent}
+              colors={[COLORS.accent]}
+            />
+          }
         >
           <ProductFormFields
             productName={productName}

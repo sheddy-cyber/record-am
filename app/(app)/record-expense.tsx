@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Alert, Platform, InteractionManager, View, Text, ScrollView, KeyboardAvoidingView } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Alert, Platform, InteractionManager, View, Text, ScrollView, KeyboardAvoidingView, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -17,6 +17,7 @@ import { PaymentMethod } from '@/types';
 export default function RecordExpenseScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, user } = useAuthStore();
+  const [refreshing, setRefreshing] = useState(false);
 
   const [isReady, setIsReady] = useState(false);
   const [expenseCategory, setExpenseCategory] = useState('rent');
@@ -27,6 +28,13 @@ export default function RecordExpenseScreen() {
   const [savingExpense, setSavingExpense] = useState(false);
 
   const closeScreen = () => router.back();
+
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setExpenseDescription('');
+    setExpenseAmount('');
+    setTimeout(() => setRefreshing(false), 300);
+  }, []);
 
   const handleAddExpense = async () => {
     if (!currentBusiness || !currentBranch) return;
@@ -93,6 +101,14 @@ export default function RecordExpenseScreen() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 32 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
+          />
+        }
       >
           <SelectField label="Category" value={expenseCategory} options={EXPENSE_CATEGORIES} onChange={setExpenseCategory} required />
           <InputField
