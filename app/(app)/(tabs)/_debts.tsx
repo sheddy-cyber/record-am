@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, InteractionManager, Text, View } from 'react-native';
+import { Alert, InteractionManager, Text, View, RefreshControl } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { differenceInDays, format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
@@ -30,17 +30,23 @@ function DebtsScreen() {
   const customers = useCustomerStore((s) => s.customers);
   const debts = useDebtStore((s) => s.debts);
   const fetchDebts = useDebtStore((s) => s.fetchDebts);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const loadDebts = useCallback(() => {
+  const loadDebts = useCallback(async () => {
     if (businessId && branchId) {
-      fetchDebts(businessId, branchId);
+      await fetchDebts(businessId, branchId);
     }
   }, [businessId, branchId, fetchDebts]);
 
-  // Data is hydrated on app boot. No need to fetch on mount.
-  // Realtime will handle updates.
+  useEffect(() => {
+    loadDebts();
+  }, [loadDebts]);
 
-  // Refetch handled by activeTab selector above — no focus listener needed
+  useFocusEffect(
+    useCallback(() => {
+      loadDebts();
+    }, [loadDebts])
+  );
 
   useRealtimeRefresh({
     channelName: `debts-screen-${branchId ?? 'unknown'}`,
@@ -82,20 +88,32 @@ function DebtsScreen() {
 
 
 
-      {debts.length === 0 ? (
-        <EmptyState
-          icon="clipboard"
-          title="No outstanding debts"
-          description="All customer debts are settled. Record a new credit sale or standalone debt when needed."
-          action={{ label: 'Record Debt', onPress: () => router.push('/(app)/record-debt') }}
-        />
-      ) : (
-        <FlashList
-          data={debts}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
-          estimatedItemSize={100}
-          ListHeaderComponent={
+      <FlashList
+        data={debts}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92, flexGrow: 1 }}
+        estimatedItemSize={100}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await loadDebts();
+              setRefreshing(false);
+            }}
+            tintColor={COLORS.accent}
+          />
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="clipboard"
+            title="No outstanding debts"
+            description="All customer debts are settled. Record a new credit sale or standalone debt when needed."
+            action={{ label: 'Record Debt', onPress: () => router.push('/(app)/record-debt') }}
+          />
+        }
+        ListHeaderComponent={
+          debts.length > 0 ? (
             <FlatSection style={{ padding: 16, marginTop: SP.page, marginBottom: 12 }}>
               <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Outstanding balance</Text>
               <Text style={{ fontSize: 30, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 6 }}>
@@ -105,14 +123,17 @@ function DebtsScreen() {
                 Customers with unpaid balances stay here until fully settled.
               </Text>
             </FlatSection>
-          }
-          ListFooterComponent={
+          ) : null
+        }
+        ListFooterComponent={
+          debts.length > 0 ? (
             <FlatSection style={{ padding: 14, marginTop: 12 }}>
               <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary, textAlign: 'center' }}>
                 Track repayments here. Settled debts get added to sales automatically.
               </Text>
             </FlatSection>
-          }
+          ) : null
+        }
           renderItem={({ item, index }) => {
             const customer = customers.find((c) => c.id === item.customer_id);
             const resolvedPhone = customer?.phone || item.customer_phone;
@@ -230,7 +251,6 @@ function DebtsScreen() {
             );
           }}
         />
-      )}
     </ScreenShell>
     </SwipeableTabScreen>
   );

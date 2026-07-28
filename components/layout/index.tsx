@@ -95,7 +95,8 @@ export function BrandWordmark({
           fontSize: size,
           fontFamily: FONT.bold,
           color: invert ? COLORS.text.inverse : COLORS.text.primary,
-          letterSpacing: -0.3,
+          letterSpacing: 0,
+          includeFontPadding: false,
         }}
       >
         {BRAND.name}

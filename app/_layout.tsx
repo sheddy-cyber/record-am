@@ -71,14 +71,14 @@ export const STERADIAN_FONT_ASSETS = {
 const textDefaults = (Text as any);
 textDefaults.defaultProps = textDefaults.defaultProps || {};
 textDefaults.defaultProps.style = [
-  { fontFamily: FONT.regular },
+  { fontFamily: FONT.regular, includeFontPadding: false },
   textDefaults.defaultProps.style,
 ];
 
 const inputDefaults = (TextInput as any);
 inputDefaults.defaultProps = inputDefaults.defaultProps || {};
 inputDefaults.defaultProps.style = [
-  { fontFamily: FONT.regular },
+  { fontFamily: FONT.regular, includeFontPadding: false },
   inputDefaults.defaultProps.style,
 ];
 

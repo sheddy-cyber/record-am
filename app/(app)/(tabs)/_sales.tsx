@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, InteractionManager, Share, Text, TouchableOpacity, View, RefreshControl, Modal, ScrollView, StyleSheet, ActivityIndicator, LayoutAnimation, Platform, UIManager } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -49,7 +49,7 @@ function SalesScreen() {
   const [isSharingImage, setIsSharingImage] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const receiptCaptureRef = useRef<ViewShot | null>(null);
+  const receiptCaptureRef = useRef<any>(null);
 
   const openRecordSale = () => router.push('/(app)/record-sale');
 
@@ -72,9 +72,15 @@ function SalesScreen() {
   }, [businessId, branchId]);
 
   useEffect(() => {
-    // Only fetch on initial mount. Realtime and pull-to-refresh handle updates.
+    // Fetch on initial mount
     loadActivities();
   }, [loadActivities]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadActivities();
+    }, [loadActivities])
+  );
 
   useRealtimeRefresh({
     channelName: `sales-screen-${branchId ?? 'unknown'}`,
@@ -304,40 +310,40 @@ function SalesScreen() {
 
 
 
-      {activities.length === 0 ? (
-        <EmptyState
-          icon="shopping-cart"
-          title="No sales yet"
-          description="Record your first sale or debt collection to start tracking revenue and stock movement."
-          action={{ label: 'Record Sale', onPress: openRecordSale }}
-        />
-      ) : (
-        <FlatList
-          data={activities}
-          keyExtractor={(item: any) => `${item.kind}-${item.id}`}
-          contentContainerStyle={{ 
-            paddingHorizontal: SP.page, 
-            paddingTop: SP.page,
-            paddingBottom: insets.bottom + 92 
-          }}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={5}
-          removeClippedSubviews={true}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={async () => {
-                setRefreshing(true);
-                await loadActivities(true);
-              }}
-              tintColor={COLORS.accent}
-            />
-          }
-          renderItem={renderActivityItem}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-        />
-      )}
+      <FlatList
+        data={activities}
+        keyExtractor={(item: any) => `${item.kind}-${item.id}`}
+        contentContainerStyle={{ 
+          paddingHorizontal: SP.page, 
+          paddingTop: SP.page,
+          paddingBottom: insets.bottom + 92,
+          flexGrow: 1,
+        }}
+        ListEmptyComponent={
+          <EmptyState
+            icon="shopping-cart"
+            title="No sales yet"
+            description="Record your first sale or debt collection to start tracking revenue and stock movement."
+            action={{ label: 'Record Sale', onPress: openRecordSale }}
+          />
+        }
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={5}
+        removeClippedSubviews={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await loadActivities(true);
+            }}
+            tintColor={COLORS.accent}
+          />
+        }
+        renderItem={renderActivityItem}
+        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+      />
       {/* Receipt Preview Modal */}
       <Modal
         visible={previewSale !== null}

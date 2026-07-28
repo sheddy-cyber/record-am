@@ -90,16 +90,16 @@ export const ACCENTS = {
 
 // ─── Typography Scale ───────────────────────────────────────────────────────
 export const TYPE = {
-  h1:       { fontSize: 28, fontFamily: FONT.bold, letterSpacing: -0.4 },
-  h2:       { fontSize: 22, fontFamily: FONT.bold, letterSpacing: -0.3 },
-  h3:       { fontSize: 18, fontFamily: FONT.bold, letterSpacing: -0.2 },
+  h1:       { fontSize: 28, fontFamily: FONT.bold, letterSpacing: 0 },
+  h2:       { fontSize: 22, fontFamily: FONT.bold, letterSpacing: 0 },
+  h3:       { fontSize: 18, fontFamily: FONT.bold, letterSpacing: 0 },
   body:     { fontSize: 15, fontFamily: FONT.regular, letterSpacing: 0 },
   bodyBold: { fontSize: 15, fontFamily: FONT.bold, letterSpacing: 0 },
   caption:  { fontSize: 13, fontFamily: FONT.regular, letterSpacing: 0 },
   label:    { fontSize: 13, fontFamily: FONT.medium, letterSpacing: 0 },
   overline: { fontSize: 11, fontFamily: FONT.medium, letterSpacing: 0.8, textTransform: 'uppercase' as const },
-  big:      { fontSize: 34, fontFamily: FONT.black, letterSpacing: -0.5 },
-  stat:     { fontSize: 24, fontFamily: FONT.bold, letterSpacing: -0.3 },
+  big:      { fontSize: 34, fontFamily: FONT.black, letterSpacing: 0 },
+  stat:     { fontSize: 24, fontFamily: FONT.bold, letterSpacing: 0 },
 } as const;
 
 // ─── Spacing (4-point grid) ─────────────────────────────────────────────────

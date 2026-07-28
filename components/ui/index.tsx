@@ -70,7 +70,7 @@ export const Button: React.FC<ButtonProps> = ({
     >
       {loading ? <ActivityIndicator color={textColors[variant]} size="small" /> : null}
       {!loading && icon ? <Feather name={icon} size={fontSizes[size] + 1} color={textColors[variant]} /> : null}
-      <Text style={[{ fontSize: fontSizes[size], fontFamily: FONT.medium, color: textColors[variant] }, textStyle]}>
+      <Text style={[{ fontSize: fontSizes[size], fontFamily: FONT.medium, color: textColors[variant], includeFontPadding: false, letterSpacing: 0 }, textStyle]}>
         {title}
       </Text>
     </TouchableOpacity>
