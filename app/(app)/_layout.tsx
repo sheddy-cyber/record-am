@@ -57,9 +57,9 @@ function Bootloader({ children }: { children: React.ReactNode }) {
 }
 
 export default function AppLayout() {
-  const { session, isInitialized } = useAuthStore();
+  const { session, currentBusiness, isInitialized } = useAuthStore();
 
-  if (isInitialized && !session) {
+  if (isInitialized && !session && !currentBusiness) {
     return <Redirect href="/(auth)/login" />;
   }
 

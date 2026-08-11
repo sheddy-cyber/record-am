@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, ViewStyle, TextStyle, Modal } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
+export * from './AnimatedSplashScreen';
+export * from './RoleGate';
+export * from './GlobalDialog';
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'accent';
 
 interface ButtonProps {

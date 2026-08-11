@@ -27,8 +27,9 @@ export function ScreenShell({
   backgroundColor?: string;
   statusBarStyle?: StatusBarMode;
 }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View style={{ flex: 1, backgroundColor }}>
+    <View style={{ flex: 1, backgroundColor, paddingBottom: insets.bottom }}>
       <StatusBar style={statusBarStyle} />
       {children}
     </View>

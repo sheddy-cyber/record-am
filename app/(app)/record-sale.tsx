@@ -646,6 +646,7 @@ export default function RecordSaleScreen() {
                           keyboardType="numeric"
                           placeholder="0"
                           prefix={CURRENCY_SYMBOL}
+                          isAmount={true}
                           containerStyle={{ marginBottom: 0 }}
                         />
                       </View>
@@ -693,6 +694,7 @@ export default function RecordSaleScreen() {
                             keyboardType="numeric"
                             placeholder="0"
                             prefix={CURRENCY_SYMBOL}
+                            isAmount={true}
                             containerStyle={{ marginBottom: 0 }}
                           />
                         </View>
@@ -753,6 +755,7 @@ export default function RecordSaleScreen() {
                   placeholder={`${cartTotal}`}
                   keyboardType="numeric"
                   prefix={CURRENCY_SYMBOL}
+                  isAmount={true}
                   containerStyle={{ marginBottom: 4 }}
                 />
                 {amountOwed > 0 ? (
@@ -766,7 +769,7 @@ export default function RecordSaleScreen() {
                     }}
                   >
                     <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
-                      Outstanding balance: {formatCurrency(amountOwed)}
+                      Outstanding balance: {formatCurrency(amountOwed)}. You can also add a discount to reconcile this difference.
                     </Text>
                   </View>
                 ) : null}

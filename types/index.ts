@@ -65,6 +65,7 @@ export interface Branch {
 export interface UserProfile {
   id: string;
   full_name?: string;
+  email?: string;
   phone?: string;
   avatar_url?: string;
   pin_hash?: string;

@@ -11,7 +11,7 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { useTabStore } from '@/store/tabStore';
 import { deleteProductRecord } from '@/lib/recordDeletion';
 import { removeCachedProduct } from '@/lib/offlineStore';
-import { Badge, Button, EmptyState, LoadingScreen } from '@/components/ui';
+import { Badge, Button, EmptyState, LoadingScreen, RoleGate } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
@@ -294,12 +294,14 @@ function InventoryScreen() {
                 </View>
                 {showDeleteAction ? (
                   <View style={{ alignItems: 'center', marginTop: 12 }}>
-                    <Button
-                      title="Delete"
-                      onPress={() => handleDeleteProduct(item)}
-                      size="sm"
-                      variant="danger"
-                    />
+                    <RoleGate allowedRoles={['owner', 'manager']}>
+                      <Button
+                        title="Delete"
+                        onPress={() => handleDeleteProduct(item)}
+                        size="sm"
+                        variant="danger"
+                      />
+                    </RoleGate>
                   </View>
                 ) : null}
               </TouchableOpacity>

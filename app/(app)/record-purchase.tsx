@@ -903,6 +903,7 @@ export default function RecordPurchaseScreen() {
                         value={item.input_unit_cost !== undefined ? item.input_unit_cost : String(item.unit_cost)}
                         onChangeText={(value) => updateCartItem(item.key, 'unit_cost', value)}
                         keyboardType="numeric"
+                        isAmount={true}
                         style={{
                           fontFamily: FONT.regular,
                           flex: 1,
@@ -1032,6 +1033,7 @@ export default function RecordPurchaseScreen() {
                 placeholder="0"
                 keyboardType="numeric"
                 prefix={CURRENCY_SYMBOL}
+                isAmount={true}
                 containerStyle={{ marginBottom: 4 }}
               />
 
@@ -1045,6 +1047,7 @@ export default function RecordPurchaseScreen() {
                 placeholder={formatNumberInput(totals.totalAmount)}
                 keyboardType="numeric"
                 prefix={CURRENCY_SYMBOL}
+                isAmount={true}
                 hint={!amountPaidDirty ? 'Defaults to the total cost until you change it.' : undefined}
                 containerStyle={{ marginBottom: 4 }}
               />
@@ -1060,7 +1063,7 @@ export default function RecordPurchaseScreen() {
                   }}
                 >
                   <Text style={{ color: COLORS.danger, fontFamily: FONT.medium, fontSize: 13 }}>
-                    Supplier balance: {formatCurrency(totals.amountOwed)}
+                    Supplier balance: {formatCurrency(totals.amountOwed)}. You can also add a discount to reconcile this difference.
                   </Text>
                 </View>
               ) : null}

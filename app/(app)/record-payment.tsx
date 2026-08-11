@@ -160,6 +160,7 @@ export default function RecordPaymentScreen() {
             placeholder="0"
             keyboardType="numeric"
             prefix={CURRENCY_SYMBOL}
+            isAmount={true}
             required
           />
           <SelectField

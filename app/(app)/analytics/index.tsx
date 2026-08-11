@@ -12,9 +12,12 @@ import { useAuthStore } from '@/store/authStore';
 import { DateRange, useAnalyticsStore } from '@/store/analyticsStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { BarChart, ChartLegend, DonutChart, LineChart, MetricCard } from '@/components/charts';
+import { RoleGate } from '@/components/ui';
 import { Card, SectionHeader } from '@/components/ui';
 import { ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from "@/constants";
+import { Product } from '@/types';
+import { useBusinessStore } from '@/store/businessStore';
 
 const DATE_RANGES: { key: DateRange; label: string }[] = [
   { key: '7days', label: '7 Days' },
@@ -44,6 +47,7 @@ const fmtCount = (n: number) => n.toLocaleString();
 
 export default function AnalyticsScreen() {
   const { currentBusiness, currentBranch } = useAuthStore();
+  const { products } = useBusinessStore();
   const {
     summary,
     salesTrend,
@@ -55,6 +59,31 @@ export default function AnalyticsScreen() {
     setDateRange,
     fetchAnalytics,
   } = useAnalyticsStore();
+
+  const getProductStock = useCallback((product: Product, branchId?: string) => {
+    if (!product.inventory) return 0;
+    return product.inventory
+      .filter((inv) => !branchId || inv.branch_id === branchId)
+      .reduce((sum, inv) => sum + inv.quantity, 0);
+  }, []);
+
+  const totalStockValue = React.useMemo(() => {
+    return products.reduce((total, product) => {
+      if (product.is_service) return total;
+      const stock = getProductStock(product, currentBranch?.id);
+      if (stock > 0) {
+        return total + (stock * product.selling_price);
+      }
+      return total;
+    }, 0);
+  }, [products, currentBranch?.id, getProductStock]);
+
+  const totalStockItems = React.useMemo(() => {
+    return products.reduce((total, product) => {
+      if (product.is_service) return total;
+      return total + getProductStock(product, currentBranch?.id);
+    }, 0);
+  }, [products, currentBranch?.id, getProductStock]);
 
   const load = useCallback(() => {
     if (currentBusiness && currentBranch) {
@@ -192,6 +221,24 @@ export default function AnalyticsScreen() {
                   subtext={`Avg ${fmt(summary?.avg_transaction_value ?? 0)}`}
                 />
               </View>
+              <RoleGate allowedRoles={['owner']}>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+                  <MetricCard
+                    label="Business Net Worth"
+                    value={fmt(totalStockValue)}
+                    icon="briefcase"
+                    color={COLORS.accent}
+                    subtext="Total selling prices of all stock"
+                  />
+                  <MetricCard
+                    label="Stock Items"
+                    value={fmtCount(totalStockItems)}
+                    icon="package"
+                    color={COLORS.info}
+                    subtext="Total items in inventory"
+                  />
+                </View>
+              </RoleGate>
             </View>
 
             <Card>

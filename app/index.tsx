@@ -9,7 +9,7 @@ export default function Index() {
     return <LoadingScreen message="" />;
   }
 
-  if (!session) return <Redirect href="/(auth)/login" />;
+  if (!session && !currentBusiness) return <Redirect href="/(auth)/login" />;
   if (!currentBusiness) return <Redirect href="/(auth)/onboarding" />;
   return <Redirect href="/(app)/(tabs)" />;
 }

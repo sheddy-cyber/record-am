@@ -11,7 +11,7 @@ import { useTabStore } from '@/store/tabStore';
 import { Button, Card } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { BrandMark, BrandWordmark, ScreenShell } from '@/components/layout';
-import { AuthProgress, useStepTransition } from '@/components/auth';
+import { AuthBackButton, AuthProgress, useStepTransition } from '@/components/auth';
 import { BRAND, BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BusinessType } from '@/types';
 
@@ -87,11 +87,37 @@ export default function OnboardingScreen() {
       setLoading(false);
     }
   };
+  const handleBack = async () => {
+    if (step > 0) {
+      setStep((currentStep) => currentStep - 1);
+      return;
+    }
+    
+    // If on step 0, sign out and go back to login
+    setLoading(true);
+    try {
+      await supabase.auth.signOut();
+      useAuthStore.getState().signOut();
+      router.replace('/(auth)/login');
+    } catch (err) {
+      // Fallback
+      router.replace('/(auth)/login');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
-        <BrandWordmark invert size={24} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <BrandWordmark invert size={24} />
+          {step === 0 && (
+            <TouchableOpacity onPress={handleBack} style={{ padding: 4 }}>
+              <Text style={{ color: COLORS.text.muted, fontSize: 13, fontFamily: FONT.medium }}>Sign Out</Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <AuthProgress step={step} total={STEPS.length} />
         <View>
           <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.45)' }}>Step {step + 1} of {STEPS.length}</Text>
@@ -206,6 +232,13 @@ export default function OnboardingScreen() {
                 {step === 1 ? (
                   <TouchableOpacity onPress={() => setStep(2)} style={{ alignItems: 'center', paddingVertical: 8 }}>
                     <Text style={{ color: COLORS.text.muted, fontSize: 14, fontFamily: FONT.regular }}>Skip for now</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {step === 0 ? (
+                  <TouchableOpacity onPress={() => router.push('/(auth)/join-business')} style={{ alignItems: 'center', paddingVertical: 16 }}>
+                    <Text style={{ color: COLORS.text.secondary, fontSize: 14, fontFamily: FONT.medium }}>
+                      Have a Business ID? <Text style={{ color: COLORS.accent, fontFamily: FONT.bold }}>Join Business</Text>
+                    </Text>
                   </TouchableOpacity>
                 ) : null}
               </>

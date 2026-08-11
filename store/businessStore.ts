@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { Business, Branch, Category, Product, StockAlertSummary } from '@/types';
+import { Business, Branch, Category, Product, StockAlertSummary, BusinessMember, UserProfile, UserRole } from '@/types';
 import {
   cacheProducts,
   createLocalId,
@@ -56,6 +56,10 @@ interface BusinessState {
   fetchCategories: (businessId: string) => Promise<void>;
   fetchProducts: (businessId: string) => Promise<void>;
   createBusiness: (data: Partial<Business>, userId: string) => Promise<Business | null>;
+  fetchTeamMembers: (businessId: string) => Promise<(BusinessMember & { user_profiles: UserProfile })[]>;
+  updateTeamMemberRole: (memberId: string, role: UserRole) => Promise<void>;
+  updateTeamMemberProfile: (userId: string, fullName: string, phone: string) => Promise<void>;
+  removeTeamMember: (memberId: string) => Promise<void>;
   updateBusiness: (id: string, data: Partial<Business>) => Promise<void>;
   createCategory: (data: Partial<Category>) => Promise<Category | null>;
   createProduct: (data: Partial<Product>) => Promise<Product | null>;
@@ -271,6 +275,68 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       ]);
     } catch (err: any) {
       set({ error: err.message });
+    }
+  },
+
+  fetchTeamMembers: async (businessId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('business_members')
+        .select(`
+          *,
+          user_profiles (*)
+        `)
+        .eq('business_id', businessId)
+        .eq('is_active', true);
+
+      if (error) throw error;
+      return data || [];
+    } catch (err: any) {
+      console.error('[fetchTeamMembers] Error:', err.message);
+      return [];
+    }
+  },
+
+  updateTeamMemberRole: async (memberId: string, role: UserRole) => {
+    try {
+      const { error } = await supabase
+        .from('business_members')
+        .update({ role })
+        .eq('id', memberId);
+
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('[updateTeamMemberRole] Error:', err.message);
+      throw new Error('Failed to update team member role.');
+    }
+  },
+
+  updateTeamMemberProfile: async (userId: string, fullName: string, phone: string) => {
+    try {
+      const { error } = await supabase.rpc('update_team_member_profile', {
+        p_member_user_id: userId,
+        p_new_full_name: fullName,
+        p_new_phone: phone
+      });
+
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('[updateTeamMemberProfile] Error:', err.message);
+      throw new Error(err.message || 'Failed to update team member name.');
+    }
+  },
+
+  removeTeamMember: async (memberId: string) => {
+    try {
+      const { error } = await supabase
+        .from('business_members')
+        .update({ is_active: false })
+        .eq('id', memberId);
+
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('[removeTeamMember] Error:', err.message);
+      throw err;
     }
   },
 

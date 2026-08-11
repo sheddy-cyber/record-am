@@ -1,5 +1,6 @@
 import React from 'react';
 import { InputField, SelectField, Toggle } from '@/components/forms';
+import { RoleGate } from '@/components/ui';
 import { CURRENCY_SYMBOL, PRODUCT_UNITS } from '@/constants';
 
 const CUSTOM_UNIT_VALUE = '__custom_unit__';
@@ -76,14 +77,17 @@ export function ProductFormFields({
           required
         />
       ) : null}
-      <InputField
-        label="Cost Price"
-        value={costPrice}
-        onChangeText={onCostPriceChange}
-        placeholder="0"
-        keyboardType="numeric"
-        prefix={CURRENCY_SYMBOL}
-      />
+      <RoleGate allowedRoles={['owner', 'manager']}>
+        <InputField
+          label="Cost Price"
+          value={costPrice}
+          onChangeText={onCostPriceChange}
+          placeholder="0"
+          keyboardType="numeric"
+          prefix={CURRENCY_SYMBOL}
+          isAmount={true}
+        />
+      </RoleGate>
       <InputField
         label="Selling Price"
         value={sellingPrice}
@@ -91,6 +95,7 @@ export function ProductFormFields({
         placeholder="0"
         keyboardType="numeric"
         prefix={CURRENCY_SYMBOL}
+        isAmount={true}
         required
       />
       {!isService ? (

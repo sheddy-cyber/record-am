@@ -157,9 +157,10 @@ export default function CloseDayScreen() {
             label="Actual Cash Counted"
             value={actualCash}
             onChangeText={setActualCash}
-            placeholder="Enter the cash you counted"
+            placeholder="0"
             keyboardType="numeric"
             prefix={CURRENCY_SYMBOL}
+            isAmount={true}
             hint="Count your cash and enter the actual amount on hand."
             required
           />

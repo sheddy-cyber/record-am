@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { Platform, View, Text, Pressable, StyleSheet, BackHandler } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
+import * as NavigationBar from 'expo-navigation-bar';
 import { COLORS, FONT } from '@/constants';
 import { useTabStore } from '@/store/tabStore';
 import PagerView from 'react-native-pager-view';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Import screens directly
 import DashboardScreen from './_dashboard';
@@ -76,6 +78,7 @@ const TabIcon = React.memo(function TabIcon({
 
 // ─── Tab bar: isolated component — only these 5 icons re-render on tab switch ───
 function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
+  const insets = useSafeAreaInsets();
   const activeTab = useTabStore((s) => s.activeTab);
   const setActiveTab = useTabStore((s) => s.setActiveTab);
   const isOwnPressRef = useRef(false);
@@ -95,6 +98,22 @@ function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
     }
   }, [activeTab, pagerRef]);
 
+  // Set Android system navigation bar color to match the panel
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      NavigationBar.setBackgroundColorAsync('#0F172A').catch(() => {});
+      NavigationBar.setButtonStyleAsync('light').catch(() => {});
+    }
+    
+    return () => {
+      // Optional: Reset to light theme when leaving tab screens
+      if (Platform.OS === 'android') {
+        NavigationBar.setBackgroundColorAsync('#F8FAFC').catch(() => {});
+        NavigationBar.setButtonStyleAsync('dark').catch(() => {});
+      }
+    };
+  }, []);
+
   const handleTabPress = useCallback((routeKey: string) => {
     // Skip if already on this tab
     if (routeKey === useTabStore.getState().activeTab) return;
@@ -112,7 +131,13 @@ function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
 
   return (
     <View style={styles.tabBarContainer}>
-      <View style={styles.tabBar}>
+      <View style={[
+        styles.tabBar,
+        { 
+          paddingBottom: Math.max(insets.bottom, 8),
+          height: 62 + Math.max(insets.bottom, 8)
+        }
+      ]}>
         {ROUTES.map((route) => (
           <TabIcon
             key={route.key}
@@ -228,21 +253,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
     backgroundColor: 'transparent',
   },
   tabBar: {
     flexDirection: 'row',
-    height: Platform.OS === 'ios' ? 90 : 76,
     backgroundColor: '#0F172A',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderTopWidth: 1.5,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    paddingBottom: Platform.OS === 'ios' ? 22 : 8,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     paddingTop: 6,
     overflow: 'hidden',
   },

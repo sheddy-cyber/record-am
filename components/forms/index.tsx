@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ViewStyle, TextInputProps, Modal, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
-import { useKeyboardAwareScroll } from './keyboard';
+import { useKeyboardAwareScroll, formatAmountInput } from './keyboard';
 
 // ─── Input Field ────────────────────────────────────────────────────────────
 
@@ -17,6 +17,7 @@ interface InputFieldProps extends TextInputProps {
   leftIcon?: React.ReactNode;
   rightElement?: React.ReactNode;
   isPassword?: boolean;
+  isAmount?: boolean;
 }
 
 export const InputField: React.FC<InputFieldProps> = ({
@@ -30,9 +31,12 @@ export const InputField: React.FC<InputFieldProps> = ({
   leftIcon,
   rightElement,
   isPassword,
+  isAmount,
   secureTextEntry,
   onFocus,
   onBlur,
+  onChangeText,
+  value,
   ...props
 }) => {
   const [focused, setFocused] = useState(false);
@@ -71,6 +75,16 @@ export const InputField: React.FC<InputFieldProps> = ({
     return rightElement;
   };
 
+  const displayValue = isAmount ? formatAmountInput(value) : value;
+
+  const handleChangeText = (text: string) => {
+    if (isAmount) {
+      onChangeText?.(text.replace(/,/g, ''));
+    } else {
+      onChangeText?.(text);
+    }
+  };
+
   return (
     <View style={[{ marginBottom: SP.card }, containerStyle]}>
       <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.secondary, marginBottom: 6 }}>
@@ -100,6 +114,8 @@ export const InputField: React.FC<InputFieldProps> = ({
           cursorColor={COLORS.accent}
           placeholderTextColor={COLORS.text.muted}
           importantForAutofill="no"
+          value={displayValue}
+          onChangeText={handleChangeText}
           {...props}
           style={[
             {

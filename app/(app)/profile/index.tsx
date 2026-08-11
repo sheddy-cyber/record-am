@@ -40,6 +40,33 @@ export default function ProfileScreen() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      'Delete Account',
+      'Are you sure you want to permanently delete your account? This action cannot be undone and will delete all data linked to you.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              const { error } = await supabase.rpc('delete_my_account');
+              if (error) throw error;
+              useAuthStore.getState().signOut();
+              router.replace('/(auth)/login');
+            } catch (err: any) {
+              Alert.alert('Error', err.message);
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   const handleSaveProfile = async () => {
     if (!user) return;
@@ -149,6 +176,7 @@ export default function ProfileScreen() {
             <Button title="Save Profile" onPress={handleSaveProfile} loading={saving} size="md" />
           </Card>
 
+
           <Card>
             <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, marginBottom: 16 }}>
               Change Password
@@ -216,6 +244,22 @@ export default function ProfileScreen() {
                 </Text>
               </View>
             ))}
+          </Card>
+
+          <Card style={{ marginTop: 24, marginBottom: 40 }}>
+            <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger, marginBottom: 16 }}>
+              Danger Zone
+            </Text>
+            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary, marginBottom: 16, lineHeight: 18 }}>
+              Permanently delete your account and all associated data. This action cannot be undone.
+            </Text>
+            <Button 
+              title="Delete Account" 
+              onPress={handleDeleteAccount} 
+              loading={deleting} 
+              size="md" 
+              variant="danger"
+            />
           </Card>
         </KeyboardAwareScrollView>
       </ScreenShell>

@@ -1,0 +1,7 @@
+- [x] Create `app/(app)/team/index.tsx` (Team Dashboard).
+- [x] Implement `businessStore.ts` function to fetch staff members.
+- [x] Implement `businessStore.ts` function to update staff roles.
+- [x] Create `app/(app)/team/invite.tsx` (Invite/Join Code screen).
+- [x] Add "Staff" to `_more.tsx` (protected by `RoleGate`).
+- [x] Update `app/(auth)/onboarding.tsx` to add a "Join Existing Business" option.
+- [x] Create `app/(auth)/join-business.tsx` where staff enter the Business ID.

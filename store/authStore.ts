@@ -8,6 +8,7 @@ import { Business, Branch, UserProfile, UserRole } from '@/types';
 const AUTH_CONTEXT_STORAGE_KEY = 'record-am:auth-context:v1';
 
 interface CachedAuthContext {
+  user?: User | null;
   profile: UserProfile | null;
   currentBusiness: Business | null;
   currentBranch: Branch | null;
@@ -88,9 +89,24 @@ export const useAuthStore = create<AuthState>((set) => ({
         return;
       }
 
+      const cachedContext = await readCachedAuthContext();
+
       const { data: { session }, error } = await supabase.auth.getSession();
-      if (error) {
-        console.warn('[Record Am] getSession error:', error.message);
+      
+      if (error || !session) {
+        if (cachedContext?.currentBusiness) {
+          const cachedUser = cachedContext.user || (cachedContext.profile ? { id: cachedContext.profile.id } as User : null);
+          if (cachedUser) {
+            set({
+              user: cachedUser,
+              profile: cachedContext.profile,
+              currentBusiness: cachedContext.currentBusiness,
+              currentBranch: cachedContext.currentBranch,
+              userRole: cachedContext.userRole,
+            });
+          }
+        }
+        if (error) console.warn('[Record Am] getSession error:', error.message);
         set({ isLoading: false, isInitialized: true });
         return;
       }
@@ -98,7 +114,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ session, user: session?.user ?? null });
 
       if (session?.user) {
-        const cachedContext = await readCachedAuthContext();
 
         // Load profile — non-fatal if it fails
         try {
@@ -135,6 +150,7 @@ export const useAuthStore = create<AuthState>((set) => ({
               userRole: nextRole,
             });
             await cacheAuthContext({
+              user: session.user,
               profile: useAuthStore.getState().profile,
               currentBusiness: nextBusiness,
               currentBranch: nextBranch,

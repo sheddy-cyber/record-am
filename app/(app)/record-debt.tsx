@@ -164,6 +164,7 @@ export default function RecordDebtScreen() {
             placeholder="0"
             keyboardType="numeric"
             prefix={CURRENCY_SYMBOL}
+            isAmount={true}
             required
           />
           <InputField

@@ -29,6 +29,7 @@ function MoreScreen() {
   const businessName = useAuthStore((s) => s.currentBusiness?.name);
   const businessCurrency = useAuthStore((s) => s.currentBusiness?.currency);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
+  const userRole = useAuthStore((s) => s.userRole);
   const signOut = useAuthStore((s) => s.signOut);
 
   const onRefresh = useCallback(async () => {
@@ -114,14 +115,22 @@ function MoreScreen() {
           iconBg: COLORS.surface2,
           iconColor: COLORS.text.secondary,
         },
+        ...(userRole === 'owner' || userRole === 'manager' ? [{
+          icon: 'users' as any,
+          label: 'Team & Staff',
+          subtitle: 'Manage your staff and roles',
+          onPress: () => router.push('/(app)/team' as any),
+          iconBg: COLORS.infoLight,
+          iconColor: COLORS.info,
+        },
         {
-          icon: 'settings',
+          icon: 'settings' as any,
           label: 'Business Settings',
           subtitle: businessName ?? 'Manage your setup',
-          onPress: () => router.push('/(app)/settings'),
+          onPress: () => router.push('/(app)/settings' as any),
           iconBg: COLORS.surface2,
           iconColor: COLORS.text.secondary,
-        },
+        }] : []),
         {
           icon: 'info',
           label: 'About Record Am',

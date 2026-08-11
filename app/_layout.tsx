@@ -16,9 +16,10 @@ import { useTabStore } from '@/store/tabStore';
 import { useAuthStore } from '@/store/authStore';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
-import { GlobalDialog } from '@/components/ui/GlobalDialog';
+import { GlobalDialog, AnimatedSplashScreen } from '@/components/ui';
 
-SplashScreen.hideAsync().catch(() => undefined);
+// Keep the native splash screen visible until our JS AnimatedSplashScreen renders
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const isExpoGo = Constants.executionEnvironment === 'storeClient';
 
@@ -157,6 +158,9 @@ export default function RootLayout() {
   const { setSession, initialize, currentBusiness, currentBranch, user } = useAuthStore();
   const [appInitialized, setAppInitialized] = useState(false);
   const [fontsLoaded, fontError] = useFonts(STERADIAN_FONT_ASSETS);
+  const [showSplash, setShowSplash] = useState(true);
+  const isAppReady = appInitialized && (fontsLoaded || fontError);
+
   useOfflineSync(Boolean(user));
 
   useEffect(() => {
@@ -184,11 +188,7 @@ export default function RootLayout() {
     };
   }, [initialize, setSession]);
 
-  useEffect(() => {
-    if (appInitialized && (fontsLoaded || fontError)) {
-      SplashScreen.hideAsync().catch(() => undefined);
-    }
-  }, [appInitialized, fontsLoaded, fontError]);
+
 
   useEffect(() => {
     if (isExpoGo || !currentBusiness || !currentBranch) return;
@@ -317,6 +317,12 @@ export default function RootLayout() {
         <StatusBar style="dark" backgroundColor={COLORS.surface} />
         <GlobalDialog />
         <Toast config={toastConfig} />
+        {showSplash && (
+          <AnimatedSplashScreen
+            isAppReady={!!isAppReady}
+            onAnimationComplete={() => setShowSplash(false)}
+          />
+        )}
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );
