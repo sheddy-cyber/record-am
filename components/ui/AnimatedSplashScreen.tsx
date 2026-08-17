@@ -17,7 +17,9 @@ export function AnimatedSplashScreen({ isAppReady, onAnimationComplete }: Props)
   useEffect(() => {
     // Hide the native splash screen as soon as our custom one mounts
     SplashScreen.hideAsync().catch(() => undefined);
-    
+  }, []);
+
+  useEffect(() => {
     // Ensure the splash screen is visible for at least 1.5 seconds
     const timer = setTimeout(() => {
       setMinTimeElapsed(true);
@@ -77,6 +79,8 @@ const styles = StyleSheet.create({
   content: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 24,
+    width: '100%',
   },
   logo: {
     width: 100,
@@ -85,14 +89,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontFamily: FONT.black,
     color: '#0F172A',
-    letterSpacing: -0.5,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 8,
   },
   slogan: {
     fontSize: 14,
-    fontFamily: FONT.medium,
     color: '#64748B',
-    marginTop: 8,
+    textAlign: 'center',
   },
 });

@@ -117,12 +117,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
         // Load profile — non-fatal if it fails
         try {
-          const { data: profile } = await supabase
+          const { data: profile, error } = await supabase
             .from('user_profiles')
             .select('*')
             .eq('id', session.user.id)
             .single();
           if (profile) set({ profile });
+          else if (error) throw error;
         } catch (err) {
           console.warn('[Record Am] Could not load profile:', err);
           if (cachedContext?.profile) {
@@ -132,7 +133,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
         // Load business membership — non-fatal if it fails
         try {
-          const { data: membership } = await supabase
+          const { data: membership, error } = await supabase
             .from('business_members')
             .select('*, businesses(*), branches(*)')
             .eq('user_id', session.user.id)
@@ -156,6 +157,8 @@ export const useAuthStore = create<AuthState>((set) => ({
               currentBranch: nextBranch,
               userRole: nextRole,
             });
+          } else if (error) {
+            throw error;
           }
         } catch (err) {
           console.warn('[Record Am] Could not load business membership:', err);

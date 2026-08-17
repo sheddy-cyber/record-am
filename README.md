@@ -1,87 +1,185 @@
-# 📦 Record Am — SME Business Management App
+# 📦 Record Am — SME Business Management & POS App
 
-Record Am is a mobile-first business management app built for Nigerian and African SMEs. It helps business owners track inventory, record sales, manage debts, log expenses, and get a clear daily picture of their business.
+Record Am is a modern, mobile-first business management and Point of Sale (POS) application built for African SMEs, retailers, wholesalers, pharmacies, and service providers. It empowers business owners to record sales, manage inventory, track customer & supplier debts, reconcile daily cash balances, manage team access, generate digital receipts/reports, and analyze business performance—both online and offline.
 
 ---
 
-## ✅ Phase 1 Features (This Release)
+## ✨ Features & Capabilities
 
-| Module | Features |
-|---|---|
-| 🔐 Auth | Register, Login, Business Onboarding |
-| 🏠 Dashboard | Today's revenue, expenses, profit, quick stats, recent sales, debt overview, low-stock alerts |
-| 📦 Inventory | Add products/services, update stock (in/out/adjust/damage), low stock filter, category support |
-| 🛒 Sales | Cart-style sale recording, credit/partial/full payment, customer tracking, auto debt creation |
-| 📋 Debts | Record debts, track repayments, overdue detection, progress bars |
-| 💸 Expenses | Record expenses by category (rent, electricity, etc.) |
-| ⚙️ More | Settings hub, sign out, expense logging |
+### 🛒 Sales & Point of Sale (POS)
+- **Cart-Style Checkout**: Rapid item selection, quantity adjustment, and line-item/cart discount handling.
+- **Flexible Payment Methods**: Supports Cash, Bank Transfer, POS/Card, and Credit/Split/Partial payments.
+- **Automatic Debt Logging**: Unpaid or partially paid sales automatically generate customer debt records.
+- **Digital Receipts**: Instant thermal-style printable receipt generation (PDF) and direct WhatsApp sharing.
+
+### 📦 Inventory & Stock Management
+- **Products & Services**: Full catalog management with categories, SKU/barcodes, cost prices, and selling prices.
+- **Stock Movement Tracking**: Comprehensive logs for Stock In, Stock Out, Restock, Damage, and Adjustments.
+- **Low-Stock Alerts**: Automatic threshold monitoring with dashboard indicators and push notifications.
+- **Stock History**: Detailed audit trail for every inventory adjustment across branches.
+
+### 📊 Business Analytics & Reports
+- **Real-Time KPIs**: Track revenue, gross profit, net profit, total expenses, and transaction volumes.
+- **Visual Analytics**: Interactive charts for revenue trends, payment method breakdowns, and top-performing products.
+- **Flexible Date Filtering**: View analytics for Today, Yesterday, Last 7 Days, This Month, or Custom periods.
+- **Daily Financial Reports**: Generate end-of-day summary reports with automated profit & cash calculations.
+
+### ⚖️ Daily Checks & Balances (Cash Reconciliation)
+- **Cash Drawer Reconciliation**: Compare expected cash sales against actual counted cash.
+- **Discrepancy Detection**: Automatic surplus and shortage tracking.
+- **End-of-Day Closing**: Lock daily records, generate daily reports, and schedule automated closing.
+
+### 📋 Debt & Credit Management
+- **Customer & Supplier Debts**: Track money owed to the business and money owed to suppliers.
+- **Repayment Tracking**: Log installment repayments with real-time balance updates and progress bars.
+- **Overdue Detection & Reminders**: Highlight overdue debts and generate one-tap WhatsApp payment reminder messages.
+
+### 👥 Team & Staff Access Control
+- **Role-Based Access Control (RBAC)**: Support for `Owner`, `Manager`, `Cashier`, and `Auditor` roles.
+- **Role Gates**: Enforce feature-level permissions across sensitive financial actions and settings.
+- **Easy Onboarding**: Invite staff or allow them to join an existing business using a secure Business ID.
+
+### 🤝 Customer & Supplier Management (CRM)
+- **Customer Directory**: Track purchase history, outstanding debt balances, and contact details.
+- **Supplier Directory**: Manage vendor details, purchase orders, and outstanding accounts payable.
+- **Purchase Invoicing**: Record supplier purchases with automatic inventory quantity updates.
+
+### 🔄 Offline Resilience & Security
+- **Offline-First Mode**: Queue transactions and updates locally with automatic background sync upon reconnection.
+- **Biometric Security**: Protect business data with Fingerprint, Face ID, or PIN app lock.
+- **Row-Level Security (RLS)**: Strict database-level multi-tenant isolation via Supabase RLS policies.
+- **Push & In-App Notifications**: Alerts for low stock levels, pending debts, and daily business closing reminders.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **React Native + Expo** — Cross-platform mobile (iOS + Android + Web)
-- **Expo Router** — File-based navigation
-- **Supabase** — Database (PostgreSQL), Auth, Row-Level Security
-- **NativeWind** — Tailwind CSS for React Native
-- **Zustand** — App state management
-- **date-fns** — Date formatting
-- **react-native-toast-message** — Toast notifications
+| Layer | Technology |
+|---|---|
+| **Mobile Framework** | [React Native](https://reactnative.dev/) (0.81) / [Expo](https://expo.dev/) (SDK 54) |
+| **Routing** | [Expo Router](https://docs.expo.dev/router/introduction/) (File-based, typed routes) |
+| **Backend & Database** | [Supabase](https://supabase.com/) (PostgreSQL, Auth, Row-Level Security, RPCs) |
+| **State Management** | [Zustand](https://github.com/pmndrs/zustand) |
+| **Styling & UI** | Vanilla StyleSheet + Custom Design System tokens & NativeWind |
+| **Hardware & Native APIs** | `expo-local-authentication`, `expo-print`, `expo-sharing`, `expo-notifications`, `expo-secure-store` |
+| **List Performance** | `@shopify/flash-list` |
+| **Date & Utilities** | `date-fns`, `@react-native-community/netinfo` |
 
 ---
 
-## 🚀 Setup Instructions
+## 📁 Project Structure
+
+```
+record-am/
+├── app/
+│   ├── _layout.tsx                 # Root layout & providers (Auth, Biometrics, Splash)
+│   ├── +html.tsx                   # Web HTML template
+│   ├── index.tsx                   # Entry gate & auth redirect
+│   ├── (auth)/                     # Authentication & onboarding flow
+│   │   ├── _layout.tsx
+│   │   ├── login.tsx               # Login screen
+│   │   ├── register.tsx            # Account registration
+│   │   ├── onboarding.tsx          # Business setup wizard
+│   │   └── join-business.tsx       # Staff join via Business ID
+│   └── (app)/                      # Main application flow
+│       ├── _layout.tsx             # Protected app stack
+│       ├── (tabs)/                 # Bottom tab navigation
+│       │   ├── _layout.tsx
+│       │   ├── _dashboard.tsx      # Main dashboard with live KPIs
+│       │   ├── _sales.tsx          # POS / Cart sale recording
+│       │   ├── _inventory.tsx      # Product catalog & stock levels
+│       │   ├── _debts.tsx          # Customer & supplier debt tracking
+│       │   └── _more.tsx           # More hub & secondary modules
+│       ├── analytics/              # Business intelligence & charts
+│       ├── balance/                # Daily cash reconciliation & closing
+│       ├── customers/              # Customer management & profiles
+│       ├── suppliers/              # Supplier directory & management
+│       ├── purchases/              # Purchase orders & stock replenishment
+│       ├── stock-history/          # Inventory movement audit logs
+│       ├── team/                   # Staff management & role assignments
+│       ├── settings/               # App preferences, biometrics, receipts
+│       ├── notifications.tsx       # In-app notifications center
+│       ├── record-sale.tsx         # Detailed sales checkout modal
+│       ├── record-expense.tsx      # Expense recording modal
+│       ├── record-debt.tsx         # Debt creation modal
+│       ├── record-purchase.tsx     # Purchase entry modal
+│       ├── add-stock.tsx           # Product creation & stock intake
+│       └── update-stock.tsx        # Stock adjustment modal
+├── components/
+│   ├── auth/                       # RoleGate & auth-related components
+│   ├── charts/                     # BarChart, LineChart, MetricCard
+│   ├── forms/                      # InputField, SelectField, Toggle
+│   ├── inventory/                  # Stock cards, category pills
+│   ├── layout/                     # ScreenShell, ScreenHeader, BrandMark
+│   ├── navigation/                 # Custom tab bar & navigation helpers
+│   └── ui/                         # Button, Card, Badge, StatCard, EmptyState
+├── lib/
+│   ├── supabase.ts                 # Supabase client configuration
+│   ├── supabase-schema.sql         # Base PostgreSQL database schema
+│   ├── appSettings.ts              # Local app configuration & preferences
+│   ├── dailyBalance.ts             # Cash reconciliation logic & calculations
+│   ├── mismatchService.ts          # Discrepancy detection & audit helpers
+│   ├── notifications.ts            # Local notifications & schedule manager
+│   ├── offlineRecords.ts           # Offline mutation handling
+│   ├── offlineStore.ts             # Offline cache & synchronization engine
+│   ├── recordDeletion.ts           # Cascade deletion & audit logging
+│   └── reports.ts                  # PDF receipt & daily summary generator
+├── store/
+│   ├── authStore.ts                # User session, profile & business context
+│   ├── businessStore.ts            # Products, categories & team state
+│   ├── saleStore.ts                # POS cart & sales operations
+│   ├── debtStore.ts                # Debts & repayment tracking
+│   ├── customerStore.ts            # Customer CRM operations
+│   ├── supplierStore.ts            # Supplier CRM operations
+│   ├── purchaseStore.ts            # Purchase orders & inventory sync
+│   ├── dailyBalanceStore.ts        # Cash reconciliation state
+│   ├── analyticsStore.ts           # Financial analytics & metrics
+│   └── notificationStore.ts        # Notification state & unread count
+├── types/
+│   └── index.ts                    # Global TypeScript interfaces & data models
+├── constants/
+│   └── index.ts                    # Colors, typography, spacing, currencies
+└── app.json                        # Expo application manifest
+```
+
+---
+
+## 🚀 Getting Started
 
 ### Prerequisites
 
-Make sure you have the following installed:
-
-```bash
-node --version   # v18 or higher required
-npm --version    # v9 or higher
-```
-
-Install Expo CLI globally (if not already installed):
-
-```bash
-npm install -g expo-cli eas-cli
-```
-
-Install the Expo Go app on your phone:
-- **Android**: https://play.google.com/store/apps/details?id=host.exp.exponent
-- **iOS**: https://apps.apple.com/app/expo-go/id982107779
+Ensure you have the following installed on your development machine:
+- **Node.js**: `v18.0.0` or higher
+- **npm**: `v9.0.0` or higher
+- **Expo Go** app on your physical device ([Android](https://play.google.com/store/apps/details?id=host.exp.exponent) / [iOS](https://apps.apple.com/app/expo-go/id982107779)) or an active Android Emulator / iOS Simulator.
 
 ---
 
-### Step 1 — Set Up Supabase
+### Step 1 — Clone and Install Dependencies
 
-1. Go to **https://supabase.com** and create a free account
-2. Click **"New Project"** and fill in:
-   - **Project name**: Record Am (or anything you like)
-   - **Database password**: Choose a strong password (save it somewhere)
-   - **Region**: Choose closest to you (e.g. West EU or US East)
-3. Wait for the project to be created (~1 minute)
-4. Go to **Settings → API** in your Supabase dashboard
-5. Copy your **Project URL** and **anon public** key — you'll need these shortly
+```bash
+git clone https://github.com/your-username/record-am.git
+cd record-am
+npm install
+```
 
 ---
 
-### Step 2 — Run the Database Schema
+### Step 2 — Set Up Supabase
 
-1. In your Supabase dashboard, go to **SQL Editor**
-2. Click **"New Query"**
-3. Open the file `lib/supabase-schema.sql` from this project
-4. Copy the entire contents and paste it into the SQL editor
-5. Click **"Run"** (green button)
-6. You should see: `Record Am schema created successfully!` at the bottom
-
-This creates all 17 tables, relationships, RLS policies, indexes, and triggers.
+1. Create a project at [supabase.com](https://supabase.com).
+2. Open the **SQL Editor** in your Supabase dashboard.
+3. Copy and run the contents of [`lib/supabase-schema.sql`](lib/supabase-schema.sql).
+4. Run any supplementary migrations located in `supabase/migrations/` if applicable.
+5. In your Supabase dashboard, navigate to **Settings → API** and obtain:
+   - **Project URL**
+   - **Anon Public API Key**
 
 ---
 
 ### Step 3 — Configure Environment Variables
 
-In the project root folder, create a file named `.env`:
+Create a `.env` file in the root directory:
 
 ```bash
 # On Mac/Linux:
@@ -91,185 +189,72 @@ cp .env.example .env
 copy .env.example .env
 ```
 
-Open `.env` and fill in your Supabase credentials:
+Populate `.env` with your Supabase credentials:
 
 ```env
-EXPO_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-public-key
 ```
-
-Replace the values with the ones from your Supabase dashboard (**Settings → API**).
 
 ---
 
-### Step 4 — Install Dependencies
+### Step 4 — Run the Application
 
-Open a terminal in the project folder and run:
-
-```bash
-npm install
-```
-
-This installs all required packages. It may take 2–3 minutes on first run.
-
----
-
-### Step 5 — Start the App
+Start the Expo development server:
 
 ```bash
 npm start
 ```
 
-This opens the **Expo Dev Server** in your terminal. You'll see a QR code.
-
-**To run on your phone:**
-- Open **Expo Go** on your phone
-- Scan the QR code shown in the terminal
-- The app will load on your device
-
-**To run on Android Emulator:**
-```bash
-npm run android
-```
-
-**To run on iOS Simulator (Mac only):**
-```bash
-npm run ios
-```
-
-**To run on Web (browser):**
-```bash
-npm run web
-```
+Use the terminal controls to open the app:
+- **Physical Device**: Scan the terminal QR code with the **Expo Go** app (Android) or the Camera app (iOS).
+- **Android Emulator**: Press `a` or run `npm run android`.
+- **iOS Simulator**: Press `i` or run `npm run ios` (macOS only).
+- **Web Browser**: Press `w` or run `npm run web`.
 
 ---
 
-## 📱 First Time Use
+## 🗄️ Database Architecture
 
-1. Open the app → tap **"Register here"**
-2. Enter your full name, email, phone, and password
-3. You'll be taken to the **Business Setup** screen
-4. Enter your business name, select your business type, and tap Continue
-5. You'll land on the **Dashboard** — your business is ready!
+The application is backed by PostgreSQL on Supabase with strict **Row-Level Security (RLS)** ensuring complete tenant data isolation:
 
----
-
-## 📁 Project Structure
-
-```
-record-am/
-├── app/
-│   ├── _layout.tsx              # Root layout (auth listener, splash screen)
-│   ├── index.tsx                # Entry redirect (auth check)
-│   ├── (auth)/
-│   │   ├── _layout.tsx
-│   │   ├── login.tsx            # Login screen
-│   │   ├── register.tsx         # Registration screen
-│   │   └── onboarding.tsx       # Business setup (3-step wizard)
-│   └── (app)/
-│       ├── _layout.tsx
-│       └── (tabs)/
-│           ├── _layout.tsx      # Tab bar configuration
-│           ├── dashboard.tsx    # Home dashboard
-│           ├── inventory.tsx    # Stock management
-│           ├── sales.tsx        # Sales recording (cart style)
-│           ├── debts.tsx        # Debt & credit tracking
-│           └── more.tsx         # Expenses + settings hub
-├── components/
-│   ├── ui/
-│   │   └── index.tsx            # Button, Card, Badge, StatCard, EmptyState, etc.
-│   ├── layout/
-│   │   └── index.tsx            # ScreenShell, BrandMark, ScreenHeader, etc.
-│   ├── charts/
-│   │   └── index.tsx            # BarChart, LineChart, DonutChart, MetricCard
-│   └── forms/
-│       └── index.tsx            # InputField, SelectField, Toggle
-├── lib/
-│   ├── supabase.ts              # Supabase client
-│   └── supabase-schema.sql      # Full database schema (run in Supabase)
-├── store/
-│   ├── authStore.ts             # Auth + session + business state
-│   └── businessStore.ts         # Products, categories, inventory state
-├── types/
-│   └── index.ts                 # All TypeScript interfaces
-├── constants/
-│   └── index.ts                 # Design tokens, colors, typography, etc.
-├── .env.example                 # Template for environment variables
-├── app.json                     # Expo config
-├── babel.config.js
-├── tailwind.config.js
-├── tsconfig.json
-└── package.json
-```
-
----
-
-## 🗄️ Database Schema
-
-The Supabase schema includes **17 tables**:
-
-| Table | Purpose |
+| Table | Description |
 |---|---|
-| `businesses` | Business profiles |
-| `branches` | Multiple locations per business |
-| `user_profiles` | Extended user data |
-| `business_members` | User-business roles (owner/manager/cashier/auditor) |
-| `categories` | Product categories |
-| `products` | Products and services |
-| `inventory` | Stock levels per product per branch |
-| `stock_movements` | Every stock in/out/adjustment |
-| `suppliers` | Supplier contacts |
-| `customers` | Customer records |
-| `sales` | Sale transactions |
-| `sale_items` | Line items per sale |
-| `expenses` | Business expenses |
-| `purchases` | Supplier purchases |
-| `purchase_items` | Items per purchase |
-| `customer_debts` | Credit sales / debts owed to business |
-| `debt_repayments` | Repayment records |
-| `supplier_debts` | Money business owes suppliers |
-| `daily_summaries` | End-of-day balances |
-| `activity_logs` | Audit trail |
-
-All tables have **Row Level Security (RLS)** — users can only access data from their own business.
+| `businesses` | Business entity profiles, currencies, and owner details |
+| `branches` | Business locations and branch metadata |
+| `user_profiles` | User account information and biometric PIN hashes |
+| `business_members` | Staff memberships and role permissions (`owner`, `manager`, `cashier`, `auditor`) |
+| `categories` | Product and service category classifications |
+| `products` | Product catalog, pricing, SKU, and unit definitions |
+| `inventory` | Real-time stock levels per product per branch |
+| `stock_movements` | Immutable audit trail for stock in/out/adjustments/damages |
+| `customers` | Customer directory with outstanding balances and contact information |
+| `suppliers` | Vendor directory and payables tracking |
+| `sales` | Sale transactions, payment methods, and totals |
+| `sale_items` | Individual line items per sale transaction |
+| `expenses` | Categorized operating expenses |
+| `purchases` | Supplier purchase orders and replenishment records |
+| `purchase_items` | Items linked to purchase orders |
+| `customer_debts` | Receivables and credit sale balances |
+| `debt_repayments` | Installment logs for debt payoffs |
+| `daily_summaries` | End-of-day balances, expected cash, and closure records |
+| `activity_logs` | Audit trail for sensitive business operations |
 
 ---
 
-## 🔮 Coming in Phase 2
+## 🔒 Security & Roles
 
-- 📊 Business analytics & charts (sales trends, profit margins, top products)
-- ⚖️ Daily checks & balances (cash reconciliation)
-- 🚚 Full supplier management
-- 👥 Full customer management with history
-- 📑 PDF receipt and report generation
-- 📲 WhatsApp sharing for receipts and debt reminders
-- 🔔 Push notifications (low stock, overdue debts, daily summary)
-- 🌐 Offline-first sync (WatermelonDB)
-- 👥 Staff management and role-based access
-- 📦 Stock history view
+Record Am includes built-in Role-Based Access Control:
+
+- **Owner**: Full access to all business operations, financial metrics, team management, and settings.
+- **Manager**: Access to sales, inventory, daily closing, reports, customers, suppliers, and staff oversight.
+- **Cashier**: Focused access for sales recording, product lookup, and customer debt collection. Restricted from sensitive financial reporting and team management.
+- **Auditor**: Read-only oversight for financial reports, stock movements, and audit logs.
+
+Sensitive screens and actions are guarded using the `<RoleGate />` component and backend RLS policies.
 
 ---
 
-## 🐛 Troubleshooting
+## 📄 License
 
-**"Network request failed" on login:**
-- Check your `.env` file has the correct Supabase URL and key
-- Make sure your phone and computer are on the same WiFi network
-
-**"relation does not exist" error:**
-- The database schema hasn't been run yet
-- Go to Supabase SQL Editor and run `lib/supabase-schema.sql`
-
-**App doesn't load on Expo Go:**
-- Make sure you're on the same network as your development machine
-- Try pressing `r` in the terminal to reload
-
-**White screen after login:**
-- Check the Supabase schema was run correctly
-- Check the browser console or Expo logs for error details
-
----
-
-## 📞 Support
-
-This is Phase 1 of the Record Am project. Each subsequent phase adds more features on top of this foundation. The codebase is structured to be modular — each tab screen is self-contained and can be expanded independently.
+This project is licensed under the [MIT License](LICENSE).
