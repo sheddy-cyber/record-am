@@ -14,7 +14,7 @@ type MenuSection = {
   items: {
     icon: keyof typeof Feather.glyphMap;
     label: string;
-    subtitle: string;
+    subtitle: string | React.ReactNode;
     onPress: () => void;
     iconBg?: string;
     iconColor?: string;
@@ -199,7 +199,6 @@ function MoreScreen() {
       <ScrollView
         contentContainerStyle={{ padding: SP.page, gap: 24, paddingBottom: insets.bottom + 92 }}
         showsVerticalScrollIndicator={false}
-        delaysContentTouches={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}

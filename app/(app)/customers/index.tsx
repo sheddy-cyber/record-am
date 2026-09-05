@@ -143,7 +143,6 @@ export default function CustomersScreen() {
             estimatedItemSize={70}
             renderItem={({ item, index }) => (
               <Pressable
-                delayPressIn={150}
                 onPress={() => {
                   setSelectedCustomer(item);
                   router.push({ pathname: '/(app)/customer-detail', params: { customerId: item.id } });

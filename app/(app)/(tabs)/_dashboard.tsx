@@ -233,7 +233,7 @@ function DashboardScreen() {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
-        delaysContentTouches={false}
+
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -298,7 +298,7 @@ function DashboardScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 12, paddingHorizontal: SP.page, paddingBottom: 30 }}
-          delaysContentTouches={false}
+  
         >
           {[
             { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale' },

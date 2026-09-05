@@ -1,5 +1,5 @@
 import React from 'react';
 
-export function SwipeableTabScreen({ children }: { children: React.ReactNode }) {
+export function SwipeableTabScreen({ children, name }: { children: React.ReactNode; name?: string }) {
   return <>{children}</>;
 }

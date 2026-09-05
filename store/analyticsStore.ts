@@ -11,7 +11,7 @@ import {
 } from '@/lib/offlineStore';
 import { format, subDays, startOfDay, endOfDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek } from 'date-fns';
 
-export type DateRange = '7days' | '30days' | 'this_month' | 'this_week';
+export type DateRange = '7days' | '30days' | 'this_month' | 'this_week' | string; // string for 'YYYY-MM'
 
 export interface SalesTrendPoint {
   date: string;
@@ -66,6 +66,18 @@ function getDateBounds(range: DateRange): { from: Date; to: Date; prevFrom: Date
   const now = new Date();
   let from: Date, to: Date, prevFrom: Date, prevTo: Date;
 
+  if (range.match(/^\d{4}-\d{2}$/)) {
+    const [year, month] = range.split('-');
+    const date = new Date(parseInt(year), parseInt(month) - 1, 1);
+    from = startOfMonth(date);
+    to = endOfMonth(date);
+    
+    const prevDate = new Date(parseInt(year), parseInt(month) - 2, 1);
+    prevFrom = startOfMonth(prevDate);
+    prevTo = endOfMonth(prevDate);
+    return { from, to, prevFrom, prevTo };
+  }
+
   switch (range) {
     case '7days':
       from = startOfDay(subDays(now, 6));
@@ -82,7 +94,7 @@ function getDateBounds(range: DateRange): { from: Date; to: Date; prevFrom: Date
     case 'this_month':
       from = startOfMonth(now);
       to = endOfMonth(now);
-      prevFrom = startOfMonth(subDays(now, 30));
+      prevFrom = startOfMonth(subDays(now, 30)); // Rough previous month for relative growth
       prevTo = endOfMonth(subDays(now, 30));
       break;
     case '30days':

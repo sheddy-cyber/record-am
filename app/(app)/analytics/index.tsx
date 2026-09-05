@@ -17,14 +17,30 @@ import { Card, SectionHeader } from '@/components/ui';
 import { ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from "@/constants";
 import { Product } from '@/types';
+import { format, subMonths } from 'date-fns';
 import { useBusinessStore } from '@/store/businessStore';
 
-const DATE_RANGES: { key: DateRange; label: string }[] = [
+const STATIC_RANGES: { key: DateRange; label: string }[] = [
   { key: '7days', label: '7 Days' },
   { key: 'this_week', label: 'This Week' },
   { key: 'this_month', label: 'This Month' },
   { key: '30days', label: '30 Days' },
 ];
+
+const generateDateRanges = () => {
+  const ranges = [...STATIC_RANGES];
+  const now = new Date();
+  for (let i = 1; i <= 12; i++) {
+    const d = subMonths(now, i);
+    ranges.push({
+      key: format(d, 'yyyy-MM'),
+      label: format(d, 'MMM yyyy'),
+    });
+  }
+  return ranges;
+};
+
+const DATE_RANGES = generateDateRanges();
 
 const EXPENSE_COLORS = [
   COLORS.accent,

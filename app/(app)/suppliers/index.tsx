@@ -149,7 +149,6 @@ export default function SuppliersScreen() {
             estimatedItemSize={70}
             renderItem={({ item, index }) => (
               <Pressable
-                delayPressIn={150}
                 onPress={() => {
                   setSelectedSupplier(item);
                   router.push({ pathname: '/(app)/supplier-detail', params: { supplierId: item.id } });

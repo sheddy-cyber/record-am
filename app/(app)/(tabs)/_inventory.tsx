@@ -168,7 +168,6 @@ function InventoryScreen() {
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 8 }}
-          delaysContentTouches={false}
         >
           {([
             { key: 'all', label: 'All' },
@@ -280,16 +279,25 @@ function InventoryScreen() {
                       </View>
                     </View>
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 10 }}>
+                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
                     <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
                       {formatCurrency(item.selling_price)}
                     </Text>
-                    <Button
-                      title="Update Stock"
-                      onPress={() => router.push({ pathname: '/(app)/update-stock', params: { productId: item.id } })}
-                      size="sm"
-                      variant="secondary"
-                    />
+                    {!item.is_service && stock > 0 ? (
+                      <RoleGate allowedRoles={['owner', 'manager']}>
+                        <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'right' }}>
+                          Value: {formatCurrency(item.selling_price * stock)}
+                        </Text>
+                      </RoleGate>
+                    ) : null}
+                    <View style={{ marginTop: 4 }}>
+                      <Button
+                        title="Update Stock"
+                        onPress={() => router.push({ pathname: '/(app)/update-stock', params: { productId: item.id } })}
+                        size="sm"
+                        variant="secondary"
+                      />
+                    </View>
                   </View>
                 </View>
                 {showDeleteAction ? (

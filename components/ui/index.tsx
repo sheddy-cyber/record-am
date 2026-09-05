@@ -269,7 +269,7 @@ export const SectionHeader: React.FC<{ title: string; action?: { label: string; 
 
 export const ListRow: React.FC<{
   title: string;
-  subtitle?: string;
+  subtitle?: string | React.ReactNode;
   left?: React.ReactNode;
   right?: React.ReactNode;
   onPress?: () => void;
