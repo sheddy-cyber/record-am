@@ -146,7 +146,7 @@ export default function SuppliersScreen() {
                 colors={[COLORS.accent]}
               />
             }
-            estimatedItemSize={70}
+            
             renderItem={({ item, index }) => (
               <Pressable
                 onPress={() => {

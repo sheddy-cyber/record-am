@@ -143,8 +143,14 @@ async function buildCachedAnalytics(
     inDateRange(item.created_at ?? item.sale?.created_at, from, to),
   );
 
-  const totalRevenue = currentActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
-  const prevRevenue = previousActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
+  const totalRevenue = currentActivities.reduce((sum, activity) => {
+    if (activity.kind === 'debt_repayment') return sum;
+    return sum + (activity.total_amount || 0);
+  }, 0);
+  const prevRevenue = previousActivities.reduce((sum, activity) => {
+    if (activity.kind === 'debt_repayment') return sum;
+    return sum + (activity.total_amount || 0);
+  }, 0);
   const totalExpenses = currentExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalProfit = currentSaleItems.reduce(
     (sum, item) => sum + (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * Number(item.quantity ?? 0),
@@ -162,10 +168,11 @@ async function buildCachedAnalytics(
   }
 
   currentActivities.forEach((activity) => {
+    if (activity.kind === 'debt_repayment') return;
     const key = format(new Date(activity.created_at), 'yyyy-MM-dd');
     const existing = trendMap.get(key) ?? { revenue: 0, profit: 0, transactions: 0 };
     trendMap.set(key, {
-      revenue: existing.revenue + activity.amount_paid,
+      revenue: existing.revenue + (activity.total_amount || 0),
       profit: existing.profit,
       transactions: existing.transactions + 1,
     });
@@ -302,70 +309,57 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     const toISO = to.toISOString();
     const prevFromISO = prevFrom.toISOString();
     const prevToISO = prevTo.toISOString();
-
     try {
       // ── Current period sales ──────────────────────────────
       const { data: currentSales } = await supabase
         .from('sales')
-        .select('id, amount_paid, created_at, notes')
+        .select('id, amount_paid, total_amount, created_at, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
-        .gte('created_at', fromISO)
-        .lte('created_at', toISO);
+        .gte('created_at', from.toISOString())
+        .lte('created_at', to.toISOString());
 
-      // ── Previous period sales (for growth calc) ──────────
       const { data: prevSales } = await supabase
         .from('sales')
-        .select('amount_paid, notes')
+        .select('id, amount_paid, total_amount, created_at, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
-        .gte('created_at', prevFromISO)
-        .lte('created_at', prevToISO);
+        .gte('created_at', prevFrom.toISOString())
+        .lte('created_at', prevTo.toISOString());
 
       const { data: currentRepayments } = await supabase
         .from('debt_repayments')
-        .select('id, debt_id, amount, payment_method, notes, created_at, debt:customer_debts!inner(id, business_id, branch_id)')
+        .select('id, amount, payment_method, notes, created_at, debt_id')
         .eq('debt.business_id', businessId)
         .eq('debt.branch_id', branchId)
-        .gte('created_at', fromISO)
-        .lte('created_at', toISO);
+        .gte('created_at', from.toISOString())
+        .lte('created_at', to.toISOString());
 
       const { data: prevRepayments } = await supabase
         .from('debt_repayments')
-        .select('amount, debt:customer_debts!inner(business_id, branch_id)')
+        .select('amount')
         .eq('debt.business_id', businessId)
         .eq('debt.branch_id', branchId)
-        .gte('created_at', prevFromISO)
-        .lte('created_at', prevToISO);
+        .gte('created_at', prevFrom.toISOString())
+        .lte('created_at', prevTo.toISOString());
 
       // ── Current period expenses ───────────────────────────
       const { data: currentExpenses } = await supabase
         .from('expenses')
-        .select('*')
+        .select('amount, category')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
-        .gte('expense_date', format(from, 'yyyy-MM-dd'))
-        .lte('expense_date', format(to, 'yyyy-MM-dd'));
+        .gte('created_at', from.toISOString())
+        .lte('created_at', to.toISOString());
 
       // ── Sale items for profit & top products ─────────────
       const { data: saleItems } = await supabase
         .from('sale_items')
-        .select(`
-          id,
-          sale_id,
-          product_id,
-          created_at,
-          quantity,
-          unit_price,
-          cost_price,
-          total_price,
-          product:products(id, name),
-          sale:sales!inner(created_at, business_id, branch_id)
-        `)
+        .select('quantity, unit_price, cost_price, product_id, created_at, sale_id, total_price, product:products(name)')
         .eq('sale.business_id', businessId)
         .eq('sale.branch_id', branchId)
-        .gte('sale.created_at', fromISO)
-        .lte('sale.created_at', toISO);
+        .gte('created_at', from.toISOString())
+        .lte('created_at', to.toISOString());
 
       const saleActivities = (currentSales ?? [])
         .filter((sale) => !isDebtSettlementSale(sale.notes))
@@ -374,7 +368,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           kind: 'sale' as const,
           customer_name: 'Customer',
           reference: sale.notes ? (sale.notes.length > 20 ? sale.notes.slice(0, 20) + '...' : sale.notes) : 'Sale',
-          total_amount: sale.amount_paid,
+          total_amount: sale.total_amount,
           amount_paid: sale.amount_paid,
           amount_owed: 0,
           payment_status: 'paid' as const,
@@ -408,13 +402,9 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       // ── Compute summary ───────────────────────────────────
       const revenueSales = (currentSales ?? []).filter((sale) => !isDebtSettlementSale(sale.notes));
       const previousRevenueSales = (prevSales ?? []).filter((sale) => !isDebtSettlementSale(sale.notes));
-      const totalRevenue =
-        revenueSales.reduce((s, r) => s + r.amount_paid, 0) +
-        (currentRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
+      const totalRevenue = revenueSales.reduce((s, r) => s + (r.total_amount || 0), 0);
       const totalExpenses = currentExpenses?.reduce((s, r) => s + r.amount, 0) ?? 0;
-      const prevRevenue =
-        previousRevenueSales.reduce((s, r) => s + r.amount_paid, 0) +
-        (prevRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
+      const prevRevenue = previousRevenueSales.reduce((s, r) => s + (r.total_amount || 0), 0);
 
       // Profit per item = (selling - cost) * qty
       const totalProfit = saleItems?.reduce((s, item) => {
@@ -426,7 +416,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
       const revenueGrowth = prevRevenue === 0 ? 0 : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
       const profitGrowth = prevProfit === 0 ? 0 : ((totalProfit - prevProfit) / prevProfit) * 100;
-      const totalTransactions = revenueSales.length + (currentRepayments?.length ?? 0);
+      const totalTransactions = revenueSales.length;
 
       set({
         summary: {
@@ -457,7 +447,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         const key = format(new Date(sale.created_at), 'yyyy-MM-dd');
         const existing = trendMap.get(key) ?? { revenue: 0, profit: 0, transactions: 0 };
         trendMap.set(key, {
-          revenue: existing.revenue + sale.amount_paid,
+          revenue: existing.revenue + (sale.total_amount || 0),
           profit: existing.profit,
           transactions: existing.transactions + 1,
         });
@@ -475,7 +465,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
       // Add profit from items into trend
       saleItems?.forEach((item) => {
-        const key = format(new Date((item.sale as any).created_at), 'yyyy-MM-dd');
+        const key = format(new Date(item.created_at), 'yyyy-MM-dd');
         const existing = trendMap.get(key);
         if (existing) {
           const itemProfit = (item.unit_price - (item.cost_price ?? 0)) * item.quantity;

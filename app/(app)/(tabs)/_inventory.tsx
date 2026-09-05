@@ -211,7 +211,7 @@ function InventoryScreen() {
           data={filteredProducts}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
-          estimatedItemSize={80}
+          
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -228,7 +228,7 @@ function InventoryScreen() {
 
             return (
               <TouchableOpacity
-                activeOpacity={0.9}
+                activeOpacity={0.7}
                 delayLongPress={250}
                 onLongPress={() =>
                   setDeleteActionProductId((currentId) => (currentId === item.id ? null : item.id))
@@ -236,6 +236,8 @@ function InventoryScreen() {
                 onPress={() => {
                   if (showDeleteAction) {
                     setDeleteActionProductId(null);
+                  } else {
+                    router.push({ pathname: '/(app)/update-stock', params: { productId: item.id } });
                   }
                 }}
                 style={{
@@ -244,12 +246,11 @@ function InventoryScreen() {
                   borderBottomColor: COLORS.border,
                 }}
               >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                  <View style={{ flexDirection: 'row', gap: 12, flex: 1 }}>
+                  <View style={{ flexDirection: 'row', gap: 14, flex: 1, alignItems: 'center' }}>
                     <View
                       style={{
-                        width: 44,
-                        height: 44,
+                        width: 48,
+                        height: 48,
                         backgroundColor: COLORS.surface2,
                         borderRadius: RADIUS.md,
                         borderWidth: 1,
@@ -258,48 +259,50 @@ function InventoryScreen() {
                         justifyContent: 'center',
                       }}
                     >
-                      <Feather name={item.is_service ? 'tool' : 'package'} size={18} color={COLORS.text.secondary} />
+                      <Feather name={item.is_service ? 'tool' : 'package'} size={20} color={COLORS.text.secondary} />
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                        {item.name}
-                      </Text>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
-                        {item.category?.name ?? 'Uncategorized'}
-                        {' \u00B7 '}
-                        {item.unit}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                        {getStockBadge(item)}
+                    
+                    <View style={{ flex: 1, gap: 4 }}>
+                      {/* Top Row: Name & Price */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                          {formatCurrency(item.selling_price)}
+                        </Text>
+                      </View>
+
+                      {/* Middle Row: Category & Stock Qty */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted }}>
+                          {item.category?.name ?? 'Uncategorized'}
+                          {' \u00B7 '}
+                          {item.unit}
+                        </Text>
                         {!item.is_service ? (
-                          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary }}>
-                            {formatCount(stock)} {item.unit}
+                          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.secondary }}>
+                            {formatCount(stock)} {item.unit} in stock
                           </Text>
                         ) : null}
                       </View>
+
+                      {/* Bottom Row: Badges & Value */}
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
+                        {getStockBadge(item)}
+                        
+                        {!item.is_service && stock > 0 ? (
+                          <RoleGate allowedRoles={['owner', 'manager']}>
+                            <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                              Value: {formatCurrency(item.selling_price * stock)}
+                            </Text>
+                          </RoleGate>
+                        ) : <View />}
+                      </View>
                     </View>
+                    
+                    <Feather name="chevron-right" size={18} color={COLORS.border} />
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                      {formatCurrency(item.selling_price)}
-                    </Text>
-                    {!item.is_service && stock > 0 ? (
-                      <RoleGate allowedRoles={['owner', 'manager']}>
-                        <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'right' }}>
-                          Value: {formatCurrency(item.selling_price * stock)}
-                        </Text>
-                      </RoleGate>
-                    ) : null}
-                    <View style={{ marginTop: 4 }}>
-                      <Button
-                        title="Update Stock"
-                        onPress={() => router.push({ pathname: '/(app)/update-stock', params: { productId: item.id } })}
-                        size="sm"
-                        variant="secondary"
-                      />
-                    </View>
-                  </View>
-                </View>
                 {showDeleteAction ? (
                   <View style={{ alignItems: 'center', marginTop: 12 }}>
                     <RoleGate allowedRoles={['owner', 'manager']}>

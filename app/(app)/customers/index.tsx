@@ -140,7 +140,7 @@ export default function CustomersScreen() {
                 colors={[COLORS.accent]}
               />
             }
-            estimatedItemSize={70}
+            
             renderItem={({ item, index }) => (
               <Pressable
                 onPress={() => {

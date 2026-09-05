@@ -172,7 +172,7 @@ export default function StockHistoryScreen() {
           data={filteredMovements}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 92, paddingTop: 8 }}
-          estimatedItemSize={70}
+          
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.ink} />}
           ListEmptyComponent={
             <EmptyState

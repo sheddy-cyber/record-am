@@ -788,7 +788,7 @@ export default function RecordPurchaseScreen() {
             data={filteredProducts}
             keyExtractor={(product) => product.id}
             contentContainerStyle={{ padding: 8, gap: 6 }}
-            estimatedItemSize={70}
+            
             ListEmptyComponent={
               <EmptyState
                 icon="package"

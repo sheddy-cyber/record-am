@@ -92,7 +92,7 @@ function DebtsScreen() {
         data={debts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92, flexGrow: 1 }}
-        estimatedItemSize={100}
+        
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
