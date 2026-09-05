@@ -45,7 +45,7 @@ export default function ProfileScreen() {
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
-      'Are you sure you want to permanently delete your account? This action cannot be undone and will delete all data linked to you.',
+      'This cannot be undone. If you are the sole owner, your business and its records will be deleted. Team members keep the business history, but their name is removed from old records. Owners of shared businesses must transfer ownership or remove active members first.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

@@ -21,6 +21,7 @@ import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useSaleStore } from '@/store/saleStore';
+import { useTabStore } from '@/store/tabStore';
 import { supabase } from '@/lib/supabase';
 import { recordSaleOffline } from '@/lib/offlineRecords';
 import {
@@ -478,13 +479,38 @@ export default function RecordSaleScreen() {
           />
         }
       >
-          <InputField
-            label="Find Product"
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search by product name"
-            leftIcon={<Feather name="search" size={16} color={COLORS.text.muted} />}
-          />
+        {searchableProducts.length === 0 ? (
+          <View style={{ paddingVertical: 40, alignItems: 'center', gap: 12 }}>
+            <Feather name="box" size={48} color={COLORS.border} />
+            <Text style={{ fontSize: 16, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+              No products available
+            </Text>
+            <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center', paddingHorizontal: 32 }}>
+              {products.length === 0 
+                ? "You haven't added any products to your inventory yet. Add products before recording a sale." 
+                : "All your products are currently marked as inactive."}
+            </Text>
+            {products.length === 0 && (
+              <View style={{ marginTop: 12, minWidth: 200 }}>
+                <Button 
+                  title="Go to Inventory" 
+                  onPress={() => {
+                    useTabStore.getState().setActiveTab('inventory');
+                    closeScreen();
+                  }} 
+                />
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={{ flex: 1 }}>
+            <InputField
+              label="Find Product"
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search by product name"
+              leftIcon={<Feather name="search" size={16} color={COLORS.text.muted} />}
+            />
 
           <SectionHeader title="Products" />
           <View style={{ gap: 10, marginBottom: 20 }}>
@@ -796,6 +822,8 @@ export default function RecordSaleScreen() {
               </Card>
             </View>
           ) : null}
+          </View>
+        )}
         </KeyboardAwareScrollView>
       </ScreenShell>
   );

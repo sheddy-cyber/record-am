@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { BrandMark, BrandWordmark, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, TYPE } from '@/constants';
+import { formatAuthError, isValidEmail, normaliseEmail } from '@/lib/auth';
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -26,7 +27,7 @@ export default function LoginScreen() {
     const nextErrors: typeof errors = {};
     if (!email.trim()) {
       nextErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
+    } else if (!isValidEmail(email)) {
       nextErrors.email = 'Enter a valid email';
     }
 
@@ -43,13 +44,25 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const { error } = await supabase.auth.signInWithPassword({ email: normaliseEmail(email), password });
       if (error) throw error;
       useTabStore.getState().setActiveTab('dashboard');
       await initialize();
       router.replace('/');
     } catch (err: any) {
-      useAlertStore.getState().showAlert('Sign in failed', err.message, { type: 'danger' });
+      const message = formatAuthError(err);
+      if (message === 'Confirm your email before signing in.') {
+        useAlertStore.getState().showAlert('Email confirmation needed', message, {
+          confirmText: 'Verify email',
+          onConfirm: () => router.push({
+            pathname: '/(auth)/verify-email',
+            params: { email: normaliseEmail(email), flow: 'signup' },
+          }),
+          type: 'info',
+        });
+      } else {
+        useAlertStore.getState().showAlert('Sign in failed', message, { type: 'danger' });
+      }
     } finally {
       setLoading(false);
     }
@@ -90,6 +103,9 @@ export default function LoginScreen() {
               placeholder="you@example.com"
               keyboardType="email-address"
               autoCapitalize="none"
+              autoComplete="email"
+              textContentType="emailAddress"
+              importantForAutofill="yes"
               autoFocus
               returnKeyType="next"
               error={errors.email}
@@ -106,6 +122,9 @@ export default function LoginScreen() {
               }}
               placeholder="Enter your password"
               isPassword
+              autoComplete="password"
+              textContentType="password"
+              importantForAutofill="yes"
               returnKeyType="go"
               onSubmitEditing={handleLogin}
               error={errors.password}
@@ -113,7 +132,10 @@ export default function LoginScreen() {
               leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
             />
 
-            <TouchableOpacity style={{ alignSelf: 'flex-end', marginBottom: 24, marginTop: -4 }}>
+            <TouchableOpacity
+              style={{ alignSelf: 'flex-end', marginBottom: 24, marginTop: -4 }}
+              onPress={() => router.push('/(auth)/forgot-password')}
+            >
               <Text style={{ color: COLORS.accent, fontSize: 13, fontFamily: FONT.medium }}>Forgot password?</Text>
             </TouchableOpacity>
 

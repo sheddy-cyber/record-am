@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Platform, View, Text, Pressable, StyleSheet, BackHandler } from 'react-native';
+import { View, Text, Pressable, StyleSheet, BackHandler } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
-import * as NavigationBar from 'expo-navigation-bar';
 import { COLORS, FONT } from '@/constants';
 import { useTabStore } from '@/store/tabStore';
 import PagerView from 'react-native-pager-view';
@@ -97,22 +96,6 @@ function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
       pagerRef.current?.setPageWithoutAnimation(idx);
     }
   }, [activeTab, pagerRef]);
-
-  // Set Android system navigation bar color to match the panel
-  useEffect(() => {
-    if (Platform.OS === 'android') {
-      NavigationBar.setBackgroundColorAsync('#0F172A').catch(() => {});
-      NavigationBar.setButtonStyleAsync('light').catch(() => {});
-    }
-    
-    return () => {
-      // Optional: Reset to light theme when leaving tab screens
-      if (Platform.OS === 'android') {
-        NavigationBar.setBackgroundColorAsync('#F8FAFC').catch(() => {});
-        NavigationBar.setButtonStyleAsync('dark').catch(() => {});
-      }
-    };
-  }, []);
 
   const handleTabPress = useCallback((routeKey: string) => {
     // Skip if already on this tab

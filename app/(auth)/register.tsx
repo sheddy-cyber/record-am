@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, Animated, KeyboardAvoidingView, Platform, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, Animated, TouchableOpacity, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,8 +12,10 @@ import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { BrandMark, ScreenShell } from '@/components/layout';
 import { AuthBackButton, AuthProgress, PasswordStrength, useStepTransition } from '@/components/auth';
 import { BRAND, COLORS, FONT, RADIUS, TYPE } from '@/constants';
+import { formatAuthError, getAuthCallbackUrl, getPasswordError, isValidEmail, normaliseEmail } from '@/lib/auth';
 
 const STEPS = ['Name', 'Contact', 'Password'];
+const LAST_STEP_INDEX = STEPS.length - 1;
 
 const HEADINGS = [
   {
@@ -39,7 +41,10 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const transition = useStepTransition(step);
+  // Clamp the rendered step in case Fast Refresh restores an older, invalid
+  // state after a previous app version advanced beyond the final screen.
+  const activeStep = Math.min(Math.max(step, 0), LAST_STEP_INDEX);
+  const transition = useStepTransition(activeStep);
 
   const validateStep = (current: number) => {
     const nextErrors: Record<string, string> = {};
@@ -48,12 +53,15 @@ export default function RegisterScreen() {
     }
     if (current === 1) {
       if (!email.trim()) nextErrors.email = 'Email is required';
-      else if (!/\S+@\S+\.\S+/.test(email)) nextErrors.email = 'Enter a valid email';
+      else if (!isValidEmail(email)) nextErrors.email = 'Enter a valid email';
       if (!phone.trim()) nextErrors.phone = 'Phone number is required';
     }
     if (current === 2) {
       if (!password) nextErrors.password = 'Password is required';
-      else if (password.length < 6) nextErrors.password = 'Must be at least 6 characters';
+      else {
+        const passwordError = getPasswordError(password);
+        if (passwordError) nextErrors.password = passwordError;
+      }
       if (password !== confirmPassword) nextErrors.confirmPassword = 'Passwords do not match';
     }
     setErrors(nextErrors);
@@ -61,18 +69,18 @@ export default function RegisterScreen() {
   };
 
   const handleNext = () => {
-    if (!validateStep(step)) return;
+    if (activeStep >= LAST_STEP_INDEX || !validateStep(activeStep)) return;
     setErrors({});
-    setStep((current) => current + 1);
+    setStep((current) => Math.min(current + 1, LAST_STEP_INDEX));
   };
 
   const handleBack = () => {
     setErrors({});
-    if (step === 0) {
+    if (activeStep === 0) {
       router.back();
       return;
     }
-    setStep((current) => current - 1);
+    setStep((current) => Math.max(current - 1, 0));
   };
 
   const handleRegister = async () => {
@@ -81,62 +89,44 @@ export default function RegisterScreen() {
 
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: normaliseEmail(email),
         password,
-        options: { data: { full_name: fullName.trim(), phone: phone.trim() } },
+        options: {
+          data: { full_name: fullName.trim(), phone: phone.trim() },
+          emailRedirectTo: getAuthCallbackUrl('signup'),
+        },
       });
       if (error) throw error;
 
-      let session = data?.session ?? null;
-
-      if (!session) {
-        try {
-          const { data: signInData } = await supabase.auth.signInWithPassword({
-            email: email.trim(),
-            password,
-          });
-          session = signInData?.session ?? null;
-        } catch (_) {}
-      }
-
-      if (session) {
-        useAuthStore.getState().setSession(session);
+      if (data.session) {
+        useAuthStore.getState().setSession(data.session);
         await useAuthStore.getState().initialize();
-        useAlertStore.getState().showAlert('Account created', "Let's set up your business.", {
-          confirmText: 'Continue',
-          onConfirm: () => router.replace('/(auth)/onboarding'),
-          type: 'info',
-        });
+        router.replace('/(auth)/onboarding');
       } else {
-        useAlertStore.getState().showAlert(
-          'Confirm Email',
-          'Account created! Please check your email to confirm your account, or sign in if already confirmed.',
-          {
-            confirmText: 'Sign In',
-            onConfirm: () => router.replace('/(auth)/login'),
-            type: 'info',
-          }
-        );
+        router.replace({
+          pathname: '/(auth)/verify-email',
+          params: { email: normaliseEmail(email), flow: 'signup' },
+        });
       }
     } catch (err: any) {
-      useAlertStore.getState().showAlert('Registration failed', err.message, { type: 'danger' });
+      useAlertStore.getState().showAlert('Could not create account', formatAuthError(err), { type: 'danger' });
     } finally {
       setLoading(false);
     }
   };
 
-  const heading = HEADINGS[step];
+  const heading = HEADINGS[activeStep];
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: COLORS.surface }}>
         <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: 28, paddingBottom: 28, gap: 18 }}>
           <AuthBackButton onPress={handleBack} />
-          {step === 0 ? <BrandMark size={60} badge /> : null}
-          <AuthProgress step={step} total={STEPS.length} />
+          {activeStep === 0 ? <BrandMark size={60} badge /> : null}
+          <AuthProgress step={activeStep} total={STEPS.length} />
           <View>
             <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.45)' }}>
-              Step {step + 1} of {STEPS.length}
+              Step {activeStep + 1} of {STEPS.length}
             </Text>
             <Text style={{ ...TYPE.h1, color: COLORS.text.inverse, marginTop: 8, marginBottom: 6 }}>{heading.title}</Text>
             <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: 'rgba(250,250,248,0.55)' }}>{heading.subtitle}</Text>
@@ -145,13 +135,16 @@ export default function RegisterScreen() {
 
         <View style={styles.formPanel}>
           <Animated.View style={transition}>
-            {step === 0 ? (
+            {activeStep === 0 ? (
               <InputField
                 label="Full Name"
                 value={fullName}
                 onChangeText={setFullName}
                 placeholder="e.g. Emeka Johnson"
                 autoCapitalize="words"
+                autoComplete="name"
+                textContentType="name"
+                importantForAutofill="yes"
                 autoFocus
                 returnKeyType="next"
                 onSubmitEditing={handleNext}
@@ -161,7 +154,7 @@ export default function RegisterScreen() {
               />
             ) : null}
 
-            {step === 1 ? (
+            {activeStep === 1 ? (
               <>
                 <InputField
                   label="Email Address"
@@ -170,6 +163,9 @@ export default function RegisterScreen() {
                   placeholder="you@example.com"
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  autoComplete="email"
+                  textContentType="emailAddress"
+                  importantForAutofill="yes"
                   autoFocus
                   error={errors.email}
                   required
@@ -181,6 +177,9 @@ export default function RegisterScreen() {
                   onChangeText={setPhone}
                   placeholder="08012345678"
                   keyboardType="phone-pad"
+                  autoComplete="tel"
+                  textContentType="telephoneNumber"
+                  importantForAutofill="yes"
                   returnKeyType="next"
                   onSubmitEditing={handleNext}
                   error={errors.phone}
@@ -190,14 +189,17 @@ export default function RegisterScreen() {
               </>
             ) : null}
 
-            {step === 2 ? (
+            {activeStep === 2 ? (
               <>
                 <InputField
                   label="Password"
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="Minimum 6 characters"
+                  placeholder="At least 8 characters"
                   isPassword
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  importantForAutofill="yes"
                   autoFocus
                   error={errors.password}
                   required
@@ -210,6 +212,9 @@ export default function RegisterScreen() {
                   onChangeText={setConfirmPassword}
                   placeholder="Repeat your password"
                   isPassword
+                  autoComplete="new-password"
+                  textContentType="newPassword"
+                  importantForAutofill="yes"
                   returnKeyType="go"
                   onSubmitEditing={handleRegister}
                   error={errors.confirmPassword}
@@ -219,7 +224,7 @@ export default function RegisterScreen() {
               </>
             ) : null}
 
-            {step < 2 ? (
+            {activeStep < LAST_STEP_INDEX ? (
               <Button title="Continue" onPress={handleNext} size="lg" style={{ marginTop: 8 }} />
             ) : (
               <Button title="Create Account" onPress={handleRegister} loading={loading} size="lg" style={{ marginTop: 8 }} />

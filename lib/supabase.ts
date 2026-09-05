@@ -24,6 +24,10 @@ export const supabase = createClient(
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      // Mobile deep links are routed by Expo Router. PKCE returns the short-
+      // lived code in the URL query instead of an Android-unreliable hash
+      // fragment, which lets auth-callback exchange it for a recovery session.
+      flowType: 'pkce',
     },
   }
 );

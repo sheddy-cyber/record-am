@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS branches (
 CREATE TABLE IF NOT EXISTS user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   full_name TEXT,
+  email TEXT,
   phone TEXT,
   avatar_url TEXT,
   pin_hash TEXT, -- hashed PIN for quick local auth
@@ -124,7 +125,7 @@ CREATE TABLE IF NOT EXISTS stock_movements (
   total_cost NUMERIC(12,2),
   reference TEXT, -- supplier name, sale id, etc.
   notes TEXT,
-  performed_by UUID REFERENCES auth.users(id),
+  performed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -178,7 +179,7 @@ CREATE TABLE IF NOT EXISTS sales (
   payment_status TEXT DEFAULT 'paid', -- paid, partial, credit
   payment_method TEXT DEFAULT 'cash', -- cash, transfer, pos, mobile_money, mixed
   notes TEXT,
-  sold_by UUID REFERENCES auth.users(id),
+  sold_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -211,7 +212,7 @@ CREATE TABLE IF NOT EXISTS expenses (
   payment_method TEXT DEFAULT 'cash',
   receipt_url TEXT,
   expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  recorded_by UUID REFERENCES auth.users(id),
+  recorded_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -232,7 +233,7 @@ CREATE TABLE IF NOT EXISTS purchases (
   payment_status TEXT DEFAULT 'paid', -- paid, partial, credit
   notes TEXT,
   purchase_date DATE NOT NULL DEFAULT CURRENT_DATE,
-  recorded_by UUID REFERENCES auth.users(id),
+  recorded_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -280,7 +281,7 @@ CREATE TABLE IF NOT EXISTS debt_repayments (
   amount NUMERIC(12,2) NOT NULL,
   payment_method TEXT DEFAULT 'cash',
   notes TEXT,
-  recorded_by UUID REFERENCES auth.users(id),
+  recorded_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -320,7 +321,7 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
   cash_in_hand_actual NUMERIC(12,2),
   discrepancy NUMERIC(12,2) DEFAULT 0,
   notes TEXT,
-  closed_by UUID REFERENCES auth.users(id),
+  closed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   is_closed BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -333,7 +334,7 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
 CREATE TABLE IF NOT EXISTS activity_logs (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
-  user_id UUID REFERENCES auth.users(id),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   action TEXT NOT NULL, -- sale_created, stock_added, debt_recorded, etc.
   entity_type TEXT, -- sale, product, customer, expense, etc.
   entity_id UUID,
@@ -494,18 +495,23 @@ CREATE TRIGGER update_daily_summaries_updated_at BEFORE UPDATE ON daily_summarie
   FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- Auto-create user profile on signup
-CREATE OR REPLACE FUNCTION handle_new_user()
+CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO user_profiles (id, full_name)
-  VALUES (NEW.id, NEW.raw_user_meta_data->>'full_name');
+  INSERT INTO public.user_profiles (id, full_name, email, phone)
+  VALUES (
+    NEW.id,
+    NEW.raw_user_meta_data->>'full_name',
+    NEW.email,
+    NEW.raw_user_meta_data->>'phone'
+  );
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = '';
 
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE FUNCTION handle_new_user();
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Generate sale number
 CREATE OR REPLACE FUNCTION generate_sale_number(p_business_id UUID)

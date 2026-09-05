@@ -77,17 +77,18 @@ export function AuthBackButton({ onPress }: { onPress: () => void }) {
 // ─── Password Strength ────────────────────────────────────────────────────────
 const STRENGTH = [
   { label: 'Too short', color: COLORS.danger },
-  { label: 'Weak', color: COLORS.danger },
-  { label: 'Fair', color: COLORS.warning },
-  { label: 'Good', color: COLORS.info },
-  { label: 'Strong', color: COLORS.success },
+  { label: 'Basic', color: COLORS.danger },
+  { label: 'Good', color: COLORS.warning },
+  { label: 'Strong', color: COLORS.info },
+  { label: 'Very strong', color: COLORS.success },
 ];
 
 export function scorePassword(password: string) {
   if (!password) return 0;
   let score = 0;
-  if (password.length >= 6) score += 1;
-  if (password.length >= 10) score += 1;
+  if (password.length >= 8) score += 1;
+  if (password.length >= 12) score += 1;
+  if (password.length >= 16) score += 1;
   if (/[A-Z]/.test(password) && /[a-z]/.test(password)) score += 1;
   if (/\d/.test(password) || /[^A-Za-z0-9]/.test(password)) score += 1;
   return Math.min(score, 4);

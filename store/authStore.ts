@@ -61,7 +61,34 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: false,
   isInitialized: false,
 
-  setSession: (session) => set({ session, user: session?.user ?? null }),
+  setSession: (session) => set((state) => {
+    if (!session) {
+      // A cached profile or business is useful only after a valid Supabase
+      // session has been restored. Never let it stand in for authentication.
+      return {
+        session: null,
+        user: null,
+        profile: null,
+        currentBusiness: null,
+        currentBranch: null,
+        userRole: null,
+      };
+    }
+
+    const changedUser = Boolean(state.user && state.user.id !== session.user.id);
+    return {
+      session,
+      user: session.user,
+      ...(changedUser
+        ? {
+            profile: null,
+            currentBusiness: null,
+            currentBranch: null,
+            userRole: null,
+          }
+        : {}),
+    };
+  }),
   setProfile: (profile) => set({ profile }),
   setCurrentBusiness: (business) => set({ currentBusiness: business }),
   setCurrentBranch: (branch) => set({ currentBranch: branch }),
@@ -94,18 +121,14 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error || !session) {
-        if (cachedContext?.currentBusiness) {
-          const cachedUser = cachedContext.user || (cachedContext.profile ? { id: cachedContext.profile.id } as User : null);
-          if (cachedUser) {
-            set({
-              user: cachedUser,
-              profile: cachedContext.profile,
-              currentBusiness: cachedContext.currentBusiness,
-              currentBranch: cachedContext.currentBranch,
-              userRole: cachedContext.userRole,
-            });
-          }
-        }
+        set({
+          session: null,
+          user: null,
+          profile: null,
+          currentBusiness: null,
+          currentBranch: null,
+          userRole: null,
+        });
         if (error) console.warn('[Record Am] getSession error:', error.message);
         set({ isLoading: false, isInitialized: true });
         return;
@@ -114,68 +137,91 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ session, user: session?.user ?? null });
 
       if (session?.user) {
+        let hasInitializedFromCache = false;
 
-        // Load profile — non-fatal if it fails
-        try {
-          const { data: profile, error } = await supabase
-            .from('user_profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-          if (profile) set({ profile });
-          else if (error) throw error;
-        } catch (err) {
-          console.warn('[Record Am] Could not load profile:', err);
-          if (cachedContext?.profile) {
-            set({ profile: cachedContext.profile });
-          }
+        // 1. Optimistically load from cache immediately so splash screen dismisses instantly
+        if (cachedContext && cachedContext.user?.id === session.user.id) {
+          set({
+            profile: cachedContext.profile,
+            currentBusiness: cachedContext.currentBusiness,
+            currentBranch: cachedContext.currentBranch,
+            userRole: cachedContext.userRole,
+            isLoading: false,
+            isInitialized: true,
+          });
+          hasInitializedFromCache = true;
         }
 
-        // Load business membership — non-fatal if it fails
-        try {
-          const { data: membership, error } = await supabase
-            .from('business_members')
-            .select('*, businesses(*), branches(*)')
-            .eq('user_id', session.user.id)
-            .eq('is_active', true)
-            .limit(1)
-            .single();
+        // 2. Fetch fresh data in the background (or foreground if no cache)
+        const fetchFreshData = async () => {
+          let nextProfile = cachedContext?.profile || null;
+          let nextBusiness = cachedContext?.currentBusiness || null;
+          let nextBranch = cachedContext?.currentBranch || null;
+          let nextRole = cachedContext?.userRole || null;
 
-          if (membership) {
-            const nextBusiness = membership.businesses as Business;
-            const nextBranch = membership.branches as Branch;
-            const nextRole = membership.role as UserRole;
-            set({
-              currentBusiness: nextBusiness,
-              currentBranch: nextBranch,
-              userRole: nextRole,
-            });
-            await cacheAuthContext({
-              user: session.user,
-              profile: useAuthStore.getState().profile,
-              currentBusiness: nextBusiness,
-              currentBranch: nextBranch,
-              userRole: nextRole,
-            });
-          } else if (error) {
-            throw error;
+          try {
+            const { data: profile } = await supabase
+              .from('user_profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+            if (profile) {
+              nextProfile = profile;
+              set({ profile });
+            }
+          } catch (err) {
+            console.warn('[Record Am] Could not load profile:', err);
           }
-        } catch (err) {
-          console.warn('[Record Am] Could not load business membership:', err);
-          if (cachedContext) {
-            set({
-              profile: cachedContext.profile,
-              currentBusiness: cachedContext.currentBusiness,
-              currentBranch: cachedContext.currentBranch,
-              userRole: cachedContext.userRole,
-            });
+
+          try {
+            const { data: membership } = await supabase
+              .from('business_members')
+              .select('*, businesses(*), branches(*)')
+              .eq('user_id', session.user.id)
+              .eq('is_active', true)
+              .limit(1)
+              .single();
+
+            if (membership) {
+              nextBusiness = membership.businesses as Business;
+              nextBranch = membership.branches as Branch;
+              nextRole = membership.role as UserRole;
+              set({
+                currentBusiness: nextBusiness,
+                currentBranch: nextBranch,
+                userRole: nextRole,
+              });
+            }
+          } catch (err) {
+            console.warn('[Record Am] Could not load business membership:', err);
           }
+
+          await cacheAuthContext({
+            user: session.user,
+            profile: nextProfile,
+            currentBusiness: nextBusiness,
+            currentBranch: nextBranch,
+            userRole: nextRole,
+          });
+
+          if (!hasInitializedFromCache) {
+            set({ isLoading: false, isInitialized: true });
+          }
+        };
+
+        if (hasInitializedFromCache) {
+          // Fire and forget so we don't block
+          fetchFreshData().catch(console.warn);
+        } else {
+          // Wait for it because we need data to proceed
+          await fetchFreshData();
         }
+      } else {
+        set({ isLoading: false, isInitialized: true });
       }
     } catch (err) {
       // Network error or other — don't crash the app
       console.warn('[Record Am] Auth initialize error:', err);
-    } finally {
       set({ isLoading: false, isInitialized: true });
     }
   },

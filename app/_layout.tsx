@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AppState, Text, TextInput, View, Platform } from 'react-native';
-import { Stack, router } from 'expo-router';
+import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as NavigationBar from 'expo-navigation-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
@@ -156,12 +157,35 @@ const toastConfig = {
 
 export default function RootLayout() {
   const { setSession, initialize, currentBusiness, currentBranch, user } = useAuthStore();
+  const pathname = usePathname();
   const [appInitialized, setAppInitialized] = useState(false);
   const [fontsLoaded, fontError] = useFonts(STERADIAN_FONT_ASSETS);
   const [showSplash, setShowSplash] = useState(true);
   const isAppReady = appInitialized && (fontsLoaded || fontError);
 
   useOfflineSync(Boolean(user));
+
+  // The Android navigation buttons are part of the system UI, not the app's
+  // tab bar. Configure them from the active route so a mounted tab screen
+  // cannot leave light buttons on a light, pushed screen.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    const isTabPanelVisible = pathname === '/' || pathname === '/index';
+    
+    // Some older Android phones (API < 26) do not support dark navigation buttons.
+    // If we set a white background, the light buttons will become invisible.
+    const supportsDarkButtons = (Platform.Version as number) >= 26;
+    
+    const backgroundColor = isTabPanelVisible 
+      ? '#0F172A' 
+      : (supportsDarkButtons ? COLORS.surface : '#000000');
+      
+    const buttonStyle = isTabPanelVisible ? 'light' : 'dark';
+
+    NavigationBar.setBackgroundColorAsync(backgroundColor).catch(() => undefined);
+    NavigationBar.setButtonStyleAsync(buttonStyle).catch(() => undefined);
+  }, [pathname]);
 
   useEffect(() => {
     let active = true;
