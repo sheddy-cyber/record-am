@@ -7,6 +7,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
+import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { DateRange, useAnalyticsStore } from '@/store/analyticsStore';
@@ -67,8 +68,8 @@ export default function AnalyticsScreen() {
   const {
     summary,
     salesTrend,
+    allProducts,
     topProducts,
-    bottomProducts,
     expenseBreakdown,
     isLoading,
     dateRange,
@@ -76,30 +77,7 @@ export default function AnalyticsScreen() {
     fetchAnalytics,
   } = useAnalyticsStore();
 
-  const getProductStock = useCallback((product: Product, branchId?: string) => {
-    if (!product.inventory) return 0;
-    return product.inventory
-      .filter((inv) => !branchId || inv.branch_id === branchId)
-      .reduce((sum, inv) => sum + inv.quantity, 0);
-  }, []);
 
-  const totalStockValue = React.useMemo(() => {
-    return products.reduce((total, product) => {
-      if (product.is_service) return total;
-      const stock = getProductStock(product, currentBranch?.id);
-      if (stock > 0) {
-        return total + (stock * product.selling_price);
-      }
-      return total;
-    }, 0);
-  }, [products, currentBranch?.id, getProductStock]);
-
-  const totalStockItems = React.useMemo(() => {
-    return products.reduce((total, product) => {
-      if (product.is_service) return total;
-      return total + getProductStock(product, currentBranch?.id);
-    }, 0);
-  }, [products, currentBranch?.id, getProductStock]);
 
   const load = useCallback(() => {
     if (currentBusiness && currentBranch) {
@@ -204,54 +182,60 @@ export default function AnalyticsScreen() {
           <View style={{ padding: 20, gap: 24 }}>
             <View>
               <SectionHeader title="Key Metrics" />
-              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+              <View style={{ gap: 12, marginBottom: 12 }}>
                 <MetricCard
                   label="Revenue"
                   value={fmt(summary?.total_revenue ?? 0)}
                   growth={summary?.revenue_growth}
                   icon="dollar-sign"
                   color={COLORS.ink}
-                  subtext="vs previous period"
+                  subtext="Total cash collected from sales and debt repayments"
+                />
+                <MetricCard
+                  label="Gross Profit"
+                  value={fmt(summary?.gross_profit ?? 0)}
+                  icon="trending-up"
+                  color={COLORS.accent}
+                  subtext="Total revenue minus cost of goods sold"
                 />
                 <MetricCard
                   label="Net Profit"
-                  value={fmt(summary?.total_profit ?? 0)}
+                  value={fmt(summary?.net_profit ?? 0)}
                   growth={summary?.profit_growth}
-                  icon="trending-up"
+                  icon="activity"
                   color={COLORS.success}
-                  subtext="after expenses"
+                  subtext="Gross profit minus all operating expenses"
                 />
-              </View>
-              <View style={{ flexDirection: 'row', gap: 12 }}>
                 <MetricCard
                   label="Expenses"
                   value={fmt(summary?.total_expenses ?? 0)}
                   icon="credit-card"
                   color={COLORS.danger}
+                  subtext="Total business expenses recorded"
                 />
                 <MetricCard
                   label="Transactions"
                   value={String(summary?.total_transactions ?? 0)}
                   icon="shopping-bag"
                   color={COLORS.warning}
-                  subtext={`Avg ${fmt(summary?.avg_transaction_value ?? 0)}`}
+                  subtext={`Average transaction value: ${fmt(summary?.avg_transaction_value ?? 0)}`}
                 />
               </View>
               <RoleGate allowedRoles={['owner']}>
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+                <View style={{ gap: 12, marginTop: 12 }}>
                   <MetricCard
                     label="Business Net Worth"
-                    value={fmt(totalStockValue)}
+                    value={fmt(summary?.historical_stock_value ?? 0)}
                     icon="briefcase"
                     color={COLORS.accent}
-                    subtext="Total selling prices of all stock"
+                    subtext="Total selling prices of all stock as of selected period"
                   />
                   <MetricCard
                     label="Stock Items"
-                    value={fmtCount(totalStockItems)}
+                    value={fmtCount(summary?.historical_stock_items ?? 0)}
                     icon="package"
-                    color={COLORS.info}
-                    subtext="Total items in inventory"
+                    color={COLORS.ink}
+                    subtext="Total quantity of stock items as of selected period"
                   />
                 </View>
               </RoleGate>
@@ -347,7 +331,7 @@ export default function AnalyticsScreen() {
                               {fmtCount(product.total_qty)} sold
                             </Text>
                             <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
-                              {fmt(product.total_revenue)} revenue
+                              {fmt(product.total_revenue)} rev • {fmt(product.total_profit)} profit
                             </Text>
                           </View>
                         </View>
@@ -363,40 +347,25 @@ export default function AnalyticsScreen() {
                       </View>
                     );
                   })}
+                  <TouchableOpacity
+                    onPress={() => router.push('/(app)/analytics/products' as any)}
+                    style={{
+                      marginTop: 12,
+                      paddingVertical: 12,
+                      alignItems: 'center',
+                      backgroundColor: COLORS.surface,
+                      borderRadius: RADIUS.md,
+                      borderWidth: 1,
+                      borderColor: COLORS.border,
+                    }}
+                  >
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.ink }}>
+                      View Product Analytics
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </Card>
-
-            {bottomProducts.length > 0 ? (
-              <Card>
-                <SectionHeader title="Slow Moving Products" />
-                <View style={{ gap: 10 }}>
-                  {bottomProducts.map((product) => (
-                    <View
-                      key={product.product_id}
-                      style={{
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        paddingVertical: 4,
-                      }}
-                    >
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary, flex: 1 }} numberOfLines={1}>
-                        {product.product_name}
-                      </Text>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
-                          {fmtCount(product.total_qty)} sold
-                        </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
-                          {fmt(product.total_revenue)} revenue
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </Card>
-            ) : null}
 
             <Card>
               <SectionHeader title="Expense Breakdown" />
@@ -405,9 +374,9 @@ export default function AnalyticsScreen() {
                   No expenses recorded in this period
                 </Text>
               ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 20 }}>
+                <View style={{ flexDirection: 'column', alignItems: 'center', gap: 20 }}>
                   <DonutChart data={expensePieData} centerLabel={fmt(totalExpenses)} centerSubLabel="Total" />
-                  <View style={{ flex: 1 }}>
+                  <View style={{ width: '100%' }}>
                     <ChartLegend
                       items={expensePieData.map((item) => ({
                         label: item.label,
@@ -423,17 +392,19 @@ export default function AnalyticsScreen() {
             {summary && summary.total_revenue > 0 ? (
               <Card>
                 <SectionHeader title="Business Health" />
-                <View style={{ gap: 14 }}>
+                <View style={{ gap: 20 }}>
                   {[
                     {
                       label: 'Profit Margin',
-                      value: `${((summary.total_profit / summary.total_revenue) * 100).toFixed(1)}%`,
-                      pct: summary.total_profit / summary.total_revenue,
+                      description: 'The percentage of revenue you keep as pure profit after all costs.',
+                      value: `${((summary.net_profit / summary.total_revenue) * 100).toFixed(1)}%`,
+                      pct: summary.net_profit / summary.total_revenue,
                       color: COLORS.success,
-                      good: summary.total_profit / summary.total_revenue > 0.15,
+                      good: summary.net_profit / summary.total_revenue > 0.15,
                     },
                     {
                       label: 'Expense Ratio',
+                      description: 'The percentage of your revenue that gets consumed by running expenses.',
                       value: `${((summary.total_expenses / summary.total_revenue) * 100).toFixed(1)}%`,
                       pct: summary.total_expenses / summary.total_revenue,
                       color: COLORS.danger,
@@ -441,9 +412,14 @@ export default function AnalyticsScreen() {
                     },
                   ].map((metric) => (
                     <View key={metric.label}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>{metric.label}</Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'flex-start' }}>
+                        <View style={{ flex: 1, paddingRight: 10 }}>
+                          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.primary }}>{metric.label}</Text>
+                          <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2, lineHeight: 16 }}>
+                            {metric.description}
+                          </Text>
+                        </View>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                           <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>{metric.value}</Text>
                           <Feather
                             name={metric.good ? 'check-circle' : 'alert-triangle'}
@@ -452,12 +428,13 @@ export default function AnalyticsScreen() {
                           />
                         </View>
                       </View>
-                      <View style={{ height: 8, backgroundColor: '#F3F4F6' }}>
+                      <View style={{ height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, overflow: 'hidden' }}>
                         <View
                           style={{
                             height: 8,
                             backgroundColor: metric.color,
                             width: `${Math.min(100, Math.abs(metric.pct) * 100)}%`,
+                            borderRadius: 4,
                           }}
                         />
                       </View>

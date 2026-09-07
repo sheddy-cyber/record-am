@@ -232,7 +232,7 @@ export default function SettingsScreen() {
               suffix="%"
               hint="Enter 0 for no tax. Example: 7.5 for VAT."
             />
-            <Button title="Save Business Info" onPress={handleSaveBusiness} loading={saving} size="md" />
+            <Button title="Save Business Info" onPress={handleSaveBusiness} loading={saving} size="md" variant="accent" />
           </Card>
 
           <Card style={{ backgroundColor: '#F9FAFB' }}>
@@ -301,7 +301,7 @@ export default function SettingsScreen() {
               title="Save Daily Close Settings"
               onPress={handleSaveDailyCloseSettings}
               loading={dailyCloseSaving}
-              variant="secondary"
+              variant="accent"
               size="md"
             />
           </Card>
@@ -318,7 +318,7 @@ export default function SettingsScreen() {
               title="Save Inventory Settings"
               onPress={handleSaveInventorySettings}
               loading={inventorySaving}
-              variant="secondary"
+              variant="accent"
               size="md"
             />
           </Card>

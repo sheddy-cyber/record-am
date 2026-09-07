@@ -184,66 +184,83 @@ export default function AddStockScreen() {
       return;
     }
 
-    setSaving(true);
-    try {
-      const initialQuantity = isService ? 0 : parsedOpeningQuantity;
-      const parsedCostPrice = parseFloat(costPrice) || 0;
-      const product = await createProduct({
-        business_id: currentBusiness.id,
-        name: cleanProductName,
-        unit: cleanProductUnit,
-        cost_price: parsedCostPrice,
-        selling_price: parseFloat(sellingPrice),
-        reorder_level: parseFloat(reorderLevel) || 5,
-        is_service: isService,
-      });
+    const parsedCostPrice = parseFloat(costPrice) || 0;
+    const initialQuantity = isService ? 0 : parsedOpeningQuantity;
 
-      if (!product) throw new Error('Failed to create product');
-
-      if (currentBranch) {
-        await recordInventorySnapshotOffline({
-          businessId: currentBusiness.id,
-          branchId: currentBranch.id,
-          productId: product.id,
-          quantity: initialQuantity,
-          movement:
-            initialQuantity > 0
-              ? {
-                  type: 'stock_in',
-                  quantity: initialQuantity,
-                  unit_cost: parsedCostPrice || undefined,
-                  total_cost: parsedCostPrice
-                    ? parsedCostPrice * initialQuantity
-                    : undefined,
-                  notes: 'Opening stock',
-                }
-              : undefined,
+    const executeSave = async () => {
+      setSaving(true);
+      try {
+        const product = await createProduct({
+          business_id: currentBusiness.id,
+          name: cleanProductName,
+          unit: cleanProductUnit,
+          cost_price: parsedCostPrice,
+          selling_price: parseFloat(sellingPrice),
+          reorder_level: parseFloat(reorderLevel) || 5,
+          is_service: isService,
         });
+
+        if (!product) throw new Error('Failed to create product');
+
+        if (currentBranch) {
+          await recordInventorySnapshotOffline({
+            businessId: currentBusiness.id,
+            branchId: currentBranch.id,
+            productId: product.id,
+            quantity: initialQuantity,
+            movement:
+              initialQuantity > 0
+                ? {
+                    type: 'stock_in',
+                    quantity: initialQuantity,
+                    unit_cost: parsedCostPrice || undefined,
+                    total_cost: parsedCostPrice
+                      ? parsedCostPrice * initialQuantity
+                      : undefined,
+                    notes: 'Opening stock',
+                  }
+                : undefined,
+          });
+        }
+
+        Toast.show({
+          type: 'success',
+          text1: 'Product added',
+          text2: `${product.name} is now in inventory${initialQuantity > 0 ? ` with ${formatCount(initialQuantity)} ${product.unit}` : ''}. Sync queued.`,
+        });
+
+        resetProductForm();
+        const openedPurchaseSync = await maybeOpenPurchaseSync({
+          productId: product.id,
+          productName: product.name,
+          productUnit: product.unit,
+          quantity: initialQuantity,
+          unitCost: parsedCostPrice,
+        });
+
+        if (!openedPurchaseSync) {
+          closeScreen();
+        }
+      } catch (err: any) {
+        Alert.alert('Error', err.message);
+      } finally {
+        setSaving(false);
       }
+    };
 
-      Toast.show({
-        type: 'success',
-        text1: 'Product added',
-        text2: `${product.name} is now in inventory${initialQuantity > 0 ? ` with ${formatCount(initialQuantity)} ${product.unit}` : ''}. Sync queued.`,
-      });
-
-      resetProductForm();
-      const openedPurchaseSync = await maybeOpenPurchaseSync({
-        productId: product.id,
-        productName: product.name,
-        productUnit: product.unit,
-        quantity: initialQuantity,
-        unitCost: parsedCostPrice,
-      });
-
-      if (!openedPurchaseSync) {
-        closeScreen();
-      }
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    } finally {
-      setSaving(false);
+    if (!isService && parsedCostPrice === 0) {
+      Alert.alert(
+        'Missing Cost Price',
+        'Without a cost price, 100% of the selling price will be recorded as profit.\n\nDo you want to add a cost price or continue anyway?',
+        [
+          { text: 'Add Cost Price', style: 'cancel' },
+          { text: 'Continue Anyway', onPress: executeSave, style: 'default' },
+        ]
+      );
+      return;
     }
+
+    executeSave();
   };
 
 

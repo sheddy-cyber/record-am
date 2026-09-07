@@ -37,7 +37,8 @@ export interface ExpenseBreakdown {
 
 export interface AnalyticsSummary {
   total_revenue: number;
-  total_profit: number;
+  gross_profit: number;
+  net_profit: number;
   total_expenses: number;
   total_transactions: number;
   avg_transaction_value: number;
@@ -45,13 +46,15 @@ export interface AnalyticsSummary {
   prev_profit: number;
   revenue_growth: number;
   profit_growth: number;
+  historical_stock_items: number;
+  historical_stock_value: number;
 }
 
 interface AnalyticsState {
   summary: AnalyticsSummary | null;
   salesTrend: SalesTrendPoint[];
   topProducts: TopProduct[];
-  bottomProducts: TopProduct[];
+  allProducts: TopProduct[];
   expenseBreakdown: ExpenseBreakdown[];
   isLoading: boolean;
   error: string | null;
@@ -143,14 +146,8 @@ async function buildCachedAnalytics(
     inDateRange(item.created_at ?? item.sale?.created_at, from, to),
   );
 
-  const totalRevenue = currentActivities.reduce((sum, activity) => {
-    if (activity.kind === 'debt_repayment') return sum;
-    return sum + (activity.total_amount || 0);
-  }, 0);
-  const prevRevenue = previousActivities.reduce((sum, activity) => {
-    if (activity.kind === 'debt_repayment') return sum;
-    return sum + (activity.total_amount || 0);
-  }, 0);
+  const totalRevenue = currentActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
+  const prevRevenue = previousActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
   const totalExpenses = currentExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalProfit = currentSaleItems.reduce(
     (sum, item) => sum + (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * Number(item.quantity ?? 0),
@@ -168,11 +165,10 @@ async function buildCachedAnalytics(
   }
 
   currentActivities.forEach((activity) => {
-    if (activity.kind === 'debt_repayment') return;
     const key = format(new Date(activity.created_at), 'yyyy-MM-dd');
     const existing = trendMap.get(key) ?? { revenue: 0, profit: 0, transactions: 0 };
     trendMap.set(key, {
-      revenue: existing.revenue + (activity.total_amount || 0),
+      revenue: existing.revenue + activity.amount_paid,
       profit: existing.profit,
       transactions: existing.transactions + 1,
     });
@@ -196,7 +192,20 @@ async function buildCachedAnalytics(
       ...data,
     }));
 
+  const { useBusinessStore } = await import('@/store/businessStore');
+  const products = useBusinessStore.getState().products;
+
   const productMap = new Map<string, TopProduct>();
+  products.forEach((p) => {
+    productMap.set(p.id, {
+      product_id: p.id,
+      product_name: p.name,
+      total_qty: 0,
+      total_revenue: 0,
+      total_profit: 0,
+    });
+  });
+
   currentSaleItems.forEach((item) => {
     const productId = item.product_id ?? item.product?.id;
     if (!productId) return;
@@ -219,6 +228,8 @@ async function buildCachedAnalytics(
     });
   });
 
+  const allProducts = Array.from(productMap.values());
+
   const expenseMap = new Map<string, number>();
   currentExpenses.forEach((expense) => {
     expenseMap.set(expense.category, (expenseMap.get(expense.category) ?? 0) + expense.amount);
@@ -232,26 +243,37 @@ async function buildCachedAnalytics(
     }))
     .sort((a, b) => b.total - a.total);
 
-  const allProducts = Array.from(productMap.values());
+  const saleIds = new Set(currentActivities.map((act) => act.id));
+  const currentCOGS = currentSaleItems
+    .filter((item) => saleIds.has(item.sale_id ?? ''))
+    .reduce((sum, item) => sum + (Number(item.cost_price ?? 0) * Number(item.quantity ?? 0)), 0);
 
+  const grossProfit = totalRevenue - currentCOGS;
+  const netProfit = grossProfit - totalExpenses;
+
+  // Since we can't easily fetch stock_movements synchronously without a cache table,
+  // we will fallback to 0 in buildCachedAnalytics, and let fetchAnalytics overwrite it correctly.
+  
   return {
     summary: {
       total_revenue: totalRevenue,
-      total_profit: totalProfit,
+      gross_profit: grossProfit,
+      net_profit: netProfit,
       total_expenses: totalExpenses,
       total_transactions: totalTransactions,
       avg_transaction_value: totalTransactions > 0 ? totalRevenue / totalTransactions : 0,
       prev_revenue: prevRevenue,
       prev_profit: prevProfit,
       revenue_growth: prevRevenue === 0 ? 0 : ((totalRevenue - prevRevenue) / prevRevenue) * 100,
-      profit_growth: prevProfit === 0 ? 0 : ((totalProfit - prevProfit) / prevProfit) * 100,
+      profit_growth: prevProfit === 0 ? 0 : ((netProfit - prevProfit) / prevProfit) * 100,
+      historical_stock_items: 0,
+      historical_stock_value: 0,
     },
     salesTrend,
+    allProducts,
     topProducts: [...allProducts]
+      .filter((p) => p.total_qty > 0 || p.total_revenue > 0)
       .sort((a, b) => b.total_qty - a.total_qty || b.total_revenue - a.total_revenue)
-      .slice(0, 5),
-    bottomProducts: [...allProducts]
-      .sort((a, b) => a.total_qty - b.total_qty || a.total_revenue - b.total_revenue)
       .slice(0, 5),
     expenseBreakdown,
   };
@@ -260,8 +282,8 @@ async function buildCachedAnalytics(
 export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   summary: null,
   salesTrend: [],
+  allProducts: [],
   topProducts: [],
-  bottomProducts: [],
   expenseBreakdown: [],
   isLoading: false,
   error: null,
@@ -276,8 +298,8 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       set({
         summary: cached.summary,
         salesTrend: cached.salesTrend,
+        allProducts: cached.allProducts,
         topProducts: cached.topProducts,
-        bottomProducts: cached.bottomProducts,
         expenseBreakdown: cached.expenseBreakdown,
       });
     } catch (err) {
@@ -295,8 +317,9 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       set({
         summary: cached.summary,
         salesTrend: cached.salesTrend,
+        allProducts: cached.allProducts,
         topProducts: cached.topProducts,
-        bottomProducts: cached.bottomProducts,
+
         expenseBreakdown: cached.expenseBreakdown,
       });
     } catch (err) {
@@ -309,57 +332,70 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     const toISO = to.toISOString();
     const prevFromISO = prevFrom.toISOString();
     const prevToISO = prevTo.toISOString();
+
     try {
       // ── Current period sales ──────────────────────────────
       const { data: currentSales } = await supabase
         .from('sales')
-        .select('id, amount_paid, total_amount, created_at, notes')
+        .select('id, amount_paid, created_at, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
-        .gte('created_at', from.toISOString())
-        .lte('created_at', to.toISOString());
+        .gte('created_at', fromISO)
+        .lte('created_at', toISO);
 
+      // ── Previous period sales (for growth calc) ──────────
       const { data: prevSales } = await supabase
         .from('sales')
-        .select('id, amount_paid, total_amount, created_at, notes')
+        .select('amount_paid, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
-        .gte('created_at', prevFrom.toISOString())
-        .lte('created_at', prevTo.toISOString());
+        .gte('created_at', prevFromISO)
+        .lte('created_at', prevToISO);
 
       const { data: currentRepayments } = await supabase
         .from('debt_repayments')
-        .select('id, amount, payment_method, notes, created_at, debt_id')
+        .select('id, debt_id, amount, payment_method, notes, created_at, debt:customer_debts!inner(id, business_id, branch_id)')
         .eq('debt.business_id', businessId)
         .eq('debt.branch_id', branchId)
-        .gte('created_at', from.toISOString())
-        .lte('created_at', to.toISOString());
+        .gte('created_at', fromISO)
+        .lte('created_at', toISO);
 
       const { data: prevRepayments } = await supabase
         .from('debt_repayments')
-        .select('amount')
+        .select('amount, debt:customer_debts!inner(business_id, branch_id)')
         .eq('debt.business_id', businessId)
         .eq('debt.branch_id', branchId)
-        .gte('created_at', prevFrom.toISOString())
-        .lte('created_at', prevTo.toISOString());
+        .gte('created_at', prevFromISO)
+        .lte('created_at', prevToISO);
 
       // ── Current period expenses ───────────────────────────
       const { data: currentExpenses } = await supabase
         .from('expenses')
-        .select('amount, category')
+        .select('*')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
-        .gte('created_at', from.toISOString())
-        .lte('created_at', to.toISOString());
+        .gte('expense_date', format(from, 'yyyy-MM-dd'))
+        .lte('expense_date', format(to, 'yyyy-MM-dd'));
 
       // ── Sale items for profit & top products ─────────────
       const { data: saleItems } = await supabase
         .from('sale_items')
-        .select('quantity, unit_price, cost_price, product_id, created_at, sale_id, total_price, product:products(name)')
+        .select(`
+          id,
+          sale_id,
+          product_id,
+          created_at,
+          quantity,
+          unit_price,
+          cost_price,
+          total_price,
+          product:products(id, name),
+          sale:sales!inner(created_at, business_id, branch_id)
+        `)
         .eq('sale.business_id', businessId)
         .eq('sale.branch_id', branchId)
-        .gte('created_at', from.toISOString())
-        .lte('created_at', to.toISOString());
+        .gte('sale.created_at', fromISO)
+        .lte('sale.created_at', toISO);
 
       const saleActivities = (currentSales ?? [])
         .filter((sale) => !isDebtSettlementSale(sale.notes))
@@ -368,7 +404,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           kind: 'sale' as const,
           customer_name: 'Customer',
           reference: sale.notes ? (sale.notes.length > 20 ? sale.notes.slice(0, 20) + '...' : sale.notes) : 'Sale',
-          total_amount: sale.total_amount,
+          total_amount: sale.amount_paid,
           amount_paid: sale.amount_paid,
           amount_owed: 0,
           payment_status: 'paid' as const,
@@ -399,29 +435,70 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         upsertCachedRevenueActivities(businessId, branchId, [...saleActivities, ...repaymentActivities]),
       ]);
 
+      // ── Historical Stock Value ───────────────────────────
+      const { data: futureMovements } = await supabase
+        .from('stock_movements')
+        .select('product_id, quantity, type, created_at')
+        .eq('business_id', businessId)
+        .eq('branch_id', branchId)
+        .gt('created_at', toISO);
+
+      const { useBusinessStore } = await import('@/store/businessStore');
+      const products = useBusinessStore.getState().products;
+      
+      let historicalStockItems = 0;
+      let historicalStockValue = 0;
+      
+      products.forEach(product => {
+        if (product.is_service) return;
+        let currentQty = product.inventory?.find(inv => inv.branch_id === branchId)?.quantity ?? 0;
+        
+        // Reverse future movements
+        const prodMovements = futureMovements?.filter(m => m.product_id === product.id) ?? [];
+        for (const mov of prodMovements) {
+          if (mov.type === 'stock_in') {
+            currentQty -= mov.quantity;
+          } else if (['stock_out', 'damage', 'wastage'].includes(mov.type)) {
+            currentQty += mov.quantity;
+          }
+        }
+        
+        if (currentQty > 0) {
+          historicalStockItems += currentQty;
+          historicalStockValue += currentQty * product.selling_price;
+        }
+      });
+
       // ── Compute summary ───────────────────────────────────
       const revenueSales = (currentSales ?? []).filter((sale) => !isDebtSettlementSale(sale.notes));
       const previousRevenueSales = (prevSales ?? []).filter((sale) => !isDebtSettlementSale(sale.notes));
-      const totalRevenue = revenueSales.reduce((s, r) => s + (r.total_amount || 0), 0);
+      const totalRevenue =
+        revenueSales.reduce((s, r) => s + r.amount_paid, 0) +
+        (currentRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
       const totalExpenses = currentExpenses?.reduce((s, r) => s + r.amount, 0) ?? 0;
-      const prevRevenue = previousRevenueSales.reduce((s, r) => s + (r.total_amount || 0), 0);
+      const prevRevenue =
+        previousRevenueSales.reduce((s, r) => s + r.amount_paid, 0) +
+        (prevRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
 
-      // Profit per item = (selling - cost) * qty
-      const totalProfit = saleItems?.reduce((s, item) => {
-        const cost = item.cost_price ?? 0;
-        return s + (item.unit_price - cost) * item.quantity;
-      }, 0) ?? 0;
+      const saleIds = new Set((currentSales ?? []).map(s => s.id));
+      const currentCOGS = saleItems
+        ?.filter(item => saleIds.has(item.sale_id ?? ''))
+        .reduce((sum, item) => sum + (Number(item.cost_price ?? 0) * Number(item.quantity ?? 0)), 0) ?? 0;
+
+      const grossProfit = totalRevenue - currentCOGS;
+      const netProfit = grossProfit - totalExpenses;
 
       const prevProfit = prevRevenue * 0.3; // estimate for previous period if no item data
 
       const revenueGrowth = prevRevenue === 0 ? 0 : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
-      const profitGrowth = prevProfit === 0 ? 0 : ((totalProfit - prevProfit) / prevProfit) * 100;
-      const totalTransactions = revenueSales.length;
+      const profitGrowth = prevProfit === 0 ? 0 : ((netProfit - prevProfit) / prevProfit) * 100;
+      const totalTransactions = revenueSales.length + (currentRepayments?.length ?? 0);
 
       set({
         summary: {
           total_revenue: totalRevenue,
-          total_profit: totalProfit,
+          gross_profit: grossProfit,
+          net_profit: netProfit,
           total_expenses: totalExpenses,
           total_transactions: totalTransactions,
           avg_transaction_value: totalTransactions > 0 ? totalRevenue / totalTransactions : 0,
@@ -429,6 +506,8 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           prev_profit: prevProfit,
           revenue_growth: revenueGrowth,
           profit_growth: profitGrowth,
+          historical_stock_items: historicalStockItems,
+          historical_stock_value: historicalStockValue,
         },
       });
 
@@ -447,7 +526,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         const key = format(new Date(sale.created_at), 'yyyy-MM-dd');
         const existing = trendMap.get(key) ?? { revenue: 0, profit: 0, transactions: 0 };
         trendMap.set(key, {
-          revenue: existing.revenue + (sale.total_amount || 0),
+          revenue: existing.revenue + sale.amount_paid,
           profit: existing.profit,
           transactions: existing.transactions + 1,
         });
@@ -465,7 +544,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
       // Add profit from items into trend
       saleItems?.forEach((item) => {
-        const key = format(new Date(item.created_at), 'yyyy-MM-dd');
+        const key = format(new Date((item.sale as any).created_at), 'yyyy-MM-dd');
         const existing = trendMap.get(key);
         if (existing) {
           const itemProfit = (item.unit_price - (item.cost_price ?? 0)) * item.quantity;
@@ -485,6 +564,15 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
       // ── Top & bottom products ─────────────────────────────
       const productMap = new Map<string, TopProduct>();
+      products.forEach((p) => {
+        productMap.set(p.id, {
+          product_id: p.id,
+          product_name: p.name,
+          total_qty: 0,
+          total_revenue: 0,
+          total_profit: 0,
+        });
+      });
 
       saleItems?.forEach((item) => {
         const pid = (item.product as any)?.id;
@@ -507,11 +595,10 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
       const allProducts = Array.from(productMap.values());
       set({
+        allProducts,
         topProducts: [...allProducts]
+          .filter((p) => p.total_qty > 0 || p.total_revenue > 0)
           .sort((a, b) => b.total_qty - a.total_qty || b.total_revenue - a.total_revenue)
-          .slice(0, 5),
-        bottomProducts: [...allProducts]
-          .sort((a, b) => a.total_qty - b.total_qty || a.total_revenue - b.total_revenue)
           .slice(0, 5),
       });
 
@@ -538,8 +625,9 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         set({
           summary: cached.summary,
           salesTrend: cached.salesTrend,
+          allProducts: cached.allProducts,
           topProducts: cached.topProducts,
-          bottomProducts: cached.bottomProducts,
+
           expenseBreakdown: cached.expenseBreakdown,
           error: null,
         });

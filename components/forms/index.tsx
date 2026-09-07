@@ -68,7 +68,7 @@ export const InputField: React.FC<InputFieldProps> = ({
           accessibilityRole="button"
           accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
         >
-          <Feather name={showPassword ? 'eye' : 'eye-off'} size={18} color={COLORS.text.muted} />
+          <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color={COLORS.text.muted} />
         </Pressable>
       );
     }

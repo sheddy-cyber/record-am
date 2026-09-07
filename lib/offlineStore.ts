@@ -380,7 +380,6 @@ const executeMutation = async (mutation: OfflineMutation) => {
     const { error } = await supabase
       .from('sales')
       .update({
-        amount_paid: debtRow.amount_paid,
         amount_owed: Math.max(0, debtRow.balance),
         payment_status: debtRow.balance <= 0 ? 'paid' : 'partial',
         payment_method: nextMethod,
@@ -645,10 +644,7 @@ export async function buildCachedDashboardData(
   });
   const openDebts = debts.filter((debt) => debt.status !== 'settled');
 
-  const todaySales = todayActivities.reduce((sum, activity) => {
-    if (activity.kind === 'debt_repayment') return sum;
-    return sum + (activity.total_amount || 0);
-  }, 0);
+  const todaySales = todayActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
   const todayExpenseTotal = todayExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const stockCounts = products.reduce(
     (acc, product) => {

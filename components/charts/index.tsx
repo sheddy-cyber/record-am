@@ -25,6 +25,8 @@ interface BarChartProps {
   showSecondary?: boolean;
 }
 
+import { ScrollView } from 'react-native';
+
 export const BarChart: React.FC<BarChartProps> = ({
   data,
   width = SCREEN_W - 48,
@@ -36,69 +38,80 @@ export const BarChart: React.FC<BarChartProps> = ({
 }) => {
   if (!data.length) return null;
 
-  const paddingLeft = 48;
+  const paddingLeft = 45; // slightly reduced for empty space issue
   const paddingRight = 16;
   const paddingTop = 16;
   const paddingBottom = 40;
-  const chartW = width - paddingLeft - paddingRight;
   const chartH = height - paddingTop - paddingBottom;
 
   const maxVal = Math.max(...data.map((d) => Math.max(d.value, d.secondaryValue ?? 0)), 1);
+  const gridLines = 4;
 
-  const barGroupW = chartW / data.length;
+  const minBarGroupW = 35; // intelligent minimum width
+  const scrollChartW = Math.max(width - paddingLeft - paddingRight, data.length * minBarGroupW);
+  const barGroupW = scrollChartW / data.length;
+  
   const barW = showSecondary ? barGroupW * 0.35 : barGroupW * 0.6;
   const barGap = showSecondary ? barGroupW * 0.05 : 0;
 
-  const gridLines = 4;
-
   return (
-    <Svg width={width} height={height}>
-      <Defs>
-        <LinearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={color} stopOpacity="1" />
-          <Stop offset="1" stopColor={color} stopOpacity="0.6" />
-        </LinearGradient>
-        <LinearGradient id="barGrad2" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={secondaryColor} stopOpacity="1" />
-          <Stop offset="1" stopColor={secondaryColor} stopOpacity="0.6" />
-        </LinearGradient>
-      </Defs>
-
-      {Array.from({ length: gridLines + 1 }).map((_, i) => {
-        const y = paddingTop + (chartH / gridLines) * i;
-        const val = maxVal - (maxVal / gridLines) * i;
-        return (
-          <G key={i}>
-            <Line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} />
-            <SvgText x={paddingLeft - 6} y={y + 4} fontSize={9} fill={COLORS.text.muted} textAnchor="end">
+    <View style={{ flexDirection: 'row', width, height }}>
+      <Svg width={paddingLeft} height={height} style={{ backgroundColor: 'transparent', zIndex: 10 }}>
+        {Array.from({ length: gridLines + 1 }).map((_, i) => {
+          const y = paddingTop + (chartH / gridLines) * i;
+          const val = maxVal - (maxVal / gridLines) * i;
+          return (
+            <SvgText key={i} x={paddingLeft - 6} y={y + 4} fontSize={9} fill={COLORS.text.muted} textAnchor="end">
               {formatValue(val)}
             </SvgText>
-          </G>
-        );
-      })}
+          );
+        })}
+      </Svg>
 
-      {data.map((d, i) => {
-        const groupX = paddingLeft + i * barGroupW;
-        const barH = Math.max((d.value / maxVal) * chartH, 2);
-        const barX = groupX + (barGroupW - barW * (showSecondary ? 2 : 1) - (showSecondary ? barGap : 0)) / 2;
-        const barY = paddingTop + chartH - barH;
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <Svg width={scrollChartW + paddingRight} height={height}>
+          <Defs>
+            <LinearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={color} stopOpacity="1" />
+              <Stop offset="1" stopColor={color} stopOpacity="0.6" />
+            </LinearGradient>
+            <LinearGradient id="barGrad2" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={secondaryColor} stopOpacity="1" />
+              <Stop offset="1" stopColor={secondaryColor} stopOpacity="0.6" />
+            </LinearGradient>
+          </Defs>
 
-        const secH = d.secondaryValue ? Math.max((d.secondaryValue / maxVal) * chartH, 2) : 0;
-        const secY = paddingTop + chartH - secH;
+          {Array.from({ length: gridLines + 1 }).map((_, i) => {
+            const y = paddingTop + (chartH / gridLines) * i;
+            return (
+              <Line key={i} x1={0} y1={y} x2={scrollChartW + paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} />
+            );
+          })}
 
-        return (
-          <G key={i}>
-            <Rect x={barX} y={barY} width={barW} height={barH} rx={4} fill="url(#barGrad)" />
-            {showSecondary && d.secondaryValue !== undefined && (
-              <Rect x={barX + barW + barGap} y={secY} width={barW} height={secH} rx={4} fill="url(#barGrad2)" />
-            )}
-            <SvgText x={groupX + barGroupW / 2} y={height - paddingBottom + 14} fontSize={10} fill={COLORS.text.muted} textAnchor="middle">
-              {d.label}
-            </SvgText>
-          </G>
-        );
-      })}
-    </Svg>
+          {data.map((d, i) => {
+            const groupX = i * barGroupW;
+            const barH = Math.max((d.value / maxVal) * chartH, 2);
+            const barX = groupX + (barGroupW - barW * (showSecondary ? 2 : 1) - (showSecondary ? barGap : 0)) / 2;
+            const barY = paddingTop + chartH - barH;
+
+            const secH = d.secondaryValue ? Math.max((d.secondaryValue / maxVal) * chartH, 2) : 0;
+            const secY = paddingTop + chartH - secH;
+
+            return (
+              <G key={i}>
+                <Rect x={barX} y={barY} width={barW} height={barH} rx={4} fill="url(#barGrad)" />
+                {showSecondary && d.secondaryValue !== undefined && (
+                  <Rect x={barX + barW + barGap} y={secY} width={barW} height={secH} rx={4} fill="url(#barGrad2)" />
+                )}
+                <SvgText x={groupX + barGroupW / 2} y={height - paddingBottom + 14} fontSize={10} fill={COLORS.text.muted} textAnchor="middle">
+                  {d.label}
+                </SvgText>
+              </G>
+            );
+          })}
+        </Svg>
+      </ScrollView>
+    </View>
   );
 };
 
@@ -132,18 +145,20 @@ export const LineChart: React.FC<LineChartProps> = ({
 }) => {
   if (!data.length) return null;
 
-  const paddingLeft = 48;
+  const paddingLeft = 45; // reduced spacing
   const paddingRight = 16;
   const paddingTop = 16;
   const paddingBottom = 40;
-  const chartW = width - paddingLeft - paddingRight;
   const chartH = height - paddingTop - paddingBottom;
 
   const allValues = data.flatMap((d) => [d.value, d.secondaryValue ?? 0]);
   const maxVal = Math.max(...allValues, 1);
   const gridLines = 4;
 
-  const toX = (i: number) => paddingLeft + (i / (data.length - 1)) * chartW;
+  const minPointW = 40; // intelligent minimum width
+  const scrollChartW = Math.max(width - paddingLeft - paddingRight, data.length * minPointW);
+
+  const toX = (i: number) => (data.length > 1 ? (i / (data.length - 1)) * scrollChartW : scrollChartW / 2);
   const toY = (v: number) => paddingTop + chartH - (v / maxVal) * chartH;
 
   const buildPath = (key: 'value' | 'secondaryValue') => {
@@ -159,63 +174,73 @@ export const LineChart: React.FC<LineChartProps> = ({
     const linePath = buildPath(key);
     const lastX = toX(data.length - 1);
     const baseY = paddingTop + chartH;
-    return `${linePath} L ${lastX} ${baseY} L ${paddingLeft} ${baseY} Z`;
+    return `${linePath} L ${lastX} ${baseY} L 0 ${baseY} Z`;
   };
 
   return (
-    <Svg width={width} height={height}>
-      <Defs>
-        <LinearGradient id="lineAreaGrad" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={color} stopOpacity="0.15" />
-          <Stop offset="1" stopColor={color} stopOpacity="0.0" />
-        </LinearGradient>
-        <LinearGradient id="lineAreaGrad2" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor={secondaryColor} stopOpacity="0.12" />
-          <Stop offset="1" stopColor={secondaryColor} stopOpacity="0.0" />
-        </LinearGradient>
-      </Defs>
-
-      {Array.from({ length: gridLines + 1 }).map((_, i) => {
-        const y = paddingTop + (chartH / gridLines) * i;
-        const val = maxVal - (maxVal / gridLines) * i;
-        return (
-          <G key={i}>
-            <Line x1={paddingLeft} y1={y} x2={width - paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} />
-            <SvgText x={paddingLeft - 6} y={y + 4} fontSize={9} fill={COLORS.text.muted} textAnchor="end">
+    <View style={{ flexDirection: 'row', width, height }}>
+      <Svg width={paddingLeft} height={height} style={{ backgroundColor: 'transparent', zIndex: 10 }}>
+        {Array.from({ length: gridLines + 1 }).map((_, i) => {
+          const y = paddingTop + (chartH / gridLines) * i;
+          const val = maxVal - (maxVal / gridLines) * i;
+          return (
+            <SvgText key={i} x={paddingLeft - 6} y={y + 4} fontSize={9} fill={COLORS.text.muted} textAnchor="end">
               {formatValue(val)}
             </SvgText>
-          </G>
-        );
-      })}
+          );
+        })}
+      </Svg>
 
-      {data.length > 1 && (
-        <>
-          <Path d={buildAreaPath('value')} fill="url(#lineAreaGrad)" />
-          {showSecondary && <Path d={buildAreaPath('secondaryValue')} fill="url(#lineAreaGrad2)" />}
-        </>
-      )}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <Svg width={scrollChartW + paddingRight} height={height}>
+          <Defs>
+            <LinearGradient id="lineAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={color} stopOpacity="0.15" />
+              <Stop offset="1" stopColor={color} stopOpacity="0.0" />
+            </LinearGradient>
+            <LinearGradient id="lineAreaGrad2" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={secondaryColor} stopOpacity="0.12" />
+              <Stop offset="1" stopColor={secondaryColor} stopOpacity="0.0" />
+            </LinearGradient>
+          </Defs>
 
-      {data.length > 1 && (
-        <>
-          <Path d={buildPath('value')} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-          {showSecondary && (
-            <Path d={buildPath('secondaryValue')} fill="none" stroke={secondaryColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4,3" />
+          {Array.from({ length: gridLines + 1 }).map((_, i) => {
+            const y = paddingTop + (chartH / gridLines) * i;
+            return (
+              <Line key={i} x1={0} y1={y} x2={scrollChartW + paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} />
+            );
+          })}
+
+          {data.length > 1 && (
+            <>
+              <Path d={buildAreaPath('value')} fill="url(#lineAreaGrad)" />
+              {showSecondary && <Path d={buildAreaPath('secondaryValue')} fill="url(#lineAreaGrad2)" />}
+            </>
           )}
-        </>
-      )}
 
-      {data.map((d, i) => (
-        <G key={i}>
-          <Circle cx={toX(i)} cy={toY(d.value)} r={4} fill={color} />
-          {showSecondary && d.secondaryValue !== undefined && (
-            <Circle cx={toX(i)} cy={toY(d.secondaryValue)} r={3} fill={secondaryColor} />
+          {data.length > 1 && (
+            <>
+              <Path d={buildPath('value')} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+              {showSecondary && (
+                <Path d={buildPath('secondaryValue')} fill="none" stroke={secondaryColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4,3" />
+              )}
+            </>
           )}
-          <SvgText x={toX(i)} y={height - paddingBottom + 14} fontSize={10} fill={COLORS.text.muted} textAnchor="middle">
-            {d.label}
-          </SvgText>
-        </G>
-      ))}
-    </Svg>
+
+          {data.map((d, i) => (
+            <G key={i}>
+              <Circle cx={toX(i)} cy={toY(d.value)} r={4} fill={color} />
+              {showSecondary && d.secondaryValue !== undefined && (
+                <Circle cx={toX(i)} cy={toY(d.secondaryValue)} r={3} fill={secondaryColor} />
+              )}
+              <SvgText x={toX(i)} y={height - paddingBottom + 14} fontSize={10} fill={COLORS.text.muted} textAnchor="middle">
+                {d.label}
+              </SvgText>
+            </G>
+          ))}
+        </Svg>
+      </ScrollView>
+    </View>
   );
 };
 

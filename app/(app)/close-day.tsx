@@ -11,8 +11,11 @@ import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
-const formatCurrency = (value: number) =>
-  `${CURRENCY_SYMBOL}${Math.abs(value).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+const formatCurrency = (value: number) => {
+  const isNegative = value < 0;
+  const formatted = Math.abs(value).toLocaleString('en-NG', { minimumFractionDigits: 0 });
+  return `${isNegative ? '-' : ''}${CURRENCY_SYMBOL}${formatted}`;
+};
 
 export default function CloseDayScreen() {
   const insets = useSafeAreaInsets();
@@ -141,7 +144,7 @@ export default function CloseDayScreen() {
               { label: 'Total Expenses', value: formatCurrency(summary.total_expenses ?? 0), color: COLORS.danger },
               {
                 label: 'Net Profit',
-                value: `${(summary.net_profit ?? 0) < 0 ? '-' : ''}${formatCurrency(summary.net_profit ?? 0)}`,
+                value: formatCurrency(summary.net_profit ?? 0),
                 color: (summary.net_profit ?? 0) >= 0 ? COLORS.success : COLORS.danger,
               },
               { label: 'Expected Cash in Hand', value: formatCurrency(summary.cash_in_hand_expected ?? 0), color: COLORS.accent },

@@ -421,6 +421,21 @@ export default function UpdateStockScreen() {
       roundAmount(parsedCostPrice) !== roundAmount(purchasedUnitCost)
     );
 
+    const confirmAndExecute = (mismatch: boolean) => {
+      if (!isService && parsedCostPrice === 0) {
+        Alert.alert(
+          'Missing Cost Price',
+          'Without a cost price, 100% of the selling price will be recorded as profit.\n\nDo you want to add a cost price or continue anyway?',
+          [
+            { text: 'Add Cost Price', style: 'cancel' },
+            { text: 'Continue Anyway', onPress: () => executeSave(mismatch), style: 'default' },
+          ]
+        );
+      } else {
+        executeSave(mismatch);
+      }
+    };
+
     if (hasMismatch) {
       Alert.alert(
         'Mismatch Warning',
@@ -429,12 +444,12 @@ export default function UpdateStockScreen() {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Save Anyway',
-            onPress: () => executeSave(true),
+            onPress: () => confirmAndExecute(true),
           },
         ]
       );
     } else {
-      executeSave(false);
+      confirmAndExecute(false);
     }
   };
 

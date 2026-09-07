@@ -1000,7 +1000,7 @@ function ReceiptShareCard({
               />
               <SummaryRow
                 label="Amount Paid"
-                value={formatCurrency(sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount)}
+                value={formatCurrency((sale as any).accumulatedAmountPaid ?? (sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount))}
                 labelStyle={{ color: COLORS.success, fontFamily: FONT.medium }}
                 valueStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
               />

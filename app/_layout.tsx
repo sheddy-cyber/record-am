@@ -17,7 +17,7 @@ import { useTabStore } from '@/store/tabStore';
 import { useAuthStore } from '@/store/authStore';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
-import { GlobalDialog, AnimatedSplashScreen } from '@/components/ui';
+import { GlobalDialog } from '@/components/ui';
 
 // Keep the native splash screen visible until our JS AnimatedSplashScreen renders
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -162,6 +162,12 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(STERADIAN_FONT_ASSETS);
   const [showSplash, setShowSplash] = useState(true);
   const isAppReady = appInitialized && (fontsLoaded || fontError);
+
+  useEffect(() => {
+    if (isAppReady) {
+      SplashScreen.hideAsync().catch(() => undefined);
+    }
+  }, [isAppReady]);
 
   useOfflineSync(Boolean(user));
 
@@ -341,12 +347,6 @@ export default function RootLayout() {
         <StatusBar style="dark" backgroundColor={COLORS.surface} />
         <GlobalDialog />
         <Toast config={toastConfig} />
-        {showSplash && (
-          <AnimatedSplashScreen
-            isAppReady={!!isAppReady}
-            onAnimationComplete={() => setShowSplash(false)}
-          />
-        )}
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );
