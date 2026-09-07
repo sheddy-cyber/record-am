@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
+import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useOfflineStore } from '@/store/offlineStore';
 import { CustomerDebt, DashboardStats, Expense, Product, RevenueActivity } from '@/types';
@@ -616,6 +617,109 @@ const sameLocalDate = (isoDate: string, targetDate = new Date()) => {
   );
 };
 
+const DASHBOARD_STATS_CACHE_KEY = (businessId: string, branchId: string) =>
+  `record-am:dashboard-stats:v1:${businessId}:${branchId}`;
+
+export interface PersistedDashboardStatsEntry {
+  date: string;
+  stats: DashboardStats;
+}
+
+export async function readPersistedDashboardStats(
+  businessId: string,
+  branchId: string,
+): Promise<PersistedDashboardStatsEntry | null> {
+  try {
+    const raw = await AsyncStorage.getItem(DASHBOARD_STATS_CACHE_KEY(businessId, branchId));
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedDashboardStatsEntry;
+  } catch {
+    return null;
+  }
+}
+
+export async function writePersistedDashboardStats(
+  businessId: string,
+  branchId: string,
+  entry: PersistedDashboardStatsEntry,
+): Promise<void> {
+  try {
+    await AsyncStorage.setItem(
+      DASHBOARD_STATS_CACHE_KEY(businessId, branchId),
+      JSON.stringify(entry),
+    );
+  } catch (err) {
+    console.warn('[offlineStore] Failed to write persisted dashboard stats', err);
+  }
+}
+
+export async function incrementPersistedDashboardSales(
+  businessId: string,
+  branchId: string,
+  amountPaid: number,
+  debtAmount = 0,
+): Promise<DashboardStats> {
+  const todayDate = format(new Date(), 'yyyy-MM-dd');
+  const cached = await readPersistedDashboardStats(businessId, branchId);
+  const baseStats: DashboardStats = (cached && cached.date === todayDate)
+    ? cached.stats
+    : {
+        today_sales: 0,
+        today_profit: 0,
+        today_expenses: 0,
+        total_products: 0,
+        low_stock_count: 0,
+        out_of_stock_count: 0,
+        outstanding_debts: 0,
+        total_customers: 0,
+      };
+
+  const nextSales = Number((baseStats.today_sales + amountPaid).toFixed(2));
+  const nextExpenses = baseStats.today_expenses;
+  const nextProfit = Number((nextSales - nextExpenses).toFixed(2));
+  const nextDebts = Number(Math.max(0, baseStats.outstanding_debts + debtAmount).toFixed(2));
+
+  const updatedStats: DashboardStats = {
+    ...baseStats,
+    today_sales: nextSales,
+    today_profit: nextProfit,
+    outstanding_debts: nextDebts,
+  };
+
+  await writePersistedDashboardStats(businessId, branchId, {
+    date: todayDate,
+    stats: updatedStats,
+  });
+
+  return updatedStats;
+}
+
+export async function applyExpenseToPersistedDashboardStats(
+  businessId: string,
+  branchId: string,
+  amount: number,
+): Promise<DashboardStats | null> {
+  const todayDate = format(new Date(), 'yyyy-MM-dd');
+  const cached = await readPersistedDashboardStats(businessId, branchId);
+  if (!cached || cached.date !== todayDate) return null;
+
+  const nextExpenses = Number((cached.stats.today_expenses + amount).toFixed(2));
+  const nextProfit = Number((cached.stats.today_sales - nextExpenses).toFixed(2));
+
+  const updatedStats: DashboardStats = {
+    ...cached.stats,
+    today_expenses: nextExpenses,
+    today_profit: nextProfit,
+  };
+
+  await writePersistedDashboardStats(businessId, branchId, {
+    date: todayDate,
+    stats: updatedStats,
+  });
+
+  return updatedStats;
+}
+
 export async function buildCachedDashboardData(
   businessId: string,
   branchId: string,
@@ -624,11 +728,13 @@ export async function buildCachedDashboardData(
   recentActivities: RevenueActivity[];
   recentDebts: CustomerDebt[];
 }> {
-  const [activities, debts, expenses, products] = await Promise.all([
-    readCachedRevenueActivities(businessId, branchId, 60),
+  const todayDate = format(new Date(), 'yyyy-MM-dd');
+  const [activities, debts, expenses, products, persistedStatsEntry] = await Promise.all([
+    readCachedRevenueActivities(businessId, branchId, 300),
     readCachedCustomerDebts(businessId, branchId),
     readCachedExpenses(businessId, branchId),
     readCachedProducts(businessId),
+    readPersistedDashboardStats(businessId, branchId),
   ]);
 
   const todayActivities = activities.filter((activity) => sameLocalDate(activity.created_at));
@@ -644,7 +750,7 @@ export async function buildCachedDashboardData(
   });
   const openDebts = debts.filter((debt) => debt.status !== 'settled');
 
-  const todaySales = todayActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
+  const activityTodaySales = todayActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
   const todayExpenseTotal = todayExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const stockCounts = products.reduce(
     (acc, product) => {
@@ -658,15 +764,28 @@ export async function buildCachedDashboardData(
     { lowStock: 0, outOfStock: 0 },
   );
 
+  const hasValidTodayStats = persistedStatsEntry && persistedStatsEntry.date === todayDate;
+  const persistedTodaySales = hasValidTodayStats ? persistedStatsEntry.stats.today_sales : 0;
+  const effectiveTodaySales = Math.max(persistedTodaySales, activityTodaySales);
+
+  const persistedTodayExpenses = hasValidTodayStats ? persistedStatsEntry.stats.today_expenses : 0;
+  const effectiveTodayExpenses = Math.max(persistedTodayExpenses, todayExpenseTotal);
+  const effectiveTodayProfit = effectiveTodaySales - effectiveTodayExpenses;
+
+  const totalOutstandingDebts = openDebts.reduce((sum, debt) => sum + debt.balance, 0);
+  const effectiveOutstandingDebts = hasValidTodayStats
+    ? Math.max(persistedStatsEntry.stats.outstanding_debts, totalOutstandingDebts)
+    : totalOutstandingDebts;
+
   return {
     stats: {
-      today_sales: todaySales,
-      today_profit: todaySales - todayExpenseTotal,
-      today_expenses: todayExpenseTotal,
+      today_sales: effectiveTodaySales,
+      today_profit: effectiveTodayProfit,
+      today_expenses: effectiveTodayExpenses,
       total_products: products.filter((product) => product.is_active).length,
       low_stock_count: stockCounts.lowStock,
       out_of_stock_count: stockCounts.outOfStock,
-      outstanding_debts: openDebts.reduce((sum, debt) => sum + debt.balance, 0),
+      outstanding_debts: effectiveOutstandingDebts,
       total_customers: new Set(openDebts.map((debt) => debt.customer_name.toLowerCase())).size,
     },
     recentActivities: activities.slice(0, 5),

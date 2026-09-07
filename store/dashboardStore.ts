@@ -6,6 +6,7 @@ import {
   buildCachedDashboardData,
   upsertCachedCustomerDebts,
   upsertCachedExpenses,
+  writePersistedDashboardStats,
 } from '@/lib/offlineStore';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { isDebtSettlementSale } from '@/lib/records';
@@ -26,6 +27,9 @@ interface DashboardState {
   loadRevenueVisibility: (businessId?: string) => Promise<void>;
   toggleRevenueVisibility: (businessId?: string) => Promise<void>;
   setRevenueVisibility: (visible: boolean, businessId?: string) => Promise<void>;
+
+  incrementTodaySales: (amountPaid: number, debtAmount?: number) => void;
+  applyRepaymentToTodaySales: (amount: number) => void;
 
   refreshFromCache: (businessId: string, branchId: string) => Promise<void>;
   fetchDashboardData: (
@@ -86,11 +90,56 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     }
   },
 
+  incrementTodaySales: (amountPaid: number, debtAmount = 0) => {
+    const currentStats = get().stats;
+    if (!currentStats) return;
+    const nextSales = Number((currentStats.today_sales + amountPaid).toFixed(2));
+    const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
+    const nextDebts = Number(Math.max(0, currentStats.outstanding_debts + debtAmount).toFixed(2));
+    set({
+      stats: {
+        ...currentStats,
+        today_sales: nextSales,
+        today_profit: nextProfit,
+        outstanding_debts: nextDebts,
+      },
+    });
+  },
+
+  applyRepaymentToTodaySales: (amount: number) => {
+    const currentStats = get().stats;
+    if (!currentStats) return;
+    const nextSales = Number((currentStats.today_sales + amount).toFixed(2));
+    const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
+    const nextDebts = Number(Math.max(0, currentStats.outstanding_debts - amount).toFixed(2));
+    set({
+      stats: {
+        ...currentStats,
+        today_sales: nextSales,
+        today_profit: nextProfit,
+        outstanding_debts: nextDebts,
+      },
+    });
+  },
+
   refreshFromCache: async (businessId, branchId) => {
     try {
       const cached = await buildCachedDashboardData(businessId, branchId);
+      const currentStats = get().stats;
+      const safeStats = currentStats
+        ? {
+            ...cached.stats,
+            today_sales: Math.max(cached.stats.today_sales, currentStats.today_sales),
+            today_expenses: Math.max(cached.stats.today_expenses, currentStats.today_expenses),
+            today_profit:
+              Math.max(cached.stats.today_sales, currentStats.today_sales) -
+              Math.max(cached.stats.today_expenses, currentStats.today_expenses),
+            outstanding_debts: Math.max(cached.stats.outstanding_debts, currentStats.outstanding_debts),
+          }
+        : cached.stats;
+
       set({
-        stats: cached.stats,
+        stats: safeStats,
         recentActivities: cached.recentActivities,
         recentDebts: cached.recentDebts,
       });
@@ -100,22 +149,33 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   },
 
   fetchDashboardData: async (businessId, branchId, getStockAlerts) => {
-    // 1. Instantly load from cache for "super fast" feeling
+    // 1. Instantly load from cache for "super fast" feeling, but NEVER regress existing in-memory stats
+    const currentStats = get().stats;
     try {
       const cached = await buildCachedDashboardData(businessId, branchId);
+      const initialSafeStats = currentStats
+        ? {
+            ...cached.stats,
+            today_sales: Math.max(cached.stats.today_sales, currentStats.today_sales),
+            today_expenses: Math.max(cached.stats.today_expenses, currentStats.today_expenses),
+            today_profit:
+              Math.max(cached.stats.today_sales, currentStats.today_sales) -
+              Math.max(cached.stats.today_expenses, currentStats.today_expenses),
+            outstanding_debts: Math.max(cached.stats.outstanding_debts, currentStats.outstanding_debts),
+          }
+        : cached.stats;
+
       set({
-        stats: cached.stats,
-        recentActivities: cached.recentActivities,
-        recentDebts: cached.recentDebts,
-        isLoading: false, // Turn off loader instantly if cache exists
+        stats: initialSafeStats,
+        recentActivities: cached.recentActivities.length > 0 ? cached.recentActivities : get().recentActivities,
+        recentDebts: cached.recentDebts.length > 0 ? cached.recentDebts : get().recentDebts,
+        isLoading: false,
       });
     } catch (err) {
       console.warn('[dashboardStore] Failed to instantly load cache', err);
     }
 
-    // If cache was empty, we still show loading true
-    const currentStats = get().stats;
-    if (!currentStats) set({ isLoading: true });
+    if (!get().stats) set({ isLoading: true });
     set({ error: null });
 
     try {
@@ -212,23 +272,29 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
 
       const resolvedOutstandingDebts = Math.max(totalDebts, latestCached.stats?.outstanding_debts ?? 0);
 
+      const resolvedStats: DashboardStats = {
+        today_sales: resolvedTodaySales,
+        today_profit: resolvedTodayProfit,
+        today_expenses: resolvedTodayExpenses,
+        total_products: productCountRes.count ?? 0,
+        low_stock_count: stockAlerts.lowStockProducts.length,
+        out_of_stock_count: stockAlerts.outOfStockProducts.length,
+        outstanding_debts: resolvedOutstandingDebts,
+        total_customers: customerCountRes.count ?? 0,
+      };
+
       set({
-        stats: {
-          today_sales: resolvedTodaySales,
-          today_profit: resolvedTodayProfit,
-          today_expenses: resolvedTodayExpenses,
-          total_products: productCountRes.count ?? 0,
-          low_stock_count: stockAlerts.lowStockProducts.length,
-          out_of_stock_count: stockAlerts.outOfStockProducts.length,
-          outstanding_debts: resolvedOutstandingDebts,
-          total_customers: customerCountRes.count ?? 0,
-        },
+        stats: resolvedStats,
         recentActivities: recentRevenueRes,
         recentDebts: mergedRecentDebts,
       });
 
-      // Upsert (do NOT replace) cached results so local unsynced debts aren't wiped
+      // Persist results to disk so subsequent reads always have the true numbers
       await Promise.all([
+        writePersistedDashboardStats(businessId, branchId, {
+          date: todayDate,
+          stats: resolvedStats,
+        }),
         upsertCachedCustomerDebts(businessId, branchId, (debtListRes.data as CustomerDebt[]) ?? []),
         upsertCachedExpenses(businessId, branchId, (todayExpensesRes.data as any[]) ?? []),
       ]);

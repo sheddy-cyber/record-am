@@ -26,6 +26,8 @@ import {
   removeCachedRow,
   replaceCachedRows,
   setCachedProductInventory,
+  applyExpenseToPersistedDashboardStats,
+  incrementPersistedDashboardSales,
   upsertCachedCustomerDebts,
   upsertCachedExpenses,
   upsertCachedProducts,
@@ -312,6 +314,12 @@ export async function recordSaleOffline(params: {
     upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'stock_movements', stockMovements),
     debt ? upsertCachedCustomerDebts(params.businessId, params.branchId, [debt]) : Promise.resolve(),
     upsertCachedRevenueActivities(params.businessId, params.branchId, [activity]),
+    incrementPersistedDashboardSales(
+      params.businessId,
+      params.branchId,
+      roundAmount(params.amountPaid),
+      roundAmount(params.amountOwed),
+    ),
   ]);
 
   await enqueueMutations(mutations);
@@ -657,6 +665,7 @@ export async function recordExpenseOffline(params: {
 
   await Promise.all([
     upsertCachedExpenses(params.businessId, params.branchId, [expense]),
+    applyExpenseToPersistedDashboardStats(params.businessId, params.branchId, roundAmount(params.amount)),
     enqueueMutations([
       {
         operation: 'upsert',
@@ -891,6 +900,12 @@ export async function recordRepaymentOffline(params: {
     upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'debt_repayments', [repayment]),
     upsertCachedCustomerDebts(params.businessId, params.branchId, [debt]),
     upsertCachedRevenueActivities(params.businessId, params.branchId, [activity]),
+    incrementPersistedDashboardSales(
+      params.businessId,
+      params.branchId,
+      roundAmount(params.amount),
+      -roundAmount(params.amount),
+    ),
     enqueueMutations(mutations),
   ]);
 

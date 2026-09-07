@@ -74,6 +74,10 @@ export default function RecordPaymentScreen() {
     setSavingRepay(true);
 
     try {
+      if (amount > 0) {
+        useDashboardStore.getState().applyRepaymentToTodaySales(amount);
+      }
+
       await recordRepaymentOffline({
         businessId: currentBusiness.id,
         branchId: currentBranch.id,

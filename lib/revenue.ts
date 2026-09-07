@@ -2,8 +2,8 @@ import { supabase } from '@/lib/supabase';
 import { isDebtSettlementSale } from '@/lib/records';
 import { RevenueActivity, Sale } from '@/types';
 import {
-  cacheRevenueActivities,
   readCachedRevenueActivities,
+  upsertCachedRevenueActivities,
 } from '@/lib/offlineStore';
 
 type SaleRow = Sale & {
@@ -155,20 +155,20 @@ export async function fetchRevenueActivities(
       }));
 
     const serverActivities = [...saleActivities, ...repaymentActivities]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, limit);
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    // Upsert server activities into cache so all activities are preserved
+    await upsertCachedRevenueActivities(businessId, branchId, serverActivities);
 
     const cachedActivities = await readCachedRevenueActivities(businessId, branchId, 500);
     const serverActivityKeys = new Set(serverActivities.map((activity) => `${activity.kind}-${activity.id}`));
-    const activities = [
+    const allActivities = [
       ...serverActivities,
       ...cachedActivities.filter((activity) => !serverActivityKeys.has(`${activity.kind}-${activity.id}`)),
     ]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, limit);
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    await cacheRevenueActivities(businessId, branchId, activities);
-    return activities;
+    return allActivities.slice(0, limit);
   } catch (error) {
     const cached = await readCachedRevenueActivities(businessId, branchId, limit);
     if (cached.length > 0) return cached;

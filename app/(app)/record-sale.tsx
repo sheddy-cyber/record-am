@@ -691,6 +691,10 @@ export default function RecordSaleScreen() {
     try {
       const saleNumber = `OFF-${Date.now().toString(36).toUpperCase()}`;
 
+      if (roundAmount(paidAmount) > 0 || roundAmount(amountOwed) > 0) {
+        useDashboardStore.getState().incrementTodaySales(roundAmount(paidAmount), roundAmount(amountOwed));
+      }
+
       await recordSaleOffline({
         businessId: currentBusiness.id,
         branchId: currentBranch.id,

@@ -60,6 +60,10 @@ export default function RecordDebtScreen() {
     const amount = parseFloat(debtAmount);
 
     try {
+      if (amount > 0) {
+        useDashboardStore.getState().incrementTodaySales(0, amount);
+      }
+
       await recordDebtOffline({
         businessId: currentBusiness.id,
         branchId: currentBranch.id,
