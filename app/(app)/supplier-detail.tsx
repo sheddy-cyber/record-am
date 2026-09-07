@@ -8,7 +8,7 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
 import { deletePurchaseRecord } from '@/lib/recordDeletion';
-import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
@@ -61,50 +61,42 @@ export default function SupplierDetailScreen() {
     }
   }, [currentBusiness, supplierId, fetchSupplierDetail]);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!supplier) return;
-    Alert.alert(
-      'Remove Supplier',
-      `Remove ${supplier.name}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Remove', 
-          style: 'destructive',
-          onPress: async () => {
-            await deleteSupplier(supplier.id);
-            setSelectedSupplier(null);
-            Toast.show({ type: 'success', text1: 'Supplier removed' });
-            closeScreen();
-          }
-        }
-      ]
-    );
+    const confirmed = await confirmModal({
+      title: 'Remove Supplier',
+      message: `Are you sure you want to remove ${supplier.name} from your suppliers list?`,
+      confirmText: 'Remove',
+      type: 'danger',
+    });
+
+    if (confirmed) {
+      await deleteSupplier(supplier.id);
+      setSelectedSupplier(null);
+      Toast.show({ type: 'success', text1: 'Supplier removed' });
+      closeScreen();
+    }
   };
 
-  const handleDeletePurchase = (purchaseId: string) => {
-    Alert.alert(
-      'Delete record',
-      'Delete this supplier goods record?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deletePurchaseRecord(purchaseId);
-              if (supplierId && currentBusiness) {
-                await fetchSupplierDetail(supplierId, currentBusiness.id);
-              }
-              Toast.show({ type: 'success', text1: 'Goods record deleted' });
-            } catch (err: any) {
-              Alert.alert('Unable to delete', err.message ?? 'Please try again.');
-            }
-          }
+  const handleDeletePurchase = async (purchaseId: string) => {
+    const confirmed = await confirmModal({
+      title: 'Delete Goods Record',
+      message: 'Are you sure you want to delete this supplier goods record? This action cannot be undone.',
+      confirmText: 'Delete',
+      type: 'danger',
+    });
+
+    if (confirmed) {
+      try {
+        await deletePurchaseRecord(purchaseId);
+        if (supplierId && currentBusiness) {
+          await fetchSupplierDetail(supplierId, currentBusiness.id);
         }
-      ]
-    );
+        Toast.show({ type: 'success', text1: 'Goods record deleted' });
+      } catch (err: any) {
+        Alert.alert('Unable to delete', err.message ?? 'Please try again.');
+      }
+    }
   };
 
 

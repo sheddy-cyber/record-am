@@ -56,13 +56,20 @@ function getPurchasePrefillUnitCost(mismatch: Mismatch): number {
   return mismatch.unitCost;
 }
 
+import { useAuthStore } from '@/store/authStore';
+
 export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerProps) {
+  const currentBusinessId = useAuthStore((s) => s.currentBusiness?.id);
   const [mismatches, setMismatches] = useState<Mismatch[]>([]);
 
   const loadMismatches = useCallback(async () => {
-    const list = await getMismatches();
+    if (!currentBusinessId) {
+      setMismatches([]);
+      return;
+    }
+    const list = await getMismatches(currentBusinessId);
     setMismatches(list);
-  }, []);
+  }, [currentBusinessId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -80,7 +87,7 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
           text: 'Yes, Dismiss',
           style: 'destructive',
           onPress: async () => {
-            await removeMismatch(mismatch.id);
+            await removeMismatch(mismatch.id, mismatch.businessId);
             await loadMismatches();
             Toast.show({
               type: 'info',

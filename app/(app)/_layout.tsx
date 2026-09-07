@@ -9,6 +9,7 @@ import { LoadingScreen } from '@/components/ui';
 
 import { useDebtStore } from '@/store/debtStore';
 import { useSaleStore } from '@/store/saleStore';
+import { useDashboardStore } from '@/store/dashboardStore';
 
 function Bootloader({ children }: { children: React.ReactNode }) {
   const { currentBusiness, currentBranch } = useAuthStore();
@@ -30,6 +31,7 @@ function Bootloader({ children }: { children: React.ReactNode }) {
         useBusinessStore.getState().hydrateCache(currentBusiness.id),
         currentBranch && useDebtStore.getState().hydrateCache(currentBusiness.id, currentBranch.id),
         useSaleStore.getState().loadPinnedProductIds(currentBusiness.id),
+        useDashboardStore.getState().loadRevenueVisibility(currentBusiness.id),
       ]);
       
       // 2. Allow UI to render with fully loaded cache

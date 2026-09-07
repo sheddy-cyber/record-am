@@ -1,32 +1,74 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAlertStore } from '@/store/alertStore';
-import { ConfirmDialog } from './index';
+import { ConfirmationModal } from './ConfirmationModal';
 
 export function GlobalDialog() {
   const { isVisible, options, hideAlert } = useAlertStore();
+  const [submitting, setSubmitting] = useState(false);
 
   if (!options) return null;
 
-  const handleConfirm = () => {
-    if (options.onConfirm) options.onConfirm();
+  const handleConfirm = async () => {
+    if (options.onConfirm) {
+      try {
+        setSubmitting(true);
+        const res = options.onConfirm();
+        if (res && typeof (res as any).then === 'function') {
+          await res;
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    }
     hideAlert();
   };
 
   const handleCancel = () => {
-    if (options.onCancel) options.onCancel();
+    if (submitting) return;
+    if (options.onCancel) {
+      options.onCancel();
+    }
     hideAlert();
   };
 
+  const formattedButtons = options.buttons?.map((b) => ({
+    text: b.text,
+    style: b.style,
+    onPress: async () => {
+      if (b.onPress) {
+        try {
+          setSubmitting(true);
+          const res = b.onPress();
+          if (res && typeof (res as any).then === 'function') {
+            await res;
+          }
+        } finally {
+          setSubmitting(false);
+        }
+      }
+      hideAlert();
+    },
+  }));
+
   return (
-    <ConfirmDialog
+    <ConfirmationModal
       visible={isVisible}
       title={options.title}
       message={options.message}
-      confirmText={options.confirmText || 'OK'}
-      cancelText={options.cancelText || (options.onCancel ? 'Cancel' : undefined)}
+      buttons={formattedButtons}
+      confirmText={options.confirmText}
+      cancelText={options.cancelText}
       onConfirm={handleConfirm}
       onCancel={handleCancel}
-      type={options.type || 'info'}
-    />
+      type={options.type}
+      icon={options.icon}
+      customIcon={options.customIcon}
+      dismissOnBackdropPress={options.dismissOnBackdropPress}
+      confirmVariant={options.confirmVariant}
+      buttonLayout={options.buttonLayout}
+      loading={submitting}
+    >
+      {options.content}
+    </ConfirmationModal>
   );
 }

@@ -3,10 +3,20 @@ import { supabase } from './supabase';
 import { useBusinessStore } from '@/store/businessStore';
 import { usePurchaseStore } from '@/store/purchaseStore';
 import { roundAmount } from '@/store/purchaseStore';
+import { calculateWeightedAverageCost } from './costing';
 import { sendImmediateNotification } from './notifications';
 import Toast from 'react-native-toast-message';
 
-const MISMATCH_STORAGE_KEY = 'record-am:mismatches:v1';
+import { useAuthStore } from '@/store/authStore';
+import { useNotificationStore } from '@/store/notificationStore';
+
+// Purge legacy unscoped mismatches once
+AsyncStorage.removeItem('record-am:mismatches:v1').catch(() => {});
+
+const getMismatchStorageKey = (businessId?: string | null): string | null => {
+  const bId = businessId || useAuthStore.getState().currentBusiness?.id;
+  return bId ? `record-am:mismatches:${bId}:v2` : null;
+};
 
 export type MismatchType =
   | 'stock_to_purchase_declined'
@@ -29,26 +39,34 @@ export interface Mismatch {
   timestamp: string;
 }
 
-export async function getMismatches(): Promise<Mismatch[]> {
+export async function getMismatches(businessId?: string): Promise<Mismatch[]> {
   try {
-    const raw = await AsyncStorage.getItem(MISMATCH_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const key = getMismatchStorageKey(businessId);
+    if (!key) return [];
+    const raw = await AsyncStorage.getItem(key);
+    const parsed: Mismatch[] = raw ? JSON.parse(raw) : [];
+    const activeBId = businessId || useAuthStore.getState().currentBusiness?.id;
+    return activeBId ? parsed.filter((m) => m.businessId === activeBId) : parsed;
   } catch (err) {
     console.error('[mismatchService] getMismatches failed:', err);
     return [];
   }
 }
 
-export async function saveMismatches(mismatches: Mismatch[]): Promise<void> {
+export async function saveMismatches(mismatches: Mismatch[], businessId?: string): Promise<void> {
   try {
-    await AsyncStorage.setItem(MISMATCH_STORAGE_KEY, JSON.stringify(mismatches));
+    const key = getMismatchStorageKey(businessId || mismatches[0]?.businessId);
+    if (!key) return;
+    await AsyncStorage.setItem(key, JSON.stringify(mismatches));
   } catch (err) {
     console.error('[mismatchService] saveMismatches failed:', err);
   }
 }
 
 export async function addMismatch(mismatch: Omit<Mismatch, 'id' | 'timestamp'>): Promise<void> {
-  const list = await getMismatches();
+  const businessId = mismatch.businessId || useAuthStore.getState().currentBusiness?.id;
+  if (!businessId) return;
+  const list = await getMismatches(businessId);
   
   // Prevent duplicate mismatches for the same product + type
   const exists = list.some(
@@ -66,7 +84,7 @@ export async function addMismatch(mismatch: Omit<Mismatch, 'id' | 'timestamp'>):
   };
 
   list.push(newMismatch);
-  await saveMismatches(list);
+  await saveMismatches(list, businessId);
 
   // Send mismatch notification immediately
   let title = 'Sync Mismatch Alert';
@@ -89,15 +107,26 @@ export async function addMismatch(mismatch: Omit<Mismatch, 'id' | 'timestamp'>):
       type: 'mismatch',
       mismatchId: newMismatch.id,
       productId: mismatch.productId,
+      businessId: mismatch.businessId,
     },
     '/(app)/(tabs)/_inventory'
   );
 }
 
-export async function removeMismatch(id: string): Promise<void> {
-  const list = await getMismatches();
+export async function removeMismatch(id: string, businessId?: string): Promise<void> {
+  const bId = businessId || useAuthStore.getState().currentBusiness?.id;
+  if (!bId) return;
+  const list = await getMismatches(bId);
+  const targetMismatch = list.find((item) => item.id === id);
   const filtered = list.filter((item) => item.id !== id);
-  await saveMismatches(filtered);
+  await saveMismatches(filtered, bId);
+
+  // Mark the corresponding mismatch notification as read
+  try {
+    await useNotificationStore.getState().markMismatchAsRead(id, targetMismatch?.productId);
+  } catch (err) {
+    console.error('[mismatchService] markMismatchAsRead failed:', err);
+  }
 }
 
 export async function reconcileStockToMatchPurchase(mismatch: Mismatch): Promise<boolean> {
@@ -135,9 +164,19 @@ export async function reconcileStockToMatchPurchase(mismatch: Mismatch): Promise
 
     // 3. Update cost price on product if applicable
     if (targetCost > 0) {
+      const currentProduct = useBusinessStore.getState().products.find((p) => p.id === mismatch.productId);
+      const effectiveCost = quantityDelta > 0
+        ? calculateWeightedAverageCost({
+            currentStock: currentQty,
+            currentCostPrice: Number(currentProduct?.cost_price ?? 0),
+            addedQuantity: quantityDelta,
+            newUnitCost: targetCost,
+          })
+        : targetCost;
+
       await supabase
         .from('products')
-        .update({ cost_price: targetCost, updated_at: new Date().toISOString() })
+        .update({ cost_price: effectiveCost, updated_at: new Date().toISOString() })
         .eq('id', mismatch.productId);
     }
 
@@ -160,7 +199,7 @@ export async function reconcileStockToMatchPurchase(mismatch: Mismatch): Promise
     await useBusinessStore.getState().fetchProducts(mismatch.businessId);
 
     // 6. Remove mismatch
-    await removeMismatch(mismatch.id);
+    await removeMismatch(mismatch.id, mismatch.businessId);
     return true;
   } catch (err) {
     console.error('[mismatchService] reconcileStockToMatchPurchase failed:', err);
@@ -216,7 +255,7 @@ export async function reconcilePurchaseToMatchStock(mismatch: Mismatch): Promise
 
       // Reload purchases in store
       await usePurchaseStore.getState().fetchPurchases(mismatch.businessId, mismatch.branchId);
-      await removeMismatch(mismatch.id);
+      await removeMismatch(mismatch.id, mismatch.businessId);
       return true;
     }
 
@@ -327,7 +366,7 @@ export async function reconcilePurchaseToMatchStock(mismatch: Mismatch): Promise
     await usePurchaseStore.getState().fetchPurchases(mismatch.businessId, mismatch.branchId);
 
     // Remove mismatch
-    await removeMismatch(mismatch.id);
+    await removeMismatch(mismatch.id, mismatch.businessId);
     return true;
   } catch (err) {
     console.error('[mismatchService] reconcilePurchaseToMatchStock failed:', err);

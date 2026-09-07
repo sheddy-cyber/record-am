@@ -3,7 +3,32 @@ import { Session, User } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { useTabStore } from '@/store/tabStore';
+import { flushOfflineQueue } from '@/lib/offlineStore';
+import { cancelAllNotifications } from '@/lib/notifications';
+import { useNotificationStore } from '@/store/notificationStore';
+import { useBusinessStore } from '@/store/businessStore';
+import { useCustomerStore } from '@/store/customerStore';
+import { useSupplierStore } from '@/store/supplierStore';
+import { usePurchaseStore } from '@/store/purchaseStore';
+import { useDashboardStore } from '@/store/dashboardStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useSaleStore } from '@/store/saleStore';
+import { useDebtStore } from '@/store/debtStore';
+import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { Business, Branch, UserProfile, UserRole } from '@/types';
+
+export function resetAllAppStores() {
+  try { useNotificationStore.getState().reset(); } catch (_) {}
+  try { useBusinessStore.getState().reset(); } catch (_) {}
+  try { useCustomerStore.getState().reset(); } catch (_) {}
+  try { useSupplierStore.getState().reset(); } catch (_) {}
+  try { usePurchaseStore.getState().reset(); } catch (_) {}
+  try { useDashboardStore.getState().reset(); } catch (_) {}
+  try { useAnalyticsStore.getState().reset(); } catch (_) {}
+  try { useSaleStore.getState().reset(); } catch (_) {}
+  try { useDebtStore.getState().reset(); } catch (_) {}
+  try { useDailyBalanceStore.getState().reset(); } catch (_) {}
+}
 
 const AUTH_CONTEXT_STORAGE_KEY = 'record-am:auth-context:v1';
 
@@ -63,8 +88,8 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setSession: (session) => set((state) => {
     if (!session) {
-      // A cached profile or business is useful only after a valid Supabase
-      // session has been restored. Never let it stand in for authentication.
+      resetAllAppStores();
+      cancelAllNotifications().catch(() => {});
       return {
         session: null,
         user: null,
@@ -76,6 +101,10 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
 
     const changedUser = Boolean(state.user && state.user.id !== session.user.id);
+    if (changedUser) {
+      resetAllAppStores();
+      cancelAllNotifications().catch(() => {});
+    }
     return {
       session,
       user: session.user,
@@ -95,6 +124,9 @@ export const useAuthStore = create<AuthState>((set) => ({
   setUserRole: (role) => set({ userRole: role }),
 
   signOut: async () => {
+    try { await flushOfflineQueue(); } catch (_) {}
+    try { await cancelAllNotifications(); } catch (_) {}
+    try { resetAllAppStores(); } catch (_) {}
     try { await supabase.auth.signOut(); } catch (_) {}
     try { await AsyncStorage.removeItem(AUTH_CONTEXT_STORAGE_KEY); } catch (_) {}
     useTabStore.getState().setActiveTab('dashboard');
@@ -121,6 +153,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const { data: { session }, error } = await supabase.auth.getSession();
       
       if (error || !session) {
+        resetAllAppStores();
         set({
           session: null,
           user: null,
@@ -137,6 +170,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ session, user: session?.user ?? null });
 
       if (session?.user) {
+        useNotificationStore.getState().loadNotifications(session.user.id).catch(() => {});
         let hasInitializedFromCache = false;
 
         // 1. Optimistically load from cache immediately so splash screen dismisses instantly

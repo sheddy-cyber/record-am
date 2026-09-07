@@ -63,7 +63,7 @@ const fmt = (n: number) =>
 const fmtCount = (n: number) => n.toLocaleString();
 
 export default function AnalyticsScreen() {
-  const { currentBusiness, currentBranch } = useAuthStore();
+  const { currentBusiness, currentBranch, userRole } = useAuthStore();
   const { products } = useBusinessStore();
   const {
     summary,
@@ -77,7 +77,12 @@ export default function AnalyticsScreen() {
     fetchAnalytics,
   } = useAnalyticsStore();
 
-
+  // Redirect staff away — analytics is owner-only
+  useEffect(() => {
+    if (userRole && userRole !== 'owner') {
+      router.replace('/(app)/(tabs)');
+    }
+  }, [userRole]);
 
   const load = useCallback(() => {
     if (currentBusiness && currentBranch) {
@@ -180,65 +185,116 @@ export default function AnalyticsScreen() {
           </View>
         ) : (
           <View style={{ padding: 20, gap: 24 }}>
-            <View>
-              <SectionHeader title="Key Metrics" />
-              <View style={{ gap: 12, marginBottom: 12 }}>
-                <MetricCard
-                  label="Revenue"
-                  value={fmt(summary?.total_revenue ?? 0)}
-                  growth={summary?.revenue_growth}
-                  icon="dollar-sign"
-                  color={COLORS.ink}
-                  subtext="Total cash collected from sales and debt repayments"
-                />
-                <MetricCard
-                  label="Gross Profit"
-                  value={fmt(summary?.gross_profit ?? 0)}
-                  icon="trending-up"
-                  color={COLORS.accent}
-                  subtext="Total revenue minus cost of goods sold"
-                />
-                <MetricCard
-                  label="Net Profit"
-                  value={fmt(summary?.net_profit ?? 0)}
-                  growth={summary?.profit_growth}
-                  icon="activity"
-                  color={COLORS.success}
-                  subtext="Gross profit minus all operating expenses"
-                />
-                <MetricCard
-                  label="Expenses"
-                  value={fmt(summary?.total_expenses ?? 0)}
-                  icon="credit-card"
-                  color={COLORS.danger}
-                  subtext="Total business expenses recorded"
-                />
-                <MetricCard
-                  label="Transactions"
-                  value={String(summary?.total_transactions ?? 0)}
-                  icon="shopping-bag"
-                  color={COLORS.warning}
-                  subtext={`Average transaction value: ${fmt(summary?.avg_transaction_value ?? 0)}`}
-                />
-              </View>
-              <RoleGate allowedRoles={['owner']}>
-                <View style={{ gap: 12, marginTop: 12 }}>
-                  <MetricCard
-                    label="Business Net Worth"
-                    value={fmt(summary?.historical_stock_value ?? 0)}
-                    icon="briefcase"
-                    color={COLORS.accent}
-                    subtext="Total selling prices of all stock as of selected period"
-                  />
-                  <MetricCard
-                    label="Stock Items"
-                    value={fmtCount(summary?.historical_stock_items ?? 0)}
-                    icon="package"
-                    color={COLORS.ink}
-                    subtext="Total quantity of stock items as of selected period"
-                  />
+            <View style={{ gap: 8 }}>
+              <SectionHeader title="Financial Overview" />
+              <Card style={{ padding: 20 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                  <View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: COLORS.ink + '14', alignItems: 'center', justifyContent: 'center' }}>
+                        <Feather name="dollar-sign" size={14} color={COLORS.ink} />
+                      </View>
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.secondary }}>Total Revenue</Text>
+                    </View>
+                    <Text style={{ fontSize: 32, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 4 }}>
+                      {fmt(summary?.total_revenue ?? 0)}
+                    </Text>
+                  </View>
+                  {summary?.revenue_growth !== undefined && summary.revenue_growth !== 0 && (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: summary.revenue_growth >= 0 ? COLORS.successLight : COLORS.dangerLight,
+                        borderRadius: RADIUS.full,
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        gap: 2,
+                      }}
+                    >
+                      <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: summary.revenue_growth >= 0 ? COLORS.success : COLORS.danger }}>
+                        {summary.revenue_growth >= 0 ? '+' : ''}{summary.revenue_growth.toFixed(1)}%
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              </RoleGate>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 8 }}>
+                  Total cash collected from sales
+                </Text>
+
+                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 16 }} />
+
+                <View style={{ flexDirection: 'row' }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Expenses</Text>
+                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                      {fmt(summary?.total_expenses ?? 0)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
+                      Total money spent
+                    </Text>
+                  </View>
+                  <View style={{ width: 1, backgroundColor: COLORS.border }} />
+                  <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Gross Profit</Text>
+                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accent, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                      {fmt(summary?.gross_profit ?? 0)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
+                      Rev. minus goods cost
+                    </Text>
+                  </View>
+                  <View style={{ width: 1, backgroundColor: COLORS.border }} />
+                  <View style={{ flex: 1, paddingLeft: 8 }}>
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Net Profit</Text>
+                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.success, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                      {fmt(summary?.net_profit ?? 0)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
+                      After all expenses
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 16 }} />
+                
+                <View style={{ flexDirection: 'row' }}>
+                  <View style={{ flex: 1, paddingRight: 8 }}>
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Transactions</Text>
+                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.warning, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                      {String(summary?.total_transactions ?? 0)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
+                      Avg: {fmt(summary?.avg_transaction_value ?? 0)}
+                    </Text>
+                  </View>
+                  
+                  <RoleGate allowedRoles={['owner']}>
+                    <React.Fragment>
+                      <View style={{ width: 1, backgroundColor: COLORS.border }} />
+                      <View style={{ flex: 1, paddingHorizontal: 8 }}>
+                        <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Stock Items</Text>
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.ink, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                          {fmtCount(summary?.historical_stock_items ?? 0)}
+                        </Text>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
+                          Total quantity
+                        </Text>
+                      </View>
+                      <View style={{ width: 1, backgroundColor: COLORS.border }} />
+                      <View style={{ flex: 1, paddingLeft: 8 }}>
+                        <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Net Worth</Text>
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accent, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
+                          {fmt(summary?.historical_stock_value ?? 0)}
+                        </Text>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
+                          Est. stock value
+                        </Text>
+                      </View>
+                    </React.Fragment>
+                  </RoleGate>
+                </View>
+              </Card>
             </View>
 
             <Card>
@@ -252,7 +308,6 @@ export default function AnalyticsScreen() {
                   <LineChart
                     data={barData}
                     showSecondary
-                    formatValue={fmt}
                     color={COLORS.ink}
                     secondaryColor={COLORS.success}
                   />
@@ -285,8 +340,8 @@ export default function AnalyticsScreen() {
                 </Text>
               ) : (
                 <BarChart
-                  data={salesTrend.map((point) => ({ label: point.label, value: point.revenue }))}
-                  formatValue={fmt}
+                  data={salesTrend.map((point) => ({ label: point.label, value: point.transactions }))}
+                  formatValue={(v) => Math.round(v).toString()}
                   color={COLORS.ink}
                 />
               )}
@@ -375,7 +430,7 @@ export default function AnalyticsScreen() {
                 </Text>
               ) : (
                 <View style={{ flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-                  <DonutChart data={expensePieData} centerLabel={fmt(totalExpenses)} centerSubLabel="Total" />
+                  <DonutChart data={expensePieData} size={180} thickness={32} centerLabel={fmt(totalExpenses)} centerSubLabel="Total" />
                   <View style={{ width: '100%' }}>
                     <ChartLegend
                       items={expensePieData.map((item) => ({

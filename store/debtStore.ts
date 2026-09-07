@@ -10,6 +10,7 @@ interface DebtState {
 
   hydrateCache: (businessId: string, branchId: string) => Promise<void>;
   fetchDebts: (businessId: string, branchId: string) => Promise<void>;
+  reset: () => void;
 }
 
 export const useDebtStore = create<DebtState>((set, get) => ({
@@ -93,4 +94,11 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       set({ isLoading: false });
     }
   },
+
+  reset: () =>
+    set({
+      debts: [],
+      isLoading: false,
+      error: null,
+    }),
 }));

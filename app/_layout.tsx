@@ -18,6 +18,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { GlobalDialog } from '@/components/ui';
+import '@/lib/alertBridge';
 
 // Keep the native splash screen visible until our JS AnimatedSplashScreen renders
 SplashScreen.preventAutoHideAsync().catch(() => undefined);

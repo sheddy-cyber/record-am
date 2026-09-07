@@ -11,6 +11,7 @@ interface SaleState {
   loadPinnedProductIds: (businessId: string) => Promise<void>;
   togglePinnedProduct: (businessId: string, productId: string) => Promise<void>;
   loadSoldProductQuantities: (businessId: string, branchId: string) => Promise<void>;
+  reset: () => void;
 }
 
 export const useSaleStore = create<SaleState>((set, get) => ({
@@ -77,4 +78,12 @@ export const useSaleStore = create<SaleState>((set, get) => ({
       set({ soldProductQuantities: {}, hasLoadedSold: true });
     }
   },
+
+  reset: () =>
+    set({
+      pinnedProductIds: [],
+      soldProductQuantities: {},
+      hasLoadedPinned: false,
+      hasLoadedSold: false,
+    }),
 }));

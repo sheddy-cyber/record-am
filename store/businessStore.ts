@@ -66,6 +66,7 @@ interface BusinessState {
   updateProduct: (id: string, data: Partial<Product>) => Promise<void>;
   getLowStockProducts: (businessId: string, branchId: string) => Promise<Product[]>;
   getStockAlerts: (businessId: string, branchId: string) => Promise<StockAlertSummary>;
+  reset: () => void;
 }
 
 export const useBusinessStore = create<BusinessState>((set, get) => ({
@@ -165,6 +166,47 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
       if (error) throw error;
       const serverProducts = (data ?? []) as Product[];
+
+      // Auto-heal: If any physical products have missing/zero cost_price, check if purchase_items has their unit_cost
+      const zeroCostProductIds = serverProducts
+        .filter((p) => !p.is_service && (!p.cost_price || Number(p.cost_price) === 0))
+        .map((p) => p.id);
+
+      if (zeroCostProductIds.length > 0) {
+        try {
+          const { data: latestPurchasedItems } = await supabase
+            .from('purchase_items')
+            .select('product_id, unit_cost, created_at')
+            .in('product_id', zeroCostProductIds)
+            .gt('unit_cost', 0)
+            .order('created_at', { ascending: false });
+
+          if (latestPurchasedItems && latestPurchasedItems.length > 0) {
+            const costByProduct = new Map<string, number>();
+            for (const pi of latestPurchasedItems) {
+              if (!costByProduct.has(pi.product_id)) {
+                costByProduct.set(pi.product_id, Number(pi.unit_cost));
+              }
+            }
+
+            for (const [prodId, unitCost] of costByProduct.entries()) {
+              const p = serverProducts.find((prod) => prod.id === prodId);
+              if (p) {
+                p.cost_price = unitCost;
+                void supabase.from('products').update({ cost_price: unitCost }).eq('id', prodId);
+                void supabase
+                  .from('sale_items')
+                  .update({ cost_price: unitCost })
+                  .eq('product_id', prodId)
+                  .or('cost_price.is.null,cost_price.eq.0');
+              }
+            }
+          }
+        } catch (healErr) {
+          console.warn('[fetchProducts] auto-heal cost price error:', healErr);
+        }
+      }
+
       const cachedProducts = await readCachedProducts(businessId);
       const serverProductIds = new Set(serverProducts.map((product) => product.id));
       const localOnlyProducts = cachedProducts.filter((product) => !serverProductIds.has(product.id));
@@ -467,4 +509,14 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       return { lowStockProducts: [], outOfStockProducts: [] };
     }
   },
+
+  reset: () =>
+    set({
+      businesses: [],
+      branches: [],
+      categories: [],
+      products: [],
+      isLoading: false,
+      error: null,
+    }),
 }));

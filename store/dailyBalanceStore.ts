@@ -21,6 +21,7 @@ interface DailyBalanceState {
     notes: string
   ) => Promise<boolean>;
   reopenDay: (businessId: string, branchId: string) => Promise<boolean>;
+  reset: () => void;
 }
 
 export const useDailyBalanceStore = create<DailyBalanceState>((set, get) => ({
@@ -97,4 +98,14 @@ export const useDailyBalanceStore = create<DailyBalanceState>((set, get) => ({
       set({ isSaving: false });
     }
   },
+
+  reset: () =>
+    set({
+      summary: null,
+      entries: [],
+      isLoading: false,
+      isSaving: false,
+      error: null,
+      selectedDate: format(new Date(), 'yyyy-MM-dd'),
+    }),
 }));

@@ -12,8 +12,10 @@ import { Badge, Button, Card, EmptyState, LoadingScreen, SectionHeader } from '@
 import { ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
-const formatCurrency = (value: number) =>
-  `${CURRENCY_SYMBOL}${Math.abs(value).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+const formatCurrency = (value: number) => {
+  const isNegative = value < 0;
+  return `${isNegative ? '-' : ''}${CURRENCY_SYMBOL}${Math.abs(value).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+};
 
 export default function DailyBalanceScreen() {
   const { currentBusiness, currentBranch } = useAuthStore();
@@ -194,7 +196,6 @@ export default function DailyBalanceScreen() {
                       color: (summary?.net_profit ?? 0) >= 0 ? COLORS.success : COLORS.danger,
                     }}
                   >
-                    {(summary?.net_profit ?? 0) < 0 ? '-' : ''}
                     {formatCurrency(summary?.net_profit ?? 0)}
                   </Text>
                   <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>after all expenses</Text>
@@ -304,7 +305,7 @@ export default function DailyBalanceScreen() {
                           <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>{entry.description}</Text>
                           <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 2 }}>
                             {format(new Date(entry.time), 'h:mm a')}
-                            {' \u00B7 '}
+                            {' · '}
                             {entry.payment_method.toUpperCase()}
                           </Text>
                         </View>

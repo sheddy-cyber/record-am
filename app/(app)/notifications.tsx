@@ -12,6 +12,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useTabStore } from '@/store/tabStore';
+import { useAuthStore } from '@/store/authStore';
 import {
   InAppNotification,
   NotificationType,
@@ -55,6 +56,7 @@ const TYPE_CONFIG: Record<
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
+  const userId = useAuthStore((s) => s.user?.id);
   const {
     notifications,
     isLoaded,
@@ -68,14 +70,14 @@ export default function NotificationsScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await loadNotifications();
+      await loadNotifications(userId);
     } catch (_) {}
     setRefreshing(false);
-  }, [loadNotifications]);
+  }, [loadNotifications, userId]);
 
   useEffect(() => {
-    loadNotifications();
-  }, []);
+    loadNotifications(userId);
+  }, [loadNotifications, userId]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -149,7 +151,7 @@ export default function NotificationsScreen() {
           notifications.length > 0 ? (
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={markAllAsRead}
+              onPress={() => markAllAsRead(userId)}
               style={{
                 paddingHorizontal: 12,
                 paddingVertical: 6,
@@ -209,7 +211,7 @@ export default function NotificationsScreen() {
                 : 'All notifications read'}
             </Text>
 
-            <TouchableOpacity activeOpacity={0.7} onPress={clearAll}>
+            <TouchableOpacity activeOpacity={0.7} onPress={() => clearAll(userId)}>
               <Text
                 style={{
                   fontSize: 13,

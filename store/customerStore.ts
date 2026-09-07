@@ -32,6 +32,7 @@ interface CustomerState {
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
   setSelectedCustomer: (customer: CustomerWithStats | null) => void;
+  reset: () => void;
 }
 
 export const useCustomerStore = create<CustomerState>((set, get) => ({
@@ -302,4 +303,15 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
   },
 
   setSelectedCustomer: (customer) => set({ selectedCustomer: customer }),
+
+  reset: () =>
+    set({
+      customers: [],
+      selectedCustomer: null,
+      customerSales: [],
+      customerDebts: [],
+      isLoading: false,
+      isSaving: false,
+      error: null,
+    }),
 }));

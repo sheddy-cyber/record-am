@@ -16,11 +16,15 @@ import { useBusinessStore } from '@/store/businessStore';
 import { createAltUnitNote, getSaleUnitOption } from '@/lib/records';
 import {
   adjustCachedProductInventory,
+  cacheExpenses,
   createLocalId,
   enqueueMutations,
   nowIso,
+  readCachedExpenses,
   readCachedProducts,
   readCachedRows,
+  removeCachedRow,
+  replaceCachedRows,
   setCachedProductInventory,
   upsertCachedCustomerDebts,
   upsertCachedExpenses,
@@ -28,6 +32,7 @@ import {
   upsertCachedRevenueActivities,
   upsertCachedRows,
 } from '@/lib/offlineStore';
+import { supabase } from '@/lib/supabase';
 
 const roundAmount = (value: number) => Number(value.toFixed(2));
 
@@ -313,6 +318,318 @@ export async function recordSaleOffline(params: {
   return { sale, activity, debt };
 }
 
+export async function updateSaleOffline(params: {
+  saleId: string;
+  businessId: string;
+  branchId: string;
+  userId: string;
+  cart: CartItem[];
+  customerName?: string;
+  customerPhone?: string;
+  paymentMethod: PaymentMethod;
+  notes?: string;
+  subtotal: number;
+  discountAmount: number;
+  totalAmount: number;
+  amountPaid: number;
+  amountOwed: number;
+  paymentStatus: PaymentStatus;
+}) {
+  const timestamp = nowIso();
+  const customerName = params.customerName?.trim() || '';
+  const customerPhone = params.customerPhone?.trim() || '';
+
+  // 1. Resolve or create customer if name was provided
+  let customerId: string | undefined = undefined;
+  let customer: Customer | null = null;
+
+  if (customerName) {
+    const cachedCustomers = await readCachedRows<Customer>(
+      { businessId: params.businessId },
+      'customers',
+    );
+    const existing = cachedCustomers.find(
+      (c) => c.name.toLowerCase() === customerName.toLowerCase(),
+    );
+
+    if (existing) {
+      customerId = existing.id;
+      customer = existing;
+    } else {
+      customerId = createLocalId();
+      const newCustomer: Customer = {
+        id: customerId,
+        business_id: params.businessId,
+        name: customerName,
+        phone: customerPhone || undefined,
+        is_active: true,
+        created_at: timestamp,
+        updated_at: timestamp,
+      };
+      customer = newCustomer;
+      await upsertCachedRows({ businessId: params.businessId }, 'customers', [newCustomer]);
+    }
+  }
+
+  // 2. Load original sale and items to calculate stock delta
+  const cachedSales = await readCachedRows<Sale>(
+    { businessId: params.businessId, branchId: params.branchId },
+    'sales',
+  );
+  let originalSale = cachedSales.find((s) => s.id === params.saleId);
+  if (!originalSale) {
+    try {
+      const { data } = await supabase
+        .from('sales')
+        .select('*, customer:customers(*)')
+        .eq('id', params.saleId)
+        .maybeSingle();
+      if (data) originalSale = data as any;
+    } catch (_) {}
+  }
+
+  const cachedItems = await readCachedRows<SaleItem>(
+    { businessId: params.businessId, branchId: params.branchId },
+    'sale_items',
+  );
+  let originalItems = cachedItems.filter((i) => i.sale_id === params.saleId);
+  if (originalItems.length === 0) {
+    try {
+      const { data } = await supabase
+        .from('sale_items')
+        .select('*, product:products(*)')
+        .eq('sale_id', params.saleId);
+      if (data) originalItems = data as any;
+    } catch (_) {}
+  }
+
+  // 3. Reconcile inventory stock differences
+  const oldStockByProduct = new Map<string, number>();
+  for (const item of originalItems) {
+    const pId = item.product_id;
+    const qty = Number(item.quantity || 0);
+    oldStockByProduct.set(pId, (oldStockByProduct.get(pId) ?? 0) + qty);
+  }
+
+  const newStockByProduct = new Map<string, number>();
+  for (const item of params.cart) {
+    const pId = item.product.id;
+    const stockQty = Number(item.stock_quantity ?? item.quantity ?? 0);
+    newStockByProduct.set(pId, (newStockByProduct.get(pId) ?? 0) + stockQty);
+  }
+
+  const allProductIds = new Set([...oldStockByProduct.keys(), ...newStockByProduct.keys()]);
+  const mutations: Parameters<typeof enqueueMutations>[0] = [];
+
+  for (const productId of allProductIds) {
+    const memoryProduct = useBusinessStore.getState().products.find((p) => p.id === productId);
+    if (memoryProduct?.is_service) continue;
+
+    const oldQty = oldStockByProduct.get(productId) ?? 0;
+    const newQty = newStockByProduct.get(productId) ?? 0;
+    const delta = roundAmount(oldQty - newQty); // + means return to inventory, - means deduct more
+
+    if (delta !== 0) {
+      const currentStock = await getCachedOrMemoryStock(params.businessId, params.branchId, productId);
+      const nextStock = Math.max(0, roundAmount(currentStock + delta));
+      await adjustCachedProductInventory(params.businessId, params.branchId, productId, delta);
+      patchProductInventoryInMemory(productId, params.branchId, nextStock);
+
+      mutations.push({
+        operation: 'inventory_adjust',
+        payload: {
+          product_id: productId,
+          branch_id: params.branchId,
+          delta,
+        },
+        description: `Adjust stock delta (${delta > 0 ? '+' : ''}${delta}) for product`,
+      });
+    }
+  }
+
+  // 4. Update sales record
+  const saleNumber = originalSale?.sale_number ?? `REC-${Date.now().toString(36).toUpperCase()}`;
+  const updatedSale: CachedSale = {
+    id: params.saleId,
+    business_id: params.businessId,
+    branch_id: params.branchId,
+    customer_id: customerId ?? originalSale?.customer_id ?? undefined,
+    sale_number: saleNumber,
+    subtotal: roundAmount(params.subtotal),
+    discount_amount: roundAmount(params.discountAmount),
+    tax_amount: 0,
+    total_amount: roundAmount(params.totalAmount),
+    amount_paid: roundAmount(params.amountPaid),
+    amount_owed: roundAmount(params.amountOwed),
+    payment_status: params.paymentStatus,
+    payment_method: params.paymentMethod,
+    notes: params.notes || undefined,
+    sold_by: originalSale?.sold_by ?? params.userId,
+    created_at: originalSale?.created_at ?? timestamp,
+    updated_at: timestamp,
+    customer: customer
+      ? { name: customer.name, phone: customer.phone }
+      : undefined,
+  };
+
+  if (customer) {
+    mutations.push({
+      operation: 'upsert',
+      table: 'customers',
+      payload: customer,
+      onConflict: 'id',
+      description: `Sync customer ${customer.name}`,
+    });
+  }
+
+  mutations.push({
+    operation: 'upsert',
+    table: 'sales',
+    payload: { ...updatedSale, customer: undefined },
+    onConflict: 'id',
+    description: `Update sale ${updatedSale.sale_number}`,
+  });
+
+  // 5. Replace sale_items
+  mutations.push({
+    operation: 'delete',
+    table: 'sale_items',
+    match: { sale_id: params.saleId },
+    description: `Clear old items for sale ${params.saleId}`,
+  });
+
+  const newSaleItems: CachedSaleItem[] = [];
+  for (const item of params.cart) {
+    const saleItem: CachedSaleItem = {
+      id: createLocalId(),
+      sale_id: params.saleId,
+      product_id: item.product.id,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      cost_price: roundAmount(
+        item.product.cost_price *
+          getSaleUnitOption(item.product, item.sale_unit, item.bundle_size).stockFactor,
+      ),
+      discount_amount: item.discount_amount,
+      total_price: item.total_price,
+      created_at: timestamp,
+      product: { id: item.product.id, name: item.product.name },
+    };
+    newSaleItems.push(saleItem);
+    mutations.push({
+      operation: 'upsert',
+      table: 'sale_items',
+      payload: { ...saleItem, product: undefined },
+      onConflict: 'id',
+      description: `Sync sale item ${item.product.name}`,
+    });
+  }
+
+  // 6. Synchronize Customer Debt
+  const cachedDebts = await readCachedRows<CustomerDebt>(
+    { businessId: params.businessId, branchId: params.branchId },
+    'customer_debts',
+  );
+  const existingDebt = cachedDebts.find((d) => d.sale_id === params.saleId);
+
+  let resultingDebt: CustomerDebt | null = null;
+  if (params.amountOwed > 0 && customerName) {
+    if (existingDebt) {
+      const updatedDebt: CustomerDebt = {
+        ...existingDebt,
+        customer_id: customerId ?? existingDebt.customer_id,
+        customer_name: customerName,
+        customer_phone: customerPhone || existingDebt.customer_phone,
+        original_amount: roundAmount(params.totalAmount),
+        amount_paid: roundAmount(params.amountPaid),
+        balance: roundAmount(params.amountOwed),
+        status: params.paymentStatus === 'partial' ? 'partial' : 'outstanding',
+        notes: params.notes || existingDebt.notes,
+        updated_at: timestamp,
+      };
+      resultingDebt = updatedDebt;
+      mutations.push({
+        operation: 'upsert',
+        table: 'customer_debts',
+        payload: updatedDebt,
+        onConflict: 'id',
+        description: `Update debt for ${updatedDebt.customer_name}`,
+      });
+    } else {
+      const newDebt: CustomerDebt = {
+        id: createLocalId(),
+        business_id: params.businessId,
+        branch_id: params.branchId,
+        customer_id: customerId,
+        sale_id: params.saleId,
+        customer_name: customerName,
+        customer_phone: customerPhone || undefined,
+        original_amount: roundAmount(params.totalAmount),
+        amount_paid: roundAmount(params.amountPaid),
+        balance: roundAmount(params.amountOwed),
+        status: params.paymentStatus === 'partial' ? 'partial' : 'outstanding',
+        notes: params.notes || undefined,
+        created_at: timestamp,
+        updated_at: timestamp,
+      };
+      resultingDebt = newDebt;
+      mutations.push({
+        operation: 'upsert',
+        table: 'customer_debts',
+        payload: newDebt,
+        onConflict: 'id',
+        description: `Create debt for ${newDebt.customer_name}`,
+      });
+    }
+  } else if (existingDebt && params.amountOwed <= 0) {
+    mutations.push({
+      operation: 'delete',
+      table: 'customer_debts',
+      match: { id: existingDebt.id },
+      description: `Remove settled debt for sale ${params.saleId}`,
+    });
+  }
+
+  // 7. Update activity for local UI
+  const activity: RevenueActivity = {
+    id: updatedSale.id,
+    kind: 'sale',
+    customer_name: customerName || 'Walk-in Customer',
+    customer_phone: customerPhone || undefined,
+    reference: updatedSale.sale_number,
+    total_amount: updatedSale.total_amount,
+    amount_paid: updatedSale.amount_paid,
+    amount_owed: updatedSale.amount_owed,
+    payment_status: updatedSale.payment_status,
+    payment_method: updatedSale.payment_method,
+    notes: updatedSale.notes,
+    created_at: updatedSale.created_at,
+    sale_id: updatedSale.id,
+    items: newSaleItems.map((si) => ({
+      product_name: si.product?.name ?? 'Item',
+      quantity: si.quantity,
+      unit_price: si.unit_price,
+      total_price: si.total_price,
+    })),
+  };
+
+  // 8. Update caches
+  const otherItems = cachedItems.filter((i) => i.sale_id !== params.saleId);
+  await Promise.all([
+    upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'sales', [updatedSale as Sale]),
+    replaceCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'sale_items', [...otherItems, ...(newSaleItems as SaleItem[])]),
+    resultingDebt
+      ? upsertCachedCustomerDebts(params.businessId, params.branchId, [resultingDebt])
+      : existingDebt
+      ? removeCachedRow({ businessId: params.businessId, branchId: params.branchId }, 'customer_debts', existingDebt.id)
+      : Promise.resolve(),
+    upsertCachedRevenueActivities(params.businessId, params.branchId, [activity]),
+  ]);
+
+  await enqueueMutations(mutations);
+  return { sale: updatedSale, activity, debt: resultingDebt };
+}
+
 export async function recordExpenseOffline(params: {
   businessId: string;
   branchId: string;
@@ -352,6 +669,61 @@ export async function recordExpenseOffline(params: {
   ]);
 
   return expense;
+}
+
+export async function updateExpenseOffline(params: {
+  businessId: string;
+  branchId: string;
+  expense: Expense;
+  category: string;
+  description: string;
+  amount: number;
+  paymentMethod: PaymentMethod;
+  expenseDate: string;
+}) {
+  const timestamp = nowIso();
+  const updated: Expense = {
+    ...params.expense,
+    category: params.category,
+    description: params.description,
+    amount: roundAmount(params.amount),
+    payment_method: params.paymentMethod,
+    expense_date: params.expenseDate,
+    updated_at: timestamp,
+  };
+
+  await Promise.all([
+    upsertCachedExpenses(params.businessId, params.branchId, [updated]),
+    enqueueMutations([
+      {
+        operation: 'upsert',
+        table: 'expenses',
+        payload: updated,
+        onConflict: 'id',
+        description: `Update expense ${updated.description}`,
+      },
+    ]),
+  ]);
+
+  return updated;
+}
+
+export async function deleteExpenseOffline(params: {
+  businessId: string;
+  branchId: string;
+  expenseId: string;
+}) {
+  const current = await readCachedExpenses(params.businessId, params.branchId);
+  const filtered = current.filter((e) => e.id !== params.expenseId);
+  await cacheExpenses(params.businessId, params.branchId, filtered);
+  await enqueueMutations([
+    {
+      operation: 'delete',
+      table: 'expenses',
+      match: { id: params.expenseId },
+      description: `Delete expense ${params.expenseId}`,
+    },
+  ]);
 }
 
 export async function recordDebtOffline(params: {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -10,7 +10,7 @@ import {
   InteractionManager,
   RefreshControl,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,11 +19,13 @@ import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useDebtStore } from '@/store/debtStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useSaleStore } from '@/store/saleStore';
 import { useTabStore } from '@/store/tabStore';
 import { supabase } from '@/lib/supabase';
-import { recordSaleOffline } from '@/lib/offlineRecords';
+import { recordSaleOffline, updateSaleOffline } from '@/lib/offlineRecords';
+import { readCachedRows } from '@/lib/offlineStore';
 import {
   getDefaultBundleSize,
   getSaleUnitOption,
@@ -34,7 +36,7 @@ import { Button, Card, Divider, LoadingScreen, SectionHeader } from '@/component
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, PAYMENT_METHODS, RADIUS } from '@/constants';
-import { CartItem, PaymentMethod, Product } from '@/types';
+import { CartItem, PaymentMethod, Product, Sale, SaleItem } from '@/types';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -77,6 +79,13 @@ export default function RecordSaleScreen() {
     loadSoldProductQuantities,
   } = useSaleStore();
 
+  const { saleId } = useLocalSearchParams<{ saleId?: string }>();
+  const isEditing = Boolean(saleId);
+  const [loadingSale, setLoadingSale] = useState(false);
+  const originalQuantitiesByProduct = useRef<Map<string, number>>(new Map());
+  const prevCartTotalRef = useRef<number | null>(null);
+  const autoAdjustAmountPaidRef = useRef<boolean>(true);
+
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -111,7 +120,9 @@ export default function RecordSaleScreen() {
 
   const getProductStock = useCallback((product: Product) => {
     if (!currentBranch) return 0;
-    return product.inventory?.find((inventoryItem) => inventoryItem.branch_id === currentBranch.id)?.quantity ?? 0;
+    const baseStock = product.inventory?.find((inventoryItem) => inventoryItem.branch_id === currentBranch.id)?.quantity ?? 0;
+    const originalQty = originalQuantitiesByProduct.current.get(product.id) ?? 0;
+    return baseStock + originalQty;
   }, [currentBranch]);
 
   const buildCartItem = useCallback(
@@ -148,6 +159,107 @@ export default function RecordSaleScreen() {
     },
     [],
   );
+
+  useEffect(() => {
+    if (!saleId || !currentBusiness || !currentBranch) return;
+
+    const businessId = currentBusiness.id;
+    const branchId = currentBranch.id;
+    let isMounted = true;
+    async function loadSaleToEdit() {
+      setLoadingSale(true);
+      try {
+        let currentProducts = useBusinessStore.getState().products;
+        if (currentProducts.length === 0) {
+          await useBusinessStore.getState().fetchProducts(businessId);
+          currentProducts = useBusinessStore.getState().products;
+        }
+
+        const [cachedSales, cachedItems] = await Promise.all([
+          readCachedRows<Sale>({ businessId, branchId }, 'sales'),
+          readCachedRows<SaleItem>({ businessId, branchId }, 'sale_items'),
+        ]);
+
+        let sale: any = cachedSales.find((s) => s.id === saleId);
+        let items: any[] = cachedItems.filter((i) => i.sale_id === saleId);
+
+        if (!sale || items.length === 0) {
+          try {
+            const { data: remoteSale } = await supabase
+              .from('sales')
+              .select('*, customer:customers(*)')
+              .eq('id', saleId)
+              .maybeSingle();
+            if (remoteSale) sale = remoteSale;
+
+            const { data: remoteItems } = await supabase
+              .from('sale_items')
+              .select('*, product:products(*)')
+              .eq('sale_id', saleId);
+            if (remoteItems && remoteItems.length > 0) items = remoteItems;
+          } catch (e) {
+            console.error('Error fetching sale from supabase', e);
+          }
+        }
+
+        if (!sale || !isMounted) return;
+
+        setCustomerName(sale.customer?.name ?? '');
+        setCustomerPhone(sale.customer?.phone ?? '');
+        setPaymentMethod((sale.payment_method as PaymentMethod) || 'cash');
+
+        const salePaid = sale.amount_paid != null ? Number(sale.amount_paid) : null;
+        const saleTotal = Number(sale.total_amount);
+        const isPaidInFull = salePaid == null || salePaid >= saleTotal;
+        autoAdjustAmountPaidRef.current = isPaidInFull;
+
+        setAmountPaid(sale.amount_paid != null ? String(sale.amount_paid) : '');
+        setSaleNotes(sale.notes ?? '');
+
+        const origQuantities = new Map<string, number>();
+        const newCart: CartItem[] = [];
+        const newQuantityInputs: Record<string, string> = {};
+
+        for (const item of items) {
+          const product = currentProducts.find((p) => p.id === item.product_id) ?? item.product;
+          if (!product) continue;
+
+          origQuantities.set(product.id, Number(item.quantity) || 0);
+
+          const cartItem = buildCartItem(
+            product,
+            Number(item.quantity) || 1,
+            product.unit,
+            Number(item.discount_amount) || 0,
+            Number(item.unit_price) || product.selling_price,
+          );
+          newCart.push(cartItem);
+          newQuantityInputs[product.id] = String(item.quantity);
+        }
+
+        originalQuantitiesByProduct.current = origQuantities;
+        const initialTotal = newCart.reduce((sum, item) => sum + item.total_price, 0);
+        prevCartTotalRef.current = initialTotal;
+        setCart(newCart);
+        setQuantityInputs(newQuantityInputs);
+      } catch (err: any) {
+        console.error('Failed to load sale for editing', err);
+        Toast.show({
+          type: 'error',
+          text1: 'Error loading sale',
+          text2: err.message || 'Could not load sale details',
+        });
+      } finally {
+        if (isMounted) setLoadingSale(false);
+      }
+    }
+
+    loadSaleToEdit();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [saleId, currentBusiness, currentBranch, buildCartItem]);
 
   const searchableProducts = useMemo(
     () => products.filter((product) => product.is_active),
@@ -376,12 +488,128 @@ export default function RecordSaleScreen() {
     }));
   };
 
+  const handleStepQuantity = (productId: string, delta: number) => {
+    const item = cart.find((cartItem) => cartItem.product.id === productId);
+    if (!item) return;
+
+    const draftQuantity = quantityInputs[productId];
+    const parsedDraft = draftQuantity !== undefined && draftQuantity.trim() !== '' ? parseFloat(draftQuantity) : item.quantity;
+    const baseQty = Number.isFinite(parsedDraft) && parsedDraft > 0 ? parsedDraft : item.quantity;
+    const nextQty = Math.max(1, roundAmount(baseQty + delta));
+    if (nextQty === baseQty && delta < 0) return;
+
+    const unitOption = getSaleUnitOption(
+      item.product,
+      item.sale_unit,
+      item.bundle_size,
+    );
+    const neededStock = roundAmount(nextQty * unitOption.stockFactor);
+    const availableStock = getProductStock(item.product);
+
+    if (!item.product.is_service && delta > 0 && neededStock > availableStock) {
+      Alert.alert(
+        'Not enough stock',
+        `${item.product.name} has ${formatCount(availableStock)} ${item.product.unit} available.`,
+      );
+      return;
+    }
+
+    setQuantityInputs((previousInputs) => ({
+      ...previousInputs,
+      [productId]: `${nextQty}`,
+    }));
+    updateCartItem(productId, { quantity: nextQty });
+  };
+
+  const renderQuantityArrows = (productId: string) => {
+    const item = cart.find((c) => c.product.id === productId);
+    const isMin = (item?.quantity ?? 1) <= 1;
+
+    return (
+      <View
+        style={{
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          height: 38,
+          marginRight: -6,
+        }}
+      >
+        <TouchableOpacity
+          onPress={() => handleStepQuantity(productId, 1)}
+          activeOpacity={0.6}
+          hitSlop={{ top: 8, bottom: 2, left: 12, right: 12 }}
+          style={{
+            paddingVertical: 2,
+            paddingHorizontal: 6,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Feather name="chevron-up" size={16} color={COLORS.text.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => handleStepQuantity(productId, -1)}
+          activeOpacity={0.6}
+          disabled={isMin}
+          hitSlop={{ top: 2, bottom: 8, left: 12, right: 12 }}
+          style={{
+            paddingVertical: 2,
+            paddingHorizontal: 6,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: isMin ? 0.3 : 1,
+          }}
+        >
+          <Feather name="chevron-down" size={16} color={COLORS.text.primary} />
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
   const totalDiscount = cart.reduce((sum, item) => sum + item.discount_amount, 0);
   const cartTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
   const paidAmount = amountPaid === '' ? cartTotal : parseFloat(amountPaid) || 0;
   const amountOwed = Math.max(0, roundAmount(cartTotal - paidAmount));
   const paymentStatus = paidAmount >= cartTotal ? 'paid' : paidAmount > 0 ? 'partial' : 'credit';
+
+  useEffect(() => {
+    if (!isEditing) return;
+    if (cart.length === 0) return;
+
+    if (prevCartTotalRef.current === null) {
+      prevCartTotalRef.current = cartTotal;
+      return;
+    }
+
+    const prevTotal = prevCartTotalRef.current;
+    if (prevTotal !== cartTotal) {
+      prevCartTotalRef.current = cartTotal;
+
+      const parsedPaid = parseFloat(amountPaid);
+      const wasTrackingTotal =
+        autoAdjustAmountPaidRef.current ||
+        amountPaid === '' ||
+        (Number.isFinite(parsedPaid) && roundAmount(parsedPaid) === roundAmount(prevTotal));
+
+      if (wasTrackingTotal) {
+        setAmountPaid(cartTotal > 0 ? `${cartTotal}` : '');
+      } else if (Number.isFinite(parsedPaid) && parsedPaid > cartTotal) {
+        setAmountPaid(cartTotal > 0 ? `${cartTotal}` : '');
+      }
+    }
+  }, [isEditing, cartTotal, amountPaid, cart.length]);
+
+  const handleAmountPaidChange = (value: string) => {
+    setAmountPaid(value);
+    const parsed = parseFloat(value);
+    if (value === '' || (Number.isFinite(parsed) && roundAmount(parsed) === roundAmount(cartTotal))) {
+      autoAdjustAmountPaidRef.current = true;
+    } else {
+      autoAdjustAmountPaidRef.current = false;
+    }
+  };
 
   const handleRecordSale = async () => {
     if (!currentBusiness || !currentBranch || !user) return;
@@ -412,57 +640,114 @@ export default function RecordSaleScreen() {
       return;
     }
 
-    setSavingSale(true);
-    
-    // Optimistically finish UI
-    const saleNumber = `OFF-${Date.now().toString(36).toUpperCase()}`;
-    Toast.show({
-      type: 'success',
-      text1: 'Sale recorded',
-      text2: `${saleNumber} \u00B7 ${formatCurrency(cartTotal)} queued for sync`,
-    });
-    closeScreen();
+    if (isEditing && saleId) {
+      setSavingSale(true);
+      try {
+        await updateSaleOffline({
+          saleId,
+          businessId: currentBusiness.id,
+          branchId: currentBranch.id,
+          userId: user.id,
+          cart,
+          customerName: customerName.trim() || undefined,
+          customerPhone: customerPhone.trim() || undefined,
+          paymentMethod,
+          notes: saleNotes.trim() || undefined,
+          subtotal: roundAmount(subtotal),
+          discountAmount: roundAmount(totalDiscount),
+          totalAmount: roundAmount(cartTotal),
+          amountPaid: roundAmount(paidAmount),
+          amountOwed: roundAmount(amountOwed),
+          paymentStatus,
+        });
 
-    // Fire and forget background sync
-    void recordSaleOffline({
-      businessId: currentBusiness.id,
-      branchId: currentBranch.id,
-      userId: user.id,
-      cart,
-      customerName,
-      customerPhone,
-      paymentMethod,
-      notes: saleNotes.trim() || undefined,
-      subtotal: roundAmount(subtotal),
-      discountAmount: roundAmount(totalDiscount),
-      totalAmount: roundAmount(cartTotal),
-      amountPaid: roundAmount(paidAmount),
-      amountOwed: roundAmount(amountOwed),
-      paymentStatus,
-      saleNumber,
-    })
-      .then(() => {
-        // Instantly refresh analytics with the new cached data
-        void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
-        void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
-      })
-      .catch((err: any) => {
+        await Promise.all([
+          useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
+          useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
+          useDebtStore.getState().hydrateCache(currentBusiness.id, currentBranch.id),
+        ]);
+
+        Toast.show({
+          type: 'success',
+          text1: 'Sale updated',
+          text2: 'Changes saved',
+        });
+        closeScreen();
+
+        void useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id);
+      } catch (err: any) {
         Toast.show({
           type: 'error',
-          text1: 'Save failed',
+          text1: 'Update failed',
           text2: err.message,
         });
+      } finally {
+        setSavingSale(false);
+      }
+      return;
+    }
+
+    setSavingSale(true);
+    try {
+      const saleNumber = `OFF-${Date.now().toString(36).toUpperCase()}`;
+
+      await recordSaleOffline({
+        businessId: currentBusiness.id,
+        branchId: currentBranch.id,
+        userId: user.id,
+        cart,
+        customerName,
+        customerPhone,
+        paymentMethod,
+        notes: saleNotes.trim() || undefined,
+        subtotal: roundAmount(subtotal),
+        discountAmount: roundAmount(totalDiscount),
+        totalAmount: roundAmount(cartTotal),
+        amountPaid: roundAmount(paidAmount),
+        amountOwed: roundAmount(amountOwed),
+        paymentStatus,
+        saleNumber,
       });
-    setSavingSale(false);
+
+      // Hydrate local caches BEFORE closing screen, so revenue is ALREADY in place
+      await Promise.all([
+        useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
+        useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
+        useDebtStore.getState().hydrateCache(currentBusiness.id, currentBranch.id),
+      ]);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Sale recorded',
+        text2: `${saleNumber} · ${formatCurrency(cartTotal)} recorded`,
+      });
+      closeScreen();
+
+      void useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id);
+    } catch (err: any) {
+      Toast.show({
+        type: 'error',
+        text1: 'Save failed',
+        text2: err.message,
+      });
+    } finally {
+      setSavingSale(false);
+    }
   };
 
-
+  if (loadingSale) {
+    return <LoadingScreen message="Loading sale details..." />;
+  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
-        title="Record Sale"
-        subtitle="Search products, build the cart, and check out."
+        title={isEditing ? 'Edit Sale' : 'Record Sale'}
+        subtitle={
+          isEditing
+            ? 'Modify items, customer, or payment details.'
+            : 'Search products, build the cart, and check out.'
+        }
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
@@ -657,6 +942,7 @@ export default function RecordSaleScreen() {
                           onBlur={() => handleQuantityBlur(item.product.id)}
                           keyboardType="numeric"
                           placeholder="0"
+                          rightElement={renderQuantityArrows(item.product.id)}
                           containerStyle={{ marginBottom: 0 }}
                         />
                       </View>
@@ -744,7 +1030,7 @@ export default function RecordSaleScreen() {
           {cart.length > 0 ? (
             <View>
               <SectionHeader title="Checkout" />
-              <Card style={{ gap: 14 }}>
+              <Card style={{ gap: 12 }}>
                 <View style={{ gap: 8 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
                     <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>Subtotal</Text>
@@ -766,6 +1052,7 @@ export default function RecordSaleScreen() {
                   value={customerName}
                   onChangeText={setCustomerName}
                   placeholder="Leave blank for walk-in"
+                  containerStyle={{ marginBottom: 0 }}
                 />
                 <InputField
                   label="Customer Phone"
@@ -773,16 +1060,17 @@ export default function RecordSaleScreen() {
                   onChangeText={setCustomerPhone}
                   placeholder="08012345678"
                   keyboardType="phone-pad"
+                  containerStyle={{ marginBottom: 0 }}
                 />
                 <InputField
                   label="Amount Paid"
                   value={amountPaid}
-                  onChangeText={setAmountPaid}
+                  onChangeText={handleAmountPaidChange}
                   placeholder={`${cartTotal}`}
                   keyboardType="numeric"
                   prefix={CURRENCY_SYMBOL}
                   isAmount={true}
-                  containerStyle={{ marginBottom: 4 }}
+                  containerStyle={{ marginBottom: 0 }}
                 />
                 {amountOwed > 0 ? (
                   <View
@@ -804,6 +1092,7 @@ export default function RecordSaleScreen() {
                   value={paymentMethod}
                   options={PAYMENT_METHODS}
                   onChange={(value) => setPaymentMethod(value as PaymentMethod)}
+                  containerStyle={{ marginBottom: 0 }}
                 />
                 <InputField
                   label="Notes"
@@ -812,9 +1101,14 @@ export default function RecordSaleScreen() {
                   placeholder="Optional note for this sale"
                   multiline
                   numberOfLines={3}
+                  containerStyle={{ marginBottom: 0 }}
                 />
                 <Button
-                  title={savingSale ? 'Recording...' : `Confirm Sale \u00B7 ${formatCurrency(cartTotal)}`}
+                  title={
+                    savingSale
+                      ? (isEditing ? 'Updating...' : 'Recording...')
+                      : `${isEditing ? 'Update Sale' : 'Confirm Sale'} \u00B7 ${formatCurrency(cartTotal)}`
+                  }
                   onPress={handleRecordSale}
                   loading={savingSale}
                   size="lg"

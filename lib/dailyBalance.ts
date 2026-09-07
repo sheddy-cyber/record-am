@@ -40,6 +40,7 @@ function buildSnapshotFromRows(params: {
   saleItems: any[];
   existingSummary: DailySummary | null;
   debts?: CustomerDebt[];
+  products?: any[];
 }): DailyBalanceSnapshot {
   const { businessId, branchId, targetDate, existingSummary } = params;
   const debtMap = new Map((params.debts ?? []).map((debt) => [debt.id, debt]));
@@ -94,9 +95,15 @@ function buildSnapshotFromRows(params: {
     .filter((repayment: any) => repayment.payment_method === 'cash')
     .reduce((sum: number, repayment: any) => sum + repayment.amount, 0);
   const saleIds = new Set(revenueSales.map((sale: any) => sale.id));
+  const productCostMap = new Map((params.products ?? []).map((p: any) => [p.id, Number(p.cost_price ?? 0)]));
   const totalCOGS = params.saleItems
     .filter((item: any) => saleIds.has(item.sale_id))
-    .reduce((sum: number, item: any) => sum + (item.cost_price ?? 0) * item.quantity, 0);
+    .reduce((sum: number, item: any) => {
+      const rawCost = Number(item.cost_price ?? 0);
+      const fallbackCost = productCostMap.get(item.product_id) ?? 0;
+      const effectiveCost = rawCost > 0 ? rawCost : fallbackCost;
+      return sum + effectiveCost * item.quantity;
+    }, 0);
   const grossProfit = (totalSales + totalRepayments) - totalCOGS;
   const netProfit = grossProfit - totalExpenses;
   const cashExpenses = params.expenses
@@ -218,6 +225,13 @@ export async function getDailyBalanceSnapshot(
         : Promise.resolve(),
     ]);
 
+    const { useBusinessStore } = await import('@/store/businessStore');
+    let products = useBusinessStore.getState().products;
+    if (!products || products.length === 0) {
+      const { readCachedProducts } = await import('@/lib/offlineStore');
+      products = await readCachedProducts(businessId);
+    }
+
     return buildSnapshotFromRows({
       businessId,
       branchId,
@@ -227,6 +241,7 @@ export async function getDailyBalanceSnapshot(
       repayments,
       saleItems,
       existingSummary,
+      products,
     });
   } catch (error) {
     const [
@@ -253,6 +268,13 @@ export async function getDailyBalanceSnapshot(
     const existingSummary =
       cachedSummaries.find((summary) => summary.summary_date === targetDate) ?? null;
 
+    const { useBusinessStore } = await import('@/store/businessStore');
+    let products = useBusinessStore.getState().products;
+    if (!products || products.length === 0) {
+      const { readCachedProducts } = await import('@/lib/offlineStore');
+      products = await readCachedProducts(businessId);
+    }
+
     return buildSnapshotFromRows({
       businessId,
       branchId,
@@ -263,6 +285,7 @@ export async function getDailyBalanceSnapshot(
       saleItems,
       existingSummary,
       debts: cachedDebts,
+      products,
     });
   }
 }

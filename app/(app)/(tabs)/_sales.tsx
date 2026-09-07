@@ -315,7 +315,7 @@ function SalesScreen() {
         keyExtractor={(item: any) => `${item.kind}-${item.id}`}
         contentContainerStyle={{ 
           paddingHorizontal: SP.page, 
-          paddingTop: SP.page,
+          paddingTop: 10,
           paddingBottom: insets.bottom + 92,
           flexGrow: 1,
         }}
@@ -342,7 +342,7 @@ function SalesScreen() {
           />
         }
         renderItem={renderActivityItem}
-        ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
       />
       {/* Receipt Preview Modal */}
       <Modal
@@ -532,39 +532,38 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.lg,
-    padding: 16,
+    padding: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
-
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   customerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 12,
+    marginRight: 10,
   },
   iconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   customerName: {
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: FONT.bold,
     color: COLORS.text.primary,
     marginBottom: 2,
   },
   dateText: {
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: FONT.regular,
     color: COLORS.text.muted,
   },
@@ -572,13 +571,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   totalAmount: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: FONT.bold,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   debtBadge: {
     backgroundColor: COLORS.dangerLight,
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: RADIUS.sm,
   },
@@ -596,14 +595,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 10,
   },
   metaItem: {
     flexDirection: 'row',
@@ -616,8 +615,8 @@ const styles = StyleSheet.create({
     color: COLORS.text.muted,
   },
   notesContainer: {
-    marginTop: 10,
-    paddingTop: 8,
+    marginTop: 6,
+    paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.03)',
   },
@@ -628,28 +627,28 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   expandedContent: {
-    marginTop: 16,
-    paddingTop: 16,
+    marginTop: 10,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
   },
   itemsList: {
-    marginBottom: 16,
+    marginBottom: 10,
     backgroundColor: '#F7F5F0',
     borderRadius: RADIUS.md,
-    padding: 12,
+    padding: 10,
   },
   itemsHeaderText: {
     fontSize: 10,
     fontFamily: FONT.bold,
     color: COLORS.text.muted,
     letterSpacing: 1,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   itemRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.03)',
   },
@@ -668,7 +667,7 @@ const styles = StyleSheet.create({
   expandedActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
 });
 
@@ -740,10 +739,6 @@ const ActivityItem = React.memo(({
               <Feather name="credit-card" size={12} color={COLORS.text.muted} />
               <Text style={styles.metaText}>{item.payment_method.replace('_', ' ').toUpperCase()}</Text>
             </View>
-            <View style={styles.metaItem}>
-              <Feather name="hash" size={12} color={COLORS.text.muted} />
-              <Text style={styles.metaText}>{item.reference}</Text>
-            </View>
           </View>
           
           <Feather name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={COLORS.text.muted} />
@@ -779,6 +774,16 @@ const ActivityItem = React.memo(({
           )}
 
           <View style={styles.expandedActions}>
+            {!isRepayment && (
+              <Button 
+                title="Edit Sale"
+                icon="edit-2"
+                onPress={() => router.push(`/(app)/record-sale?saleId=${item.sale_id ?? item.id}`)}
+                variant="secondary"
+                size="sm"
+                style={{ flex: 1 }}
+              />
+            )}
             <Button 
               title={isGenerating ? "Preparing..." : "Get Receipt"}
               icon="file-text"
@@ -786,6 +791,7 @@ const ActivityItem = React.memo(({
               loading={isGenerating}
               onPress={() => onGenerateReceipt(item)}
               variant="primary"
+              size="sm"
               style={{ flex: 1 }}
             />
           </View>

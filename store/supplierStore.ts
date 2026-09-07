@@ -32,6 +32,7 @@ interface SupplierState {
   updateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
   deleteSupplier: (id: string) => Promise<void>;
   setSelectedSupplier: (supplier: SupplierWithStats | null) => void;
+  reset: () => void;
 }
 
 export const useSupplierStore = create<SupplierState>((set, get) => ({
@@ -280,4 +281,15 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
   },
 
   setSelectedSupplier: (supplier) => set({ selectedSupplier: supplier }),
+
+  reset: () =>
+    set({
+      suppliers: [],
+      selectedSupplier: null,
+      supplierPurchases: [],
+      supplierDebts: [],
+      isLoading: false,
+      isSaving: false,
+      error: null,
+    }),
 }));

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { PaymentStatus, Product, Purchase, PurchaseItem, Supplier, SupplierDebt } from '@/types';
 import { useBusinessStore } from '@/store/businessStore';
+import { calculateWeightedAverageCost } from '@/lib/costing';
 import {
   createLocalId,
   enqueueMutations,
@@ -74,6 +75,7 @@ interface PurchaseState {
   fetchPurchaseById: (purchaseId: string) => Promise<Purchase | null>;
   recordPurchase: (params: CreatePurchaseParams) => Promise<Purchase | null>;
   updatePurchase: (params: UpdatePurchaseParams) => Promise<Purchase | null>;
+  reset: () => void;
 }
 
 export const calculatePurchaseSubtotal = (items: PurchaseCartItem[]) =>
@@ -167,6 +169,10 @@ async function ensureDraftProduct(params: {
   const nameKey = normalizeProductName(cleanedName);
   const existing = productsByName.get(nameKey);
   if (existing) {
+    if (unitCost > 0 && (!existing.cost_price || Number(existing.cost_price) === 0)) {
+      existing.cost_price = roundAmount(unitCost);
+      void supabase.from('products').update({ cost_price: roundAmount(unitCost) }).eq('id', existing.id);
+    }
     return existing;
   }
 
@@ -468,6 +474,32 @@ async function writePurchaseRecord(
 
     throwIfError(insertItemsError);
 
+    for (const item of resolvedItems) {
+      if (item.unit_cost > 0) {
+        const currentProduct = useBusinessStore.getState().products.find((p) => p.id === item.product_id);
+        const currentStock = Number(
+          currentProduct?.inventory?.find((inv) => inv.branch_id === branchId)?.quantity ?? 0,
+        );
+        const effectiveCost = calculateWeightedAverageCost({
+          currentStock,
+          currentCostPrice: Number(currentProduct?.cost_price ?? 0),
+          addedQuantity: item.quantity,
+          newUnitCost: item.unit_cost,
+        });
+
+        await supabase
+          .from('products')
+          .update({ cost_price: effectiveCost, updated_at: new Date().toISOString() })
+          .eq('id', item.product_id);
+
+        await supabase
+          .from('sale_items')
+          .update({ cost_price: effectiveCost })
+          .eq('product_id', item.product_id)
+          .or('cost_price.is.null,cost_price.eq.0');
+      }
+    }
+
     await syncSupplierDebt({
       purchaseId: currentPurchaseId,
       businessId,
@@ -519,6 +551,16 @@ async function ensureLocalDraftProduct(params: {
   const nameKey = normalizeProductName(cleanedName);
   const existing = productsByName.get(nameKey);
   if (existing) {
+    if (unitCost > 0 && (!existing.cost_price || Number(existing.cost_price) === 0)) {
+      existing.cost_price = roundAmount(unitCost);
+      mutations.push({
+        operation: 'update',
+        table: 'products',
+        payload: { cost_price: roundAmount(unitCost), updated_at: nowIso() },
+        match: { id: existing.id },
+        description: `Sync cost price for ${existing.name}`,
+      });
+    }
     return existing;
   }
 
@@ -780,6 +822,90 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
     description: `Sync purchase items for ${purchase.purchase_number}`,
   });
 
+  // Sync cost price to products and backfill zero-cost sale items
+  const productsToUpdate: Product[] = [];
+  for (const item of resolvedItems) {
+    if (item.unit_cost > 0 && item.product_id) {
+      const currentProduct = useBusinessStore.getState().products.find((p) => p.id === item.product_id);
+      const currentStock = Number(
+        currentProduct?.inventory?.find((inv) => inv.branch_id === params.branchId)?.quantity ?? 0,
+      );
+      const effectiveCost = calculateWeightedAverageCost({
+        currentStock,
+        currentCostPrice: Number(currentProduct?.cost_price ?? 0),
+        addedQuantity: item.quantity,
+        newUnitCost: item.unit_cost,
+      });
+
+      if (currentProduct) {
+        const updatedProduct: Product = {
+          ...currentProduct,
+          cost_price: effectiveCost,
+          updated_at: timestamp,
+        };
+        productsToUpdate.push(updatedProduct);
+      }
+
+      mutations.push({
+        operation: 'update',
+        table: 'products',
+        payload: {
+          cost_price: effectiveCost,
+          updated_at: timestamp,
+        },
+        match: { id: item.product_id },
+        conflictPolicy: 'server-wins-if-newer',
+        description: `Sync product cost price for ${item.product?.name || item.product_id}`,
+      });
+
+      mutations.push({
+        operation: 'update',
+        table: 'sale_items',
+        payload: {
+          cost_price: effectiveCost,
+        },
+        match: { product_id: item.product_id, cost_price: 0 },
+        description: `Backfill sale items cost price for product ${item.product_id}`,
+      });
+
+      void supabase
+        .from('products')
+        .update({ cost_price: effectiveCost, updated_at: timestamp })
+        .eq('id', item.product_id);
+      void supabase
+        .from('sale_items')
+        .update({ cost_price: effectiveCost })
+        .eq('product_id', item.product_id)
+        .or('cost_price.is.null,cost_price.eq.0');
+    }
+  }
+
+  if (productsToUpdate.length > 0) {
+    const updatedIds = new Set(productsToUpdate.map((p) => p.id));
+    useBusinessStore.setState((state) => ({
+      products: state.products.map((p) => (updatedIds.has(p.id) ? productsToUpdate.find((up) => up.id === p.id)! : p)),
+    }));
+    await upsertCachedProducts(params.businessId, productsToUpdate);
+  }
+
+  try {
+    const cachedSaleItems = await readCachedRows<any>({ businessId: params.businessId, branchId: params.branchId }, 'sale_items');
+    let hasUpdatedCachedSales = false;
+    const nextCachedSaleItems = cachedSaleItems.map((si) => {
+      const matchingResolved = resolvedItems.find(
+        (item) => item.product_id === si.product_id && item.unit_cost > 0 && (!si.cost_price || Number(si.cost_price) === 0),
+      );
+      if (matchingResolved) {
+        hasUpdatedCachedSales = true;
+        return { ...si, cost_price: matchingResolved.unit_cost };
+      }
+      return si;
+    });
+    if (hasUpdatedCachedSales) {
+      await replaceCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'sale_items', nextCachedSaleItems);
+    }
+  } catch {}
+
   if (params.purchaseId) {
     mutations.push({
       operation: 'delete',
@@ -915,4 +1041,12 @@ export const usePurchaseStore = create<PurchaseState>((set, get) => ({
       set({ isSaving: false });
     }
   },
+
+  reset: () =>
+    set({
+      purchases: [],
+      isLoading: false,
+      isSaving: false,
+      error: null,
+    }),
 }));

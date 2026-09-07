@@ -58,35 +58,42 @@ export default function RecordDebtScreen() {
 
     setSavingDebt(true);
     const amount = parseFloat(debtAmount);
-    
-    Toast.show({
-      type: 'success',
-      text1: 'Debt recorded',
-      text2: `${debtCustomerName.trim()} \u00B7 ${formatCurrency(amount)} queued for sync`,
-    });
-    closeScreen();
 
-    void recordDebtOffline({
-      businessId: currentBusiness.id,
-      branchId: currentBranch.id,
-      customerName: debtCustomerName.trim(),
-      customerPhone: debtCustomerPhone.trim() || undefined,
-      amount,
-      dueDate: debtDueDate || undefined,
-      notes: debtNotes.trim() || undefined,
-    }).then(() => {
-      void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+    try {
+      await recordDebtOffline({
+        businessId: currentBusiness.id,
+        branchId: currentBranch.id,
+        customerName: debtCustomerName.trim(),
+        customerPhone: debtCustomerPhone.trim() || undefined,
+        amount,
+        dueDate: debtDueDate || undefined,
+        notes: debtNotes.trim() || undefined,
+      });
+
+      await Promise.all([
+        useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
+        useDebtStore.getState().hydrateCache(currentBusiness.id, currentBranch.id),
+      ]);
+
+      Toast.show({
+        type: 'success',
+        text1: 'Debt recorded',
+        text2: `${debtCustomerName.trim()} · ${formatCurrency(amount)} recorded`,
+      });
+
+      closeScreen();
+
       void useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id);
       void useCustomerStore.getState().fetchCustomers(currentBusiness.id);
-    }).catch((err: any) => {
+    } catch (err: any) {
       Toast.show({
         type: 'error',
         text1: 'Save failed',
         text2: err.message,
       });
-    }).finally(() => {
+    } finally {
       setSavingDebt(false);
-    });
+    }
   };
 
   useEffect(() => {

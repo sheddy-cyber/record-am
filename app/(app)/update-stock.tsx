@@ -1,5 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, RefreshControl, BackHandler } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  BackHandler,
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+} from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -9,11 +20,13 @@ import { getAppSettings } from '@/lib/appSettings';
 import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
 import { addMismatch, removeMismatch } from '@/lib/mismatchService';
 import { updateProductAndInventoryOffline } from '@/lib/offlineRecords';
-import { Button, EmptyState, LoadingScreen } from '@/components/ui';
+import { calculateWeightedAverageCost, calculateProfitMargin } from '@/lib/costing';
+import { Button, EmptyState, LoadingScreen, RoleGate } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
+import { CostStrategySelector } from '@/components/inventory/CostStrategySelector';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS } from '@/constants';
+import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL, ACCENTS } from '@/constants';
 
 const formatCount = (value: number) =>
   Number.isInteger(value)
@@ -73,6 +86,7 @@ export default function UpdateStockScreen() {
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
   const [costPrice, setCostPrice] = useState('');
+  const [manualNewCost, setManualNewCost] = useState<number | null>(null);
   const [sellingPrice, setSellingPrice] = useState('');
   const [stockQuantity, setStockQuantity] = useState('');
   const [reorderLevel, setReorderLevel] = useState('5');
@@ -224,16 +238,45 @@ export default function UpdateStockScreen() {
     return Number(product.inventory?.find((item) => item.branch_id === currentBranch.id)?.quantity ?? 0);
   }, [currentBranch, product]);
 
+  const oldCost = useMemo(() => Number(product?.cost_price ?? 0), [product]);
+  const incomingQty = fromPurchase ? (purchasedQty > 0 ? purchasedQty : Math.max(0, effectiveStockAdjustment)) : 0;
+  const hasIncomingPurchaseCost = fromPurchase && purchasedUnitCost > 0 && incomingQty > 0;
+
+  const purchaseWeightedAvg = useMemo(() => {
+    if (!hasIncomingPurchaseCost || currentStock <= 0 || oldCost <= 0) return null;
+    return calculateWeightedAverageCost({
+      currentStock,
+      currentCostPrice: oldCost,
+      addedQuantity: incomingQty,
+      newUnitCost: purchasedUnitCost,
+    });
+  }, [hasIncomingPurchaseCost, currentStock, oldCost, incomingQty, purchasedUnitCost]);
+
   useEffect(() => {
     if (!product) return;
 
     setProductName(product.name);
     setProductUnit(product.unit);
-    setCostPrice(
-      purchasedUnitCost > 0
-        ? formatCount(purchasedUnitCost)
-        : product.cost_price ? formatCount(Number(product.cost_price)) : ''
-    );
+
+    const oldCostPrice = Number(product.cost_price ?? 0);
+    const hasIncomingPurchase = fromPurchase && purchasedUnitCost > 0 && (purchasedQty > 0 || effectiveStockAdjustment > 0);
+
+    if (hasIncomingPurchase && currentStock > 0 && oldCostPrice > 0 && purchasedUnitCost !== oldCostPrice) {
+      const blendedCost = calculateWeightedAverageCost({
+        currentStock,
+        currentCostPrice: oldCostPrice,
+        addedQuantity: purchasedQty > 0 ? purchasedQty : effectiveStockAdjustment,
+        newUnitCost: purchasedUnitCost,
+      });
+      setCostPrice(formatCount(blendedCost));
+    } else if (purchasedUnitCost > 0) {
+      setCostPrice(formatCount(purchasedUnitCost));
+    } else if (oldCostPrice > 0) {
+      setCostPrice(formatCount(oldCostPrice));
+    } else {
+      setCostPrice('');
+    }
+
     setSellingPrice(formatCount(Number(product.selling_price ?? 0)));
 
     const newStockQty = fromPurchase
@@ -248,7 +291,118 @@ export default function UpdateStockScreen() {
 
     setReorderLevel(formatCount(Number(product.reorder_level ?? 5)));
     setIsService(product.is_service);
-  }, [currentStock, effectiveStockAdjustment, fromPurchase, product, purchasedUnitCost]);
+  }, [currentStock, effectiveStockAdjustment, fromPurchase, product, purchasedQty, purchasedUnitCost]);
+
+  const handleCostPriceChange = useCallback((val: string) => {
+    setCostPrice(val);
+    const parsed = parseFloat(val);
+    if (Number.isFinite(parsed) && parsed > 0 && oldCost > 0 && Math.abs(parsed - oldCost) >= 0.01) {
+      setManualNewCost(parsed);
+    }
+  }, [oldCost]);
+
+  const parsedCost = parseFloat(costPrice) || 0;
+  const parsedSelling = parseFloat(sellingPrice) || 0;
+  const parsedStockQty = parseFloat(stockQuantity) || 0;
+  const manualAddedQty = Math.max(0, roundAmount(parsedStockQty - currentStock));
+
+  const effectiveNewCost = useMemo(() => {
+    if (fromPurchase) {
+      return purchasedUnitCost > 0 ? purchasedUnitCost : 0;
+    }
+    if (manualNewCost !== null && manualNewCost > 0) {
+      return manualNewCost;
+    }
+    if (parsedCost > 0 && oldCost > 0 && Math.abs(parsedCost - oldCost) >= 0.01) {
+      return parsedCost;
+    }
+    return 0;
+  }, [fromPurchase, purchasedUnitCost, manualNewCost, parsedCost, oldCost]);
+
+  const effectiveIncomingQty = fromPurchase ? incomingQty : manualAddedQty;
+
+  const costPriceOptionsNode = useMemo(() => {
+    if (isService) return null;
+
+    const isStockQuantityIncreased = effectiveIncomingQty > 0 && currentStock > 0;
+
+    const hasCostFluctuation =
+      isStockQuantityIncreased &&
+      oldCost > 0 &&
+      effectiveNewCost > 0 &&
+      Math.abs(effectiveNewCost - oldCost) >= 0.01;
+
+    if (!hasCostFluctuation) return null;
+
+    return (
+      <CostStrategySelector
+        oldCost={oldCost}
+        newCost={effectiveNewCost}
+        currentStock={currentStock}
+        incomingQty={effectiveIncomingQty}
+        currentCostPrice={costPrice}
+        onSelectStrategy={(chosenCost) => {
+          setCostPrice(formatCount(chosenCost));
+        }}
+        productUnit={productUnit}
+        isFromPurchase={fromPurchase}
+      />
+    );
+  }, [
+    isService,
+    oldCost,
+    effectiveNewCost,
+    currentStock,
+    effectiveIncomingQty,
+    costPrice,
+    productUnit,
+    fromPurchase,
+  ]);
+
+  const marginData = useMemo(() => {
+    if (parsedSelling <= 0 && parsedCost <= 0) return null;
+    return calculateProfitMargin(parsedCost, parsedSelling);
+  }, [parsedCost, parsedSelling]);
+
+  const marginIndicatorNode = useMemo(() => {
+    return (
+      <RoleGate allowedRoles={['owner', 'manager']}>
+        {parsedSelling > 0 && parsedCost === 0 && !isService ? (
+          <View style={[styles.marginContainer, styles.marginNeutral]}>
+            <Feather name="info" size={13} color={COLORS.text.muted} />
+            <Text style={styles.marginTextNeutral}>
+              No cost price set (100% of selling price recorded as profit)
+            </Text>
+          </View>
+        ) : null}
+
+        {parsedSelling > 0 && parsedCost > 0 && marginData ? (
+          marginData.status === 'profit' ? (
+            <View style={[styles.marginContainer, styles.marginProfit]}>
+              <Feather name="trending-up" size={14} color="#1e8449" />
+              <Text style={styles.marginTextProfit}>
+                +{CURRENCY_SYMBOL}{formatCount(marginData.profitPerUnit)} profit/unit ({marginData.marginPercentage}% margin)
+              </Text>
+            </View>
+          ) : marginData.status === 'loss' ? (
+            <View style={[styles.marginContainer, styles.marginLoss]}>
+              <Feather name="alert-triangle" size={14} color={COLORS.danger} />
+              <Text style={styles.marginTextLoss}>
+                ⚠ Selling at a loss of {CURRENCY_SYMBOL}{formatCount(Math.abs(marginData.profitPerUnit))}/unit ({Math.abs(marginData.marginPercentage)}% negative margin)
+              </Text>
+            </View>
+          ) : (
+            <View style={[styles.marginContainer, styles.marginNeutral]}>
+              <Feather name="minus-circle" size={14} color={COLORS.text.secondary} />
+              <Text style={styles.marginTextSecondary}>
+                Break-even ({CURRENCY_SYMBOL}0.00 profit/unit)
+              </Text>
+            </View>
+          )
+        ) : null}
+      </RoleGate>
+    );
+  }, [parsedSelling, parsedCost, isService, marginData]);
 
   const handleSaveProduct = async () => {
     if (!product || !currentBusiness) return;
@@ -322,6 +476,11 @@ export default function UpdateStockScreen() {
               ? 'Quantity increased from product update.'
               : 'Quantity reduced from product update.';
 
+        const actualIncomingUnitCost =
+          manualNewCost !== null && manualNewCost > 0
+            ? manualNewCost
+            : parsedCostPrice;
+
         await updateProductAndInventoryOffline({
           businessId: currentBusiness.id,
           branchId: currentBranch?.id,
@@ -340,10 +499,10 @@ export default function UpdateStockScreen() {
               ? {
                   type: movementType,
                   quantity: movementQuantity,
-                  unit_cost: movementType === 'stock_in' && parsedCostPrice > 0 ? parsedCostPrice : undefined,
+                  unit_cost: movementType === 'stock_in' && actualIncomingUnitCost > 0 ? actualIncomingUnitCost : undefined,
                   total_cost:
-                    movementType === 'stock_in' && parsedCostPrice > 0
-                      ? roundAmount(parsedCostPrice * movementQuantity)
+                    movementType === 'stock_in' && actualIncomingUnitCost > 0
+                      ? roundAmount(actualIncomingUnitCost * movementQuantity)
                       : undefined,
                   notes: movementNote,
                 }
@@ -361,7 +520,7 @@ export default function UpdateStockScreen() {
         });
 
         if (mismatchId) {
-          await removeMismatch(mismatchId);
+          await removeMismatch(mismatchId, currentBusiness?.id);
         }
 
         if (isSyncFlowActive) {
@@ -404,7 +563,7 @@ export default function UpdateStockScreen() {
             productName: cleanProductName,
             productUnit: cleanProductUnit,
             quantity: quantityDelta > 0 ? roundAmount(quantityDelta) : 0,
-            unitCost: parsedCostPrice,
+            unitCost: actualIncomingUnitCost,
           });
 
           if (!openedPurchaseSync) {
@@ -416,10 +575,42 @@ export default function UpdateStockScreen() {
       }
     };
 
-    const hasMismatch = !isManualReconcile && isSyncFlowActive && prefilledStockQty !== null && (
-      roundAmount(parsedStockQuantity) !== roundAmount(prefilledStockQty) ||
-      roundAmount(parsedCostPrice) !== roundAmount(purchasedUnitCost)
+    const purchaseWeightedCost = purchaseWeightedAvg;
+    const isRecognizedCostStrategy =
+      (purchaseWeightedCost !== null && Math.abs(parsedCostPrice - purchaseWeightedCost) < 0.05) ||
+      Math.abs(parsedCostPrice - oldCost) < 0.05 ||
+      Math.abs(parsedCostPrice - purchasedUnitCost) < 0.05;
+
+    const isQuantityMismatch =
+      prefilledStockQty !== null &&
+      roundAmount(parsedStockQuantity) !== roundAmount(prefilledStockQty);
+    const isCostMismatch = !isRecognizedCostStrategy;
+
+    const hasMismatch = !isManualReconcile && isSyncFlowActive && (
+      isQuantityMismatch || isCostMismatch
     );
+
+    const checkLossAndExecute = (mismatch: boolean) => {
+      if (!isService && parsedCostPrice > 0 && parsedCostPrice >= parsedSellingPrice) {
+        const isLoss = parsedCostPrice > parsedSellingPrice;
+        Alert.alert(
+          isLoss ? 'Potential Loss Warning' : 'Zero Margin Warning',
+          isLoss
+            ? `Your cost price (${CURRENCY_SYMBOL}${formatCount(parsedCostPrice)}) is higher than your selling price (${CURRENCY_SYMBOL}${formatCount(parsedSellingPrice)}).\n\nSelling at this price will register a loss of ${CURRENCY_SYMBOL}${formatCount(parsedCostPrice - parsedSellingPrice)} per unit. Do you want to adjust your selling price or continue anyway?`
+            : `Your cost price (${CURRENCY_SYMBOL}${formatCount(parsedCostPrice)}) is equal to your selling price (${CURRENCY_SYMBOL}${formatCount(parsedSellingPrice)}).\n\nYou will make zero profit on this item. Save anyway?`,
+          [
+            { text: 'Adjust Price', style: 'cancel' },
+            {
+              text: 'Save Anyway',
+              style: isLoss ? 'destructive' : 'default',
+              onPress: () => executeSave(mismatch),
+            },
+          ]
+        );
+      } else {
+        executeSave(mismatch);
+      }
+    };
 
     const confirmAndExecute = (mismatch: boolean) => {
       if (!isService && parsedCostPrice === 0) {
@@ -428,11 +619,11 @@ export default function UpdateStockScreen() {
           'Without a cost price, 100% of the selling price will be recorded as profit.\n\nDo you want to add a cost price or continue anyway?',
           [
             { text: 'Add Cost Price', style: 'cancel' },
-            { text: 'Continue Anyway', onPress: () => executeSave(mismatch), style: 'default' },
+            { text: 'Continue Anyway', onPress: () => checkLossAndExecute(mismatch), style: 'default' },
           ]
         );
       } else {
-        executeSave(mismatch);
+        checkLossAndExecute(mismatch);
       }
     };
 
@@ -502,9 +693,11 @@ export default function UpdateStockScreen() {
             productUnit={productUnit}
             onProductUnitChange={setProductUnit}
             costPrice={costPrice}
-            onCostPriceChange={setCostPrice}
+            onCostPriceChange={handleCostPriceChange}
+            costPriceExtra={costPriceOptionsNode}
             sellingPrice={sellingPrice}
             onSellingPriceChange={setSellingPrice}
+            sellingPriceExtra={marginIndicatorNode}
             reorderLevel={reorderLevel}
             onReorderLevelChange={setReorderLevel}
             stockQuantity={stockQuantity}
@@ -534,3 +727,53 @@ export default function UpdateStockScreen() {
     </ScreenShell>
   );
 }
+
+const styles = StyleSheet.create({
+  marginContainer: {
+    marginTop: -8,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+  },
+  marginProfit: {
+    backgroundColor: ACCENTS.profit.bg,
+    borderColor: ACCENTS.profit.border,
+  },
+  marginLoss: {
+    backgroundColor: ACCENTS.danger.bg,
+    borderColor: ACCENTS.danger.border,
+  },
+  marginNeutral: {
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+  },
+  marginTextProfit: {
+    fontSize: 13,
+    fontFamily: FONT.bold,
+    color: '#1e8449',
+    flex: 1,
+  },
+  marginTextLoss: {
+    fontSize: 13,
+    fontFamily: FONT.bold,
+    color: COLORS.danger,
+    flex: 1,
+  },
+  marginTextNeutral: {
+    fontSize: 12,
+    fontFamily: FONT.regular,
+    color: COLORS.text.muted,
+    flex: 1,
+  },
+  marginTextSecondary: {
+    fontSize: 12,
+    fontFamily: FONT.medium,
+    color: COLORS.text.secondary,
+    flex: 1,
+  },
+});

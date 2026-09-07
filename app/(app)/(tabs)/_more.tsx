@@ -44,14 +44,14 @@ function MoreScreen() {
     {
       title: 'Reports & Insights',
       items: [
-        {
-          icon: 'bar-chart-2',
+        ...(userRole === 'owner' ? [{
+          icon: 'bar-chart-2' as keyof typeof Feather.glyphMap,
           label: 'Analytics',
           subtitle: 'Sales trends, profit, and top products',
           onPress: () => router.push('/(app)/analytics'),
           iconBg: COLORS.infoLight,
           iconColor: COLORS.info,
-        },
+        }] : []),
         {
           icon: 'sliders',
           label: 'Daily Balance',
@@ -67,8 +67,8 @@ function MoreScreen() {
       items: [
         {
           icon: 'minus-circle',
-          label: 'Record Expense',
-          subtitle: 'Rent, electricity, transport, and more',
+          label: 'Expenses',
+          subtitle: 'Track, record and manage operational costs',
           onPress: () => router.push('/(app)/record-expense'),
           iconBg: COLORS.warningLight,
           iconColor: COLORS.warning,

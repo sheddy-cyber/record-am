@@ -63,6 +63,7 @@ interface AnalyticsState {
   setDateRange: (range: DateRange) => void;
   fetchAnalytics: (businessId: string, branchId: string) => Promise<void>;
   refreshFromCache: (businessId: string, branchId: string) => Promise<void>;
+  reset: () => void;
 }
 
 function getDateBounds(range: DateRange): { from: Date; to: Date; prevFrom: Date; prevTo: Date } {
@@ -146,11 +147,24 @@ async function buildCachedAnalytics(
     inDateRange(item.created_at ?? item.sale?.created_at, from, to),
   );
 
+  const { useBusinessStore } = await import('@/store/businessStore');
+  const products = useBusinessStore.getState().products;
+  const productCostMap = new Map(products.map((p) => [p.id, Number(p.cost_price ?? 0)]));
+  const getSaleItemCost = (item: any) => {
+    const rawCost = Number(item.cost_price ?? 0);
+    if (rawCost > 0) return rawCost;
+    const pid = item.product_id ?? item.product?.id;
+    if (pid && productCostMap.has(pid)) {
+      return productCostMap.get(pid) ?? 0;
+    }
+    return Number(item.product?.cost_price ?? 0);
+  };
+
   const totalRevenue = currentActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
   const prevRevenue = previousActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
   const totalExpenses = currentExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalProfit = currentSaleItems.reduce(
-    (sum, item) => sum + (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * Number(item.quantity ?? 0),
+    (sum, item) => sum + (Number(item.unit_price ?? 0) - getSaleItemCost(item)) * Number(item.quantity ?? 0),
     0,
   );
   const prevProfit = prevRevenue * 0.3;
@@ -180,7 +194,7 @@ async function buildCachedAnalytics(
     const key = format(new Date(createdAt), 'yyyy-MM-dd');
     const existing = trendMap.get(key);
     if (!existing) return;
-    const itemProfit = (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * Number(item.quantity ?? 0);
+    const itemProfit = (Number(item.unit_price ?? 0) - getSaleItemCost(item)) * Number(item.quantity ?? 0);
     trendMap.set(key, { ...existing, profit: existing.profit + itemProfit });
   });
 
@@ -191,9 +205,6 @@ async function buildCachedAnalytics(
       label: format(new Date(date), dateRange === '7days' || dateRange === 'this_week' ? 'EEE' : 'MMM d'),
       ...data,
     }));
-
-  const { useBusinessStore } = await import('@/store/businessStore');
-  const products = useBusinessStore.getState().products;
 
   const productMap = new Map<string, TopProduct>();
   products.forEach((p) => {
@@ -219,7 +230,7 @@ async function buildCachedAnalytics(
     };
     const quantity = Number(item.quantity ?? 0);
     const revenue = Number(item.total_price ?? 0);
-    const profit = (Number(item.unit_price ?? 0) - Number(item.cost_price ?? 0)) * quantity;
+    const profit = (Number(item.unit_price ?? 0) - getSaleItemCost(item)) * quantity;
     productMap.set(productId, {
       ...existing,
       total_qty: existing.total_qty + quantity,
@@ -246,7 +257,7 @@ async function buildCachedAnalytics(
   const saleIds = new Set(currentActivities.map((act) => act.id));
   const currentCOGS = currentSaleItems
     .filter((item) => saleIds.has(item.sale_id ?? ''))
-    .reduce((sum, item) => sum + (Number(item.cost_price ?? 0) * Number(item.quantity ?? 0)), 0);
+    .reduce((sum, item) => sum + (getSaleItemCost(item) * Number(item.quantity ?? 0)), 0);
 
   const grossProfit = totalRevenue - currentCOGS;
   const netProfit = grossProfit - totalExpenses;
@@ -389,7 +400,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           unit_price,
           cost_price,
           total_price,
-          product:products(id, name),
+          product:products(id, name, cost_price),
           sale:sales!inner(created_at, business_id, branch_id)
         `)
         .eq('sale.business_id', businessId)
@@ -481,9 +492,20 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         (prevRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
 
       const saleIds = new Set((currentSales ?? []).map(s => s.id));
+      const productCostMap = new Map(products.map((p) => [p.id, Number(p.cost_price ?? 0)]));
+      const getSaleItemCost = (item: any) => {
+        const rawCost = Number(item.cost_price ?? 0);
+        if (rawCost > 0) return rawCost;
+        const pid = item.product_id ?? (item.product as any)?.id;
+        if (pid && productCostMap.has(pid)) {
+          return productCostMap.get(pid) ?? 0;
+        }
+        return Number((item.product as any)?.cost_price ?? 0);
+      };
+
       const currentCOGS = saleItems
         ?.filter(item => saleIds.has(item.sale_id ?? ''))
-        .reduce((sum, item) => sum + (Number(item.cost_price ?? 0) * Number(item.quantity ?? 0)), 0) ?? 0;
+        .reduce((sum, item) => sum + (getSaleItemCost(item) * Number(item.quantity ?? 0)), 0) ?? 0;
 
       const grossProfit = totalRevenue - currentCOGS;
       const netProfit = grossProfit - totalExpenses;
@@ -547,7 +569,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         const key = format(new Date((item.sale as any).created_at), 'yyyy-MM-dd');
         const existing = trendMap.get(key);
         if (existing) {
-          const itemProfit = (item.unit_price - (item.cost_price ?? 0)) * item.quantity;
+          const itemProfit = (item.unit_price - getSaleItemCost(item)) * item.quantity;
           trendMap.set(key, { ...existing, profit: existing.profit + itemProfit });
         }
       });
@@ -589,7 +611,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           ...existing,
           total_qty: existing.total_qty + item.quantity,
           total_revenue: existing.total_revenue + item.total_price,
-          total_profit: existing.total_profit + (item.unit_price - (item.cost_price ?? 0)) * item.quantity,
+          total_profit: existing.total_profit + (item.unit_price - getSaleItemCost(item)) * item.quantity,
         });
       });
 
@@ -638,4 +660,16 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       set({ isLoading: false });
     }
   },
+
+  reset: () =>
+    set({
+      summary: null,
+      salesTrend: [],
+      allProducts: [],
+      topProducts: [],
+      expenseBreakdown: [],
+      isLoading: false,
+      error: null,
+      dateRange: '7days',
+    }),
 }));

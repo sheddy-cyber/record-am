@@ -6,7 +6,7 @@ import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
-import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader } from '@/components/ui';
+import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
@@ -60,25 +60,21 @@ export default function CustomerDetailScreen() {
     }
   }, [currentBusiness, customerId, fetchCustomerDetail]);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!customer) return;
-    Alert.alert(
-      'Remove Customer',
-      `Remove ${customer.name} from your customer list?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Remove', 
-          style: 'destructive',
-          onPress: async () => {
-            await deleteCustomer(customer.id);
-            setSelectedCustomer(null);
-            Toast.show({ type: 'success', text1: 'Customer removed' });
-            closeScreen();
-          }
-        }
-      ]
-    );
+    const confirmed = await confirmModal({
+      title: 'Remove Customer',
+      message: `Are you sure you want to remove ${customer.name} from your customer list?`,
+      confirmText: 'Remove',
+      type: 'danger',
+    });
+
+    if (confirmed) {
+      await deleteCustomer(customer.id);
+      setSelectedCustomer(null);
+      Toast.show({ type: 'success', text1: 'Customer removed' });
+      closeScreen();
+    }
   };
 
   if (!customer) {

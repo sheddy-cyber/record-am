@@ -16,8 +16,11 @@ type ProductFormFieldsProps = {
   onProductUnitChange: (value: string) => void;
   costPrice: string;
   onCostPriceChange: (value: string) => void;
+  costPriceExtra?: React.ReactNode;
+  costPriceLabel?: string;
   sellingPrice: string;
   onSellingPriceChange: (value: string) => void;
+  sellingPriceExtra?: React.ReactNode;
   reorderLevel: string;
   onReorderLevelChange: (value: string) => void;
   stockQuantity: string;
@@ -35,8 +38,11 @@ export function ProductFormFields({
   onProductUnitChange,
   costPrice,
   onCostPriceChange,
+  costPriceExtra,
+  costPriceLabel,
   sellingPrice,
   onSellingPriceChange,
+  sellingPriceExtra,
   reorderLevel,
   onReorderLevelChange,
   stockQuantity,
@@ -48,6 +54,8 @@ export function ProductFormFields({
 }: ProductFormFieldsProps) {
   const hasPresetUnit = PRODUCT_UNITS.some((unit) => unit.value === productUnit);
   const selectedUnit = hasPresetUnit ? productUnit : CUSTOM_UNIT_VALUE;
+  const cleanUnit = productUnit.trim() || 'unit';
+  const effectiveCostPriceLabel = costPriceLabel ?? `Cost Price per ${cleanUnit}`;
 
   return (
     <>
@@ -77,9 +85,19 @@ export function ProductFormFields({
           required
         />
       ) : null}
+      {!isService ? (
+        <InputField
+          label={stockQuantityLabel}
+          value={stockQuantity}
+          onChangeText={onStockQuantityChange}
+          placeholder="0"
+          keyboardType="numeric"
+          hint={stockQuantityHint}
+        />
+      ) : null}
       <RoleGate allowedRoles={['owner', 'manager']}>
         <InputField
-          label="Cost Price"
+          label={effectiveCostPriceLabel}
           value={costPrice}
           onChangeText={onCostPriceChange}
           placeholder="0"
@@ -87,6 +105,7 @@ export function ProductFormFields({
           prefix={CURRENCY_SYMBOL}
           isAmount={true}
         />
+        {costPriceExtra}
       </RoleGate>
       <InputField
         label="Selling Price"
@@ -98,25 +117,16 @@ export function ProductFormFields({
         isAmount={true}
         required
       />
+      {sellingPriceExtra}
       {!isService ? (
-        <>
-          <InputField
-            label="Reorder Level"
-            value={reorderLevel}
-            onChangeText={onReorderLevelChange}
-            placeholder="5"
-            keyboardType="numeric"
-            hint="You will get low-stock warnings below this level."
-          />
-          <InputField
-            label={stockQuantityLabel}
-            value={stockQuantity}
-            onChangeText={onStockQuantityChange}
-            placeholder="0"
-            keyboardType="numeric"
-            hint={stockQuantityHint}
-          />
-        </>
+        <InputField
+          label="Reorder Level"
+          value={reorderLevel}
+          onChangeText={onReorderLevelChange}
+          placeholder="5"
+          keyboardType="numeric"
+          hint="You will get low-stock warnings below this level."
+        />
       ) : null}
       <Toggle
         label="This is a service"

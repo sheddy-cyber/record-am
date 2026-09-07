@@ -1,5 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  Alert,
+  AlertButton,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Feather } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -8,56 +17,54 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { useTabStore } from '@/store/tabStore';
 import { deleteProductRecord } from '@/lib/recordDeletion';
 import { removeCachedProduct } from '@/lib/offlineStore';
-import { Badge, Button, EmptyState, LoadingScreen, RoleGate } from '@/components/ui';
+import { Badge, EmptyState } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { Product } from '@/types';
 import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
 
-type FilterType = 'all' | 'low_stock' | 'out_of_stock';
+type StockFilter = 'all' | 'low_stock' | 'out_of_stock';
 
 const formatCurrency = (value: number) =>
-  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
 
 const formatCount = (value: number) =>
   Number.isInteger(value)
     ? `${value}`
-    : value.toFixed(2).replace(/\.00$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+    : value
+        .toFixed(2)
+        .replace(/\.00$/, '')
+        .replace(/(\.\d*[1-9])0+$/, '$1');
 
 function InventoryScreen() {
   const insets = useSafeAreaInsets();
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const userRole = useAuthStore((s) => s.userRole);
   const products = useBusinessStore((s) => s.products);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
 
   const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState<FilterType>('all');
+  const [stockFilter, setStockFilter] = useState<StockFilter>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [refreshing, setRefreshing] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [deleteActionProductId, setDeleteActionProductId] = useState<string | null>(null);
+
   const openCreateProduct = () => router.push('/(app)/add-stock');
 
   const load = useCallback(async () => {
     if (!businessId) {
-      setLoading(false);
       setRefreshing(false);
       return;
     }
-
-    void fetchProducts(businessId);
-    
-    setLoading(false);
+    await fetchProducts(businessId);
     setRefreshing(false);
   }, [businessId, fetchProducts]);
-
-
-
-  // Refetch handled by activeTab selector above — no focus listener needed
 
   useRealtimeRefresh({
     channelName: `inventory-screen-${branchId ?? 'unknown'}`,
@@ -71,40 +78,111 @@ function InventoryScreen() {
     onRefresh: load,
   });
 
-  const getProductStock = useCallback((product: Product) => {
-    if (!branchId) return 0;
-    return product.inventory?.find((item) => item.branch_id === branchId)?.quantity ?? 0;
-  }, [branchId]);
-
-  const filteredProducts = useMemo(
-    () =>
-      products.filter((product) => {
-        const matchesSearch = product.name.toLowerCase().includes(search.toLowerCase());
-        const stock = getProductStock(product);
-
-        if (filter === 'low_stock') return matchesSearch && !product.is_service && stock > 0 && stock <= product.reorder_level;
-        if (filter === 'out_of_stock') return matchesSearch && !product.is_service && stock <= 0;
-        return matchesSearch;
-      }),
-    [filter, getProductStock, products, search],
+  const getProductStock = useCallback(
+    (product: Product) => {
+      if (!branchId) return 0;
+      return product.inventory?.find((item) => item.branch_id === branchId)?.quantity ?? 0;
+    },
+    [branchId],
   );
 
-  const getStockBadge = (product: Product) => {
-    const stock = getProductStock(product);
-    if (product.is_service) return <Badge label="Service" variant="primary" />;
-    if (stock <= 0) return <Badge label="Out of Stock" variant="danger" />;
-    if (stock <= product.reorder_level) return <Badge label="Low Stock" variant="warning" />;
-    return <Badge label="In Stock" variant="success" />;
+  // Executive inventory stats
+  const stats = useMemo(() => {
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+
+    for (const p of products) {
+      if (p.is_service) continue;
+      const stock = getProductStock(p);
+      if (stock <= 0) {
+        outOfStockCount++;
+      } else if (stock <= p.reorder_level) {
+        lowStockCount++;
+      }
+    }
+
+    return {
+      totalProducts: products.length,
+      lowStockCount,
+      outOfStockCount,
+    };
+  }, [products, getProductStock]);
+
+  // Unique categories
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      if (p.category?.name) {
+        set.add(p.category.name);
+      }
+    });
+    return Array.from(set).sort();
+  }, [products]);
+
+  // Filtered products
+  const filteredProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return products.filter((product) => {
+      // 1. Search filter
+      const nameMatch = product.name.toLowerCase().includes(query);
+      const catMatch = (product.category?.name ?? '').toLowerCase().includes(query);
+      const barcodeMatch = (product.barcode ?? '').toLowerCase().includes(query);
+      const matchesSearch = !query || nameMatch || catMatch || barcodeMatch;
+
+      if (!matchesSearch) return false;
+
+      // 2. Category filter
+      if (selectedCategory !== 'all') {
+        if ((product.category?.name ?? 'General') !== selectedCategory) {
+          return false;
+        }
+      }
+
+      // 3. Stock status filter
+      const stock = getProductStock(product);
+      if (stockFilter === 'low_stock') {
+        return !product.is_service && stock > 0 && stock <= product.reorder_level;
+      }
+      if (stockFilter === 'out_of_stock') {
+        return !product.is_service && stock <= 0;
+      }
+
+      return true;
+    });
+  }, [products, search, selectedCategory, stockFilter, getProductStock]);
+
+  // Handle product actions menu (delete or update)
+  const handleProductActions = (product: Product) => {
+    const options: AlertButton[] = [
+      {
+        text: 'Update Stock & Pricing',
+        onPress: () =>
+          router.push({ pathname: '/(app)/update-stock', params: { productId: product.id } }),
+      },
+    ];
+
+    if (userRole === 'owner' || userRole === 'manager') {
+      options.push({
+        text: 'Delete Product',
+        style: 'destructive',
+        onPress: () => handleDeleteProduct(product),
+      });
+    }
+
+    options.push({ text: 'Cancel', style: 'cancel', onPress: () => {} });
+
+    Alert.alert(product.name, 'Manage this inventory item:', options);
   };
 
   const handleDeleteProduct = (product: Product) => {
     Alert.alert(
-      'Delete product',
-      `Remove ${product.name} from inventory?`,
+      'Delete Product',
+      `Permanently remove "${product.name}" from your catalog?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
+        {
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -117,210 +195,506 @@ function InventoryScreen() {
             } catch (err: any) {
               Alert.alert('Unable to delete', err.message ?? 'Please try again.');
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
-  // Render instantly without blocking UI. RefreshControl handles background loading state.
-
   return (
     <SwipeableTabScreen name="inventory">
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <ScreenHeader
-        title="Inventory"
-        subtitle={`${filteredProducts.length} product${filteredProducts.length === 1 ? '' : 's'}`}
-        theme="dark"
-        right={<HeaderAction icon="plus" label="Add Product" onPress={openCreateProduct} />}
-      />
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Inventory"
+          subtitle={`${products.length} ${products.length === 1 ? 'product' : 'products'} in catalog`}
+          theme="dark"
+          right={<HeaderAction icon="plus" label="Add" onPress={openCreateProduct} />}
+        />
 
-      <View style={{ padding: SP.page, gap: 12 }}>
-        <ReconcileWarningBanner onReconciled={load} />
+        {/* ── Fixed Search & Filters Bar (stays pinned at top) ───────────── */}
         <View
           style={{
-            borderWidth: 1,
-            borderColor: COLORS.border,
-            borderRadius: RADIUS.md,
-            backgroundColor: COLORS.card,
-            paddingHorizontal: 14,
-            minHeight: 48,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
+            backgroundColor: COLORS.surface,
+            paddingHorizontal: SP.page,
+            paddingTop: 10,
+            paddingBottom: 6,
+            gap: 8,
+            zIndex: 10,
           }}
         >
-          <Feather name="search" size={16} color={COLORS.text.muted} />
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search products"
-            placeholderTextColor={COLORS.text.muted}
-            underlineColorAndroid="transparent"
-            selectionColor={COLORS.accent}
-            cursorColor={COLORS.accent}
-            importantForAutofill="no"
-            style={{ flex: 1, fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.primary, paddingVertical: 10, backgroundColor: '#FFFFFF' }}
-          />
-        </View>
+          {/* Search Input */}
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: COLORS.border,
+              borderRadius: RADIUS.md,
+              backgroundColor: COLORS.card,
+              paddingHorizontal: 12,
+              height: 38,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <Feather name="search" size={15} color={COLORS.text.muted} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search products by name or category..."
+              placeholderTextColor={COLORS.text.muted}
+              underlineColorAndroid="transparent"
+              selectionColor={COLORS.accent}
+              cursorColor={COLORS.accent}
+              importantForAutofill="no"
+              style={{
+                flex: 1,
+                fontSize: 13.5,
+                fontFamily: FONT.regular,
+                color: COLORS.text.primary,
+                paddingVertical: 0,
+              }}
+            />
+            {search ? (
+              <TouchableOpacity
+                onPress={() => setSearch('')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Feather name="x" size={15} color={COLORS.text.muted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8 }}
-        >
-          {([
-            { key: 'all', label: 'All' },
-            { key: 'low_stock', label: 'Low Stock' },
-            { key: 'out_of_stock', label: 'Out of Stock' },
-          ] as const).map((item) => (
+          {/* Status Segmented Pills */}
+          <View
+            style={{
+              flexDirection: 'row',
+              backgroundColor: COLORS.accent,
+              borderRadius: RADIUS.md,
+              padding: 3,
+              gap: 3,
+            }}
+          >
+            {/* All Segment */}
             <TouchableOpacity
-              key={item.key}
-              onPress={() => setFilter(item.key)}
-              delayPressIn={0}
+              onPress={() => setStockFilter('all')}
               activeOpacity={0.8}
               style={{
-                minWidth: 92,
-                minHeight: 38,
-                paddingHorizontal: 14,
+                flex: 1,
+                paddingVertical: 6,
                 alignItems: 'center',
                 justifyContent: 'center',
-                borderWidth: 1,
                 borderRadius: RADIUS.sm,
-                borderColor: filter === item.key ? COLORS.ink : COLORS.border,
-                backgroundColor: filter === item.key ? COLORS.surface2 : COLORS.card,
+                backgroundColor: stockFilter === 'all' ? COLORS.card : 'transparent',
+                shadowColor: stockFilter === 'all' ? '#000' : 'transparent',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: stockFilter === 'all' ? 0.12 : 0,
+                shadowRadius: 2,
+                elevation: stockFilter === 'all' ? 2 : 0,
               }}
             >
-              <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {filteredProducts.length === 0 ? (
-        <EmptyState
-          icon="package"
-          title="No products found"
-          description={search ? 'Try a different search term.' : 'Add your first product to start tracking stock.'}
-          action={!search ? { label: 'Add Product', onPress: openCreateProduct } : undefined}
-        />
-      ) : (
-        <FlashList
-          data={filteredProducts}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: insets.bottom + 92 }}
-          
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                load();
-              }}
-              tintColor={COLORS.ink}
-            />
-          }
-          renderItem={({ item, index }) => {
-            const stock = getProductStock(item);
-            const showDeleteAction = deleteActionProductId === item.id;
-
-            return (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                delayLongPress={250}
-                onLongPress={() =>
-                  setDeleteActionProductId((currentId) => (currentId === item.id ? null : item.id))
-                }
-                onPress={() => {
-                  if (showDeleteAction) {
-                    setDeleteActionProductId(null);
-                  } else {
-                    router.push({ pathname: '/(app)/update-stock', params: { productId: item.id } });
-                  }
-                }}
+              <Text
                 style={{
-                  paddingVertical: SP.page,
-                  borderBottomWidth: index === filteredProducts.length - 1 ? 0 : 1,
-                  borderBottomColor: COLORS.border,
+                  fontFamily: stockFilter === 'all' ? FONT.bold : FONT.medium,
+                  fontSize: 12,
+                  color: stockFilter === 'all' ? COLORS.accent : '#FFFFFF',
                 }}
               >
-                  <View style={{ flexDirection: 'row', gap: 14, flex: 1, alignItems: 'center' }}>
-                    <View
+                All ({stats.totalProducts})
+              </Text>
+            </TouchableOpacity>
+
+            {/* Low Stock Segment */}
+            <TouchableOpacity
+              onPress={() =>
+                setStockFilter((prev) => (prev === 'low_stock' ? 'all' : 'low_stock'))
+              }
+              activeOpacity={0.8}
+              style={{
+                flex: 1,
+                paddingVertical: 6,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: RADIUS.sm,
+                backgroundColor: stockFilter === 'low_stock' ? COLORS.card : 'transparent',
+                shadowColor: stockFilter === 'low_stock' ? '#000' : 'transparent',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: stockFilter === 'low_stock' ? 0.12 : 0,
+                shadowRadius: 2,
+                elevation: stockFilter === 'low_stock' ? 2 : 0,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {stats.lowStockCount > 0 ? (
+                  <View
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: stockFilter === 'low_stock' ? COLORS.warning : '#FFFFFF',
+                    }}
+                  />
+                ) : null}
+                <Text
+                  style={{
+                    fontFamily: stockFilter === 'low_stock' ? FONT.bold : FONT.medium,
+                    fontSize: 12,
+                    color: stockFilter === 'low_stock' ? COLORS.warning : '#FFFFFF',
+                  }}
+                >
+                  Low ({stats.lowStockCount})
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Out of Stock Segment */}
+            <TouchableOpacity
+              onPress={() =>
+                setStockFilter((prev) => (prev === 'out_of_stock' ? 'all' : 'out_of_stock'))
+              }
+              activeOpacity={0.8}
+              style={{
+                flex: 1,
+                paddingVertical: 6,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: RADIUS.sm,
+                backgroundColor: stockFilter === 'out_of_stock' ? COLORS.card : 'transparent',
+                shadowColor: stockFilter === 'out_of_stock' ? '#000' : 'transparent',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: stockFilter === 'out_of_stock' ? 0.12 : 0,
+                shadowRadius: 2,
+                elevation: stockFilter === 'out_of_stock' ? 2 : 0,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                {stats.outOfStockCount > 0 ? (
+                  <View
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: stockFilter === 'out_of_stock' ? COLORS.danger : '#FFFFFF',
+                    }}
+                  />
+                ) : null}
+                <Text
+                  style={{
+                    fontFamily: stockFilter === 'out_of_stock' ? FONT.bold : FONT.medium,
+                    fontSize: 12,
+                    color: stockFilter === 'out_of_stock' ? COLORS.danger : '#FFFFFF',
+                  }}
+                >
+                  Out ({stats.outOfStockCount})
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Category Filter Chips */}
+          {categories.length > 0 ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6 }}
+            >
+              <TouchableOpacity
+                onPress={() => setSelectedCategory('all')}
+                activeOpacity={0.8}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: RADIUS.full,
+                  borderWidth: 1,
+                  borderColor: selectedCategory === 'all' ? COLORS.ink : COLORS.border,
+                  backgroundColor: selectedCategory === 'all' ? COLORS.ink : COLORS.card,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11.5,
+                    fontFamily: selectedCategory === 'all' ? FONT.bold : FONT.medium,
+                    color:
+                      selectedCategory === 'all' ? COLORS.text.inverse : COLORS.text.secondary,
+                  }}
+                >
+                  All
+                </Text>
+              </TouchableOpacity>
+
+              {categories.map((catName) => {
+                const isSelected = selectedCategory === catName;
+                return (
+                  <TouchableOpacity
+                    key={catName}
+                    onPress={() => setSelectedCategory(isSelected ? 'all' : catName)}
+                    activeOpacity={0.8}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 4,
+                      borderRadius: RADIUS.full,
+                      borderWidth: 1,
+                      borderColor: isSelected ? COLORS.ink : COLORS.border,
+                      backgroundColor: isSelected ? COLORS.ink : COLORS.card,
+                    }}
+                  >
+                    <Text
                       style={{
-                        width: 48,
-                        height: 48,
-                        backgroundColor: COLORS.surface2,
-                        borderRadius: RADIUS.md,
-                        borderWidth: 1,
-                        borderColor: COLORS.border,
-                        alignItems: 'center',
-                        justifyContent: 'center',
+                        fontSize: 11.5,
+                        fontFamily: isSelected ? FONT.bold : FONT.medium,
+                        color: isSelected ? COLORS.text.inverse : COLORS.text.secondary,
                       }}
                     >
-                      <Feather name={item.is_service ? 'tool' : 'package'} size={20} color={COLORS.text.secondary} />
-                    </View>
-                    
-                    <View style={{ flex: 1, gap: 4 }}>
-                      {/* Top Row: Name & Price */}
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                          {formatCurrency(item.selling_price)}
-                        </Text>
-                      </View>
+                      {catName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          ) : null}
+        </View>
 
-                      {/* Middle Row: Category & Stock Qty */}
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted }}>
-                          {item.category?.name ?? 'Uncategorized'}
-                          {' \u00B7 '}
-                          {item.unit}
-                        </Text>
-                        {!item.is_service ? (
-                          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.secondary }}>
+        {/* ── Scrollable Products List (scrolls underneath fixed bar) ─────── */}
+        <View style={{ flex: 1 }}>
+          <FlashList
+            data={filteredProducts}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{
+              paddingHorizontal: SP.page,
+              paddingTop: 10,
+              paddingBottom: insets.bottom + 92,
+            }}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  load();
+                }}
+                tintColor={COLORS.ink}
+              />
+            }
+            ListHeaderComponent={
+              <View style={{ marginBottom: 6 }}>
+                <ReconcileWarningBanner onReconciled={load} />
+              </View>
+            }
+            ListEmptyComponent={
+              <View style={{ paddingVertical: 40, paddingHorizontal: 16 }}>
+                <EmptyState
+                  icon="package"
+                  title={products.length === 0 ? 'No products found' : 'No matching products'}
+                  description={
+                    products.length === 0
+                      ? 'Add your first product to start tracking inventory and stock levels.'
+                      : 'Try clearing your search query or switching your category filter.'
+                  }
+                  action={
+                    products.length === 0
+                      ? { label: 'Add Product', onPress: openCreateProduct }
+                      : {
+                          label: 'Reset Filters',
+                          onPress: () => {
+                            setSearch('');
+                            setStockFilter('all');
+                            setSelectedCategory('all');
+                          },
+                        }
+                  }
+                />
+              </View>
+            }
+            renderItem={({ item }) => {
+              const stock = getProductStock(item);
+              const isOutOfStock = !item.is_service && stock <= 0;
+              const isLowStock = !item.is_service && stock > 0 && stock <= item.reorder_level;
+
+              const iconBg = item.is_service
+                ? 'rgba(59, 130, 246, 0.1)'
+                : isOutOfStock
+                ? 'rgba(239, 68, 68, 0.1)'
+                : isLowStock
+                ? 'rgba(245, 158, 11, 0.1)'
+                : 'rgba(16, 185, 129, 0.1)';
+
+              const iconColor = item.is_service
+                ? '#3B82F6'
+                : isOutOfStock
+                ? COLORS.danger
+                : isLowStock
+                ? COLORS.warning
+                : COLORS.success;
+
+              const iconName: keyof typeof Feather.glyphMap = item.is_service
+                ? 'tool'
+                : isOutOfStock
+                ? 'alert-circle'
+                : isLowStock
+                ? 'alert-triangle'
+                : 'package';
+
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                  onLongPress={() => handleProductActions(item)}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(app)/update-stock',
+                      params: { productId: item.id },
+                    })
+                  }
+                  style={{
+                    backgroundColor: COLORS.card,
+                    borderRadius: RADIUS.md,
+                    borderWidth: 1,
+                    borderColor: COLORS.border,
+                    padding: 12,
+                    marginBottom: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  {/* Status / Category Icon Box */}
+                  <View
+                    style={{
+                      width: 42,
+                      height: 42,
+                      borderRadius: RADIUS.md,
+                      backgroundColor: iconBg,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name={iconName} size={19} color={iconColor} />
+                  </View>
+
+                  {/* Core Product Information */}
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontFamily: FONT.bold,
+                        color: COLORS.text.primary,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {item.name}
+                    </Text>
+
+                    <Text
+                      style={{
+                        fontFamily: FONT.regular,
+                        fontSize: 12,
+                        color: COLORS.text.muted,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {item.category?.name ?? 'General'} · {item.unit}
+                    </Text>
+
+                    {/* Stock Status Indicator */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
+                      {item.is_service ? (
+                        <Badge label="Service" variant="primary" />
+                      ) : isOutOfStock ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: 3,
+                              backgroundColor: COLORS.danger,
+                            }}
+                          />
+                          <Text
+                            style={{
+                              fontFamily: FONT.bold,
+                              fontSize: 12,
+                              color: COLORS.danger,
+                            }}
+                          >
+                            Out of Stock
+                          </Text>
+                        </View>
+                      ) : isLowStock ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: 3,
+                              backgroundColor: COLORS.warning,
+                            }}
+                          />
+                          <Text
+                            style={{
+                              fontFamily: FONT.bold,
+                              fontSize: 12,
+                              color: COLORS.warning,
+                            }}
+                          >
+                            Low: {formatCount(stock)} {item.unit} left
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <View
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: 3,
+                              backgroundColor: COLORS.success,
+                            }}
+                          />
+                          <Text
+                            style={{
+                              fontFamily: FONT.medium,
+                              fontSize: 12,
+                              color: COLORS.success,
+                            }}
+                          >
                             {formatCount(stock)} {item.unit} in stock
                           </Text>
-                        ) : null}
-                      </View>
-
-                      {/* Bottom Row: Badges & Value */}
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 }}>
-                        {getStockBadge(item)}
-                        
-                        {!item.is_service && stock > 0 ? (
-                          <RoleGate allowedRoles={['owner', 'manager']}>
-                            <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                              Value: {formatCurrency(item.selling_price * stock)}
-                            </Text>
-                          </RoleGate>
-                        ) : <View />}
-                      </View>
+                        </View>
+                      )}
                     </View>
-                    
-                    <Feather name="chevron-right" size={18} color={COLORS.border} />
                   </View>
-                {showDeleteAction ? (
-                  <View style={{ alignItems: 'center', marginTop: 12 }}>
-                    <RoleGate allowedRoles={['owner', 'manager']}>
-                      <Button
-                        title="Delete"
-                        onPress={() => handleDeleteProduct(item)}
-                        size="sm"
-                        variant="danger"
-                      />
-                    </RoleGate>
+
+                  {/* Pricing & Valuation */}
+                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontFamily: FONT.bold,
+                        color: COLORS.text.primary,
+                      }}
+                    >
+                      {formatCurrency(item.selling_price)}
+                    </Text>
+
+                    {!item.is_service &&
+                    stock > 0 &&
+                    (userRole === 'owner' || userRole === 'manager') ? (
+                      <Text
+                        style={{
+                          fontFamily: FONT.regular,
+                          fontSize: 11,
+                          color: COLORS.text.muted,
+                        }}
+                      >
+                        Val: {formatCurrency(item.selling_price * stock)}
+                      </Text>
+                    ) : null}
+
+                    <Feather name="chevron-right" size={14} color={COLORS.border} />
                   </View>
-                ) : null}
-              </TouchableOpacity>
-            );
-          }}
-        />
-      )}
-    </ScreenShell>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
+      </ScreenShell>
     </SwipeableTabScreen>
   );
 }

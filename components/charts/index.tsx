@@ -27,18 +27,25 @@ interface BarChartProps {
 
 import { ScrollView } from 'react-native';
 
+const defaultFormatValue = (v: number) => {
+  if (v === 0) return `${CURRENCY_SYMBOL}0`;
+  if (v >= 1000000) return `${CURRENCY_SYMBOL}${(v / 1000000).toFixed(1)}M`;
+  if (v >= 1000) return `${CURRENCY_SYMBOL}${(v / 1000).toFixed(0)}k`;
+  return `${CURRENCY_SYMBOL}${v}`;
+};
+
 export const BarChart: React.FC<BarChartProps> = ({
   data,
-  width = SCREEN_W - 48,
+  width = SCREEN_W - 72,
   height = 200,
   color = COLORS.accent,
   secondaryColor = COLORS.success,
-  formatValue = (v) => `${CURRENCY_SYMBOL}${(v / 1000).toFixed(0)}k`,
+  formatValue = defaultFormatValue,
   showSecondary = false,
 }) => {
   if (!data.length) return null;
 
-  const paddingLeft = 45; // slightly reduced for empty space issue
+  const paddingLeft = 35; // slightly reduced for empty space issue
   const paddingRight = 16;
   const paddingTop = 16;
   const paddingBottom = 40;
@@ -136,16 +143,16 @@ interface LineChartProps {
 
 export const LineChart: React.FC<LineChartProps> = ({
   data,
-  width = SCREEN_W - 48,
+  width = SCREEN_W - 72,
   height = 200,
   color = COLORS.accent,
   secondaryColor = COLORS.success,
   showSecondary = false,
-  formatValue = (v) => `${CURRENCY_SYMBOL}${(v / 1000).toFixed(0)}k`,
+  formatValue = defaultFormatValue,
 }) => {
   if (!data.length) return null;
 
-  const paddingLeft = 45; // reduced spacing
+  const paddingLeft = 35; // reduced spacing
   const paddingRight = 16;
   const paddingTop = 16;
   const paddingBottom = 40;
@@ -156,9 +163,11 @@ export const LineChart: React.FC<LineChartProps> = ({
   const gridLines = 4;
 
   const minPointW = 40; // intelligent minimum width
-  const scrollChartW = Math.max(width - paddingLeft - paddingRight, data.length * minPointW);
+  const horizontalPadding = 16; // Prevents the first and last label from cutting off at edges
+  const scrollChartW = Math.max(width - paddingLeft - paddingRight, data.length * minPointW + horizontalPadding * 2);
 
-  const toX = (i: number) => (data.length > 1 ? (i / (data.length - 1)) * scrollChartW : scrollChartW / 2);
+  const chartW = scrollChartW - horizontalPadding * 2;
+  const toX = (i: number) => horizontalPadding + (data.length > 1 ? (i / (data.length - 1)) * chartW : chartW / 2);
   const toY = (v: number) => paddingTop + chartH - (v / maxVal) * chartH;
 
   const buildPath = (key: 'value' | 'secondaryValue') => {
@@ -279,7 +288,8 @@ export const DonutChart: React.FC<DonutChartProps> = ({
 
   const slices = data.map((d) => {
     const fraction = d.value / total;
-    const angle = fraction * 360;
+    // Cap at 359.99 to prevent degenerate arc when a single item = 100%
+    const angle = Math.min(fraction * 360, 359.99);
     const startAngle = cumulativeAngle;
     cumulativeAngle += angle;
 
@@ -300,7 +310,7 @@ export const DonutChart: React.FC<DonutChartProps> = ({
 
   return (
     <Svg width={size} height={size}>
-      <Circle cx={cx} cy={cy} r={r} fill="none" stroke={COLORS.border} strokeWidth={thickness} />
+      <Circle cx={cx} cy={cy} r={r} fill="none" stroke={COLORS.border} strokeWidth={thickness} opacity={0.5} />
       {slices.map((slice, i) => (
         <Path key={i} d={slice.pathD} fill="none" stroke={slice.color} strokeWidth={thickness} strokeLinecap="butt" />
       ))}

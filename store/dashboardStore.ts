@@ -1,14 +1,19 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { DashboardStats, RevenueActivity, CustomerDebt } from '@/types';
 import {
   buildCachedDashboardData,
-  cacheCustomerDebts,
+  upsertCachedCustomerDebts,
   upsertCachedExpenses,
 } from '@/lib/offlineStore';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { isDebtSettlementSale } from '@/lib/records';
 import { fetchRevenueActivities } from '@/lib/revenue';
+
+const DASHBOARD_REVENUE_VISIBLE_KEY = 'record-am:dashboard:revenue-visible';
+const getRevenueKey = (businessId?: string) =>
+  businessId ? `${DASHBOARD_REVENUE_VISIBLE_KEY}:${businessId}` : DASHBOARD_REVENUE_VISIBLE_KEY;
 
 interface DashboardState {
   stats: DashboardStats | null;
@@ -16,6 +21,11 @@ interface DashboardState {
   recentDebts: CustomerDebt[];
   isLoading: boolean;
   error: string | null;
+  revenueVisible: boolean;
+
+  loadRevenueVisibility: (businessId?: string) => Promise<void>;
+  toggleRevenueVisibility: (businessId?: string) => Promise<void>;
+  setRevenueVisibility: (visible: boolean, businessId?: string) => Promise<void>;
 
   refreshFromCache: (businessId: string, branchId: string) => Promise<void>;
   fetchDashboardData: (
@@ -23,6 +33,7 @@ interface DashboardState {
     branchId: string,
     getStockAlerts: (b: string, br: string) => Promise<{ lowStockProducts: any[]; outOfStockProducts: any[] }>
   ) => Promise<void>;
+  reset: () => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
@@ -31,6 +42,49 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   recentDebts: [],
   isLoading: true,
   error: null,
+  revenueVisible: true,
+
+  loadRevenueVisibility: async (businessId?: string) => {
+    try {
+      let stored: string | null = null;
+      if (businessId) {
+        stored = await AsyncStorage.getItem(getRevenueKey(businessId));
+      }
+      if (stored === null) {
+        stored = await AsyncStorage.getItem(DASHBOARD_REVENUE_VISIBLE_KEY);
+      }
+      if (stored !== null) {
+        set({ revenueVisible: stored === 'true' });
+      }
+    } catch (err) {
+      console.warn('[dashboardStore] Failed to load revenue visibility', err);
+    }
+  },
+
+  toggleRevenueVisibility: async (businessId?: string) => {
+    const next = !get().revenueVisible;
+    set({ revenueVisible: next });
+    try {
+      await AsyncStorage.setItem(DASHBOARD_REVENUE_VISIBLE_KEY, String(next));
+      if (businessId) {
+        await AsyncStorage.setItem(getRevenueKey(businessId), String(next));
+      }
+    } catch (err) {
+      console.warn('[dashboardStore] Failed to save revenue visibility', err);
+    }
+  },
+
+  setRevenueVisibility: async (visible: boolean, businessId?: string) => {
+    set({ revenueVisible: visible });
+    try {
+      await AsyncStorage.setItem(DASHBOARD_REVENUE_VISIBLE_KEY, String(visible));
+      if (businessId) {
+        await AsyncStorage.setItem(getRevenueKey(businessId), String(visible));
+      }
+    } catch (err) {
+      console.warn('[dashboardStore] Failed to save revenue visibility', err);
+    }
+  },
 
   refreshFromCache: async (businessId, branchId) => {
     try {
@@ -134,24 +188,48 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       const totalDebts = debtsRes.data?.reduce((sum, row) => sum + row.balance, 0) ?? 0;
       const stockAlerts = await getStockAlerts(businessId, branchId);
 
+      // Re-read latest cache to account for transactions recorded locally during the network fetch
+      const latestCached = await buildCachedDashboardData(businessId, branchId);
+
+      const serverSalesTotal = totalSales + totalRepayments;
+      const cachedTodaySales = latestCached.stats?.today_sales ?? 0;
+      const currentTodaySales = get().stats?.today_sales ?? 0;
+
+      // Prevent revenue and expenses from flickering backwards due to sync latency
+      const resolvedTodaySales = Math.max(serverSalesTotal, cachedTodaySales, currentTodaySales);
+      const resolvedTodayExpenses = Math.max(totalExpenses, latestCached.stats?.today_expenses ?? 0);
+      const resolvedTodayProfit = resolvedTodaySales - resolvedTodayExpenses;
+
+      // Merge debts so newly created local debts don't vanish before server sync
+      const serverDebts = (debtListRes.data as CustomerDebt[]) ?? [];
+      const serverDebtIds = new Set(serverDebts.map((d) => d.id));
+      const mergedRecentDebts = [
+        ...serverDebts,
+        ...latestCached.recentDebts.filter((d) => !serverDebtIds.has(d.id) && d.status !== 'settled'),
+      ]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 3);
+
+      const resolvedOutstandingDebts = Math.max(totalDebts, latestCached.stats?.outstanding_debts ?? 0);
+
       set({
         stats: {
-          today_sales: totalSales + totalRepayments,
-          today_profit: totalSales + totalRepayments - totalExpenses,
-          today_expenses: totalExpenses,
+          today_sales: resolvedTodaySales,
+          today_profit: resolvedTodayProfit,
+          today_expenses: resolvedTodayExpenses,
           total_products: productCountRes.count ?? 0,
           low_stock_count: stockAlerts.lowStockProducts.length,
           out_of_stock_count: stockAlerts.outOfStockProducts.length,
-          outstanding_debts: totalDebts,
+          outstanding_debts: resolvedOutstandingDebts,
           total_customers: customerCountRes.count ?? 0,
         },
         recentActivities: recentRevenueRes,
-        recentDebts: (debtListRes.data as CustomerDebt[]) ?? [],
+        recentDebts: mergedRecentDebts,
       });
 
-      // Cache the network results
+      // Upsert (do NOT replace) cached results so local unsynced debts aren't wiped
       await Promise.all([
-        cacheCustomerDebts(businessId, branchId, (debtListRes.data as CustomerDebt[]) ?? []),
+        upsertCachedCustomerDebts(businessId, branchId, (debtListRes.data as CustomerDebt[]) ?? []),
         upsertCachedExpenses(businessId, branchId, (todayExpensesRes.data as any[]) ?? []),
       ]);
     } catch (err: any) {
@@ -172,4 +250,23 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       set({ isLoading: false });
     }
   },
+
+  reset: () =>
+    set({
+      stats: null,
+      recentActivities: [],
+      recentDebts: [],
+      isLoading: true,
+      error: null,
+      revenueVisible: true,
+    }),
 }));
+
+// Eagerly restore revenue visibility preference on initial store import
+AsyncStorage.getItem(DASHBOARD_REVENUE_VISIBLE_KEY)
+  .then((stored) => {
+    if (stored !== null) {
+      useDashboardStore.setState({ revenueVisible: stored === 'true' });
+    }
+  })
+  .catch(() => {});

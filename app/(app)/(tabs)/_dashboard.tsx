@@ -31,6 +31,7 @@ const fmt = (value: number) =>
 function DashboardScreen() {
   const insets = useSafeAreaInsets();
   // Use ID-only selectors — stable primitives that don't change reference on unrelated store updates
+  const userId = useAuthStore((s) => s.user?.id);
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const businessName = useAuthStore((s) => s.currentBusiness?.name) ?? 'My Business';
   const branchId = useAuthStore((s) => s.currentBranch?.id);
@@ -41,19 +42,24 @@ function DashboardScreen() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   useEffect(() => {
-    useNotificationStore.getState().loadNotifications();
-  }, []);
+    if (userId) {
+      useNotificationStore.getState().loadNotifications(userId);
+    }
+  }, [userId]);
 
   const stats = useDashboardStore((s) => s.stats);
   const recentActivities = useDashboardStore((s) => s.recentActivities);
   const recentDebts = useDashboardStore((s) => s.recentDebts);
   const fetchDashboardData = useDashboardStore((s) => s.fetchDashboardData);
+  const revenueVisible = useDashboardStore((s) => s.revenueVisible);
+  const toggleRevenueVisibility = useDashboardStore((s) => s.toggleRevenueVisibility);
   const [refreshing, setRefreshing] = useState(false);
-  const [revenueVisible, setRevenueVisible] = useState(true);
 
   const isOnline = useOfflineStore((s) => s.isOnline);
-  const pendingCount = useOfflineStore((s) => s.pendingCount);
-  const isSyncing = useOfflineStore((s) => s.isSyncing);
+
+  useEffect(() => {
+    useDashboardStore.getState().loadRevenueVisibility(businessId);
+  }, [businessId]);
 
   // Deps are stable primitives (IDs), so this callback only recreates when business/branch actually changes
   const fetchData = useCallback(async () => {
@@ -108,6 +114,7 @@ function DashboardScreen() {
       ...(businessId ? [{ table: 'products', filter: `business_id=eq.${businessId}` }] : []),
       ...(businessId ? [{ table: 'customers', filter: `business_id=eq.${businessId}` }] : []),
     ],
+    debounceMs: 500,
     onRefresh: fetchData,
   });
 
@@ -150,38 +157,22 @@ function DashboardScreen() {
         }
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => router.push('/(app)/settings')}
-              style={{
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 36,
-                height: 36,
-                borderRadius: RADIUS.md,
-                backgroundColor: isSyncing
-                  ? 'rgba(56, 189, 248, 0.12)'
-                  : !isOnline
-                    ? 'rgba(239, 68, 68, 0.12)'
-                    : pendingCount > 0
-                      ? 'rgba(245, 158, 11, 0.12)'
-                      : 'rgba(34, 197, 94, 0.12)',
-              }}
-            >
-              <Feather 
-                name={!isOnline ? "wifi-off" : isSyncing ? "refresh-cw" : pendingCount > 0 ? "upload-cloud" : "cloud"} 
-                size={16} 
-                color={
-                  isSyncing
-                    ? '#38bdf8'
-                    : !isOnline
-                      ? COLORS.danger
-                      : pendingCount > 0
-                        ? '#f59e0b'
-                        : COLORS.success
-                } 
-              />
-            </TouchableOpacity>
+            {!isOnline ? (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => router.push('/(app)/settings')}
+                style={{
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 36,
+                  height: 36,
+                  borderRadius: RADIUS.md,
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                }}
+              >
+                <Feather name="wifi-off" size={16} color={COLORS.danger} />
+              </TouchableOpacity>
+            ) : null}
 
             <TouchableOpacity
               activeOpacity={0.7}
@@ -252,7 +243,10 @@ function DashboardScreen() {
             <Text style={{ ...TYPE.overline, color: 'rgba(239,239,208,0.3)', letterSpacing: 3 }}>
               TODAY'S REVENUE
             </Text>
-            <TouchableOpacity onPress={() => setRevenueVisible(!revenueVisible)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <TouchableOpacity
+              onPress={() => toggleRevenueVisibility(businessId)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
               <Feather name={revenueVisible ? 'eye-off' : 'eye'} size={14} color="rgba(239,239,208,0.3)" />
             </TouchableOpacity>
           </View>
@@ -303,7 +297,7 @@ function DashboardScreen() {
           {[
             { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale' },
             { icon: 'plus' as const, label: 'Add Stock', route: '/(app)/add-stock' },
-            { icon: 'minus' as const, label: 'Expense', route: '/(app)/record-expense' },
+            { icon: 'minus' as const, label: 'Expenses', route: '/(app)/record-expense' },
             { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/record-debt' },
           ].map((action) => (
             <TouchableOpacity

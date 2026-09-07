@@ -542,10 +542,12 @@ export default function RecordPurchaseScreen() {
         });
 
         if (mismatchId) {
-          await removeMismatch(mismatchId);
+          await removeMismatch(mismatchId, currentBusiness.id);
         }
 
+        void useBusinessStore.getState().fetchProducts(currentBusiness.id);
         void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
+        void useAnalyticsStore.getState().fetchAnalytics(currentBusiness.id, currentBranch.id);
         void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
 
         const { getAppSettings } = await import('@/lib/appSettings');
