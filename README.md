@@ -60,8 +60,8 @@ Record Am is a modern, mobile-first business management and Point of Sale (POS) 
 | **Routing** | [Expo Router](https://docs.expo.dev/router/introduction/) (File-based, typed routes) |
 | **Backend & Database** | [Supabase](https://supabase.com/) (PostgreSQL, Auth, Row-Level Security, RPCs) |
 | **State Management** | [Zustand](https://github.com/pmndrs/zustand) |
-| **Styling & UI** | Vanilla StyleSheet + Custom Design System tokens & NativeWind |
-| **Hardware & Native APIs** | `expo-local-authentication`, `expo-print`, `expo-sharing`, `expo-notifications`, `expo-secure-store` |
+| **Styling & UI** | Vanilla StyleSheet + Custom Design System tokens |
+| **Hardware & Native APIs** | `expo-print`, `expo-sharing`, `expo-notifications`, `expo-secure-store` |
 | **List Performance** | `@shopify/flash-list` |
 | **Date & Utilities** | `date-fns`, `@react-native-community/netinfo` |
 

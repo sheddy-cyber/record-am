@@ -227,25 +227,35 @@ export default function RootLayout() {
     const setup = async () => {
       try {
         const {
+          ensureNotificationPermissions,
           registerForPushNotifications,
           cancelDailySummaryNotification,
           scheduleDailySummaryNotification,
           checkAndNotifyLowStock,
           checkAndNotifyOverdueDebts,
+          checkAndNotifyDailySummary,
         } = await import('@/lib/notifications');
         const { getAppSettings, getTimeParts } = await import('@/lib/appSettings');
         const settings = await getAppSettings();
-        const token = await registerForPushNotifications();
-        if (token) {
-          if (settings.dailySummaryEnabled) {
-            const reminderTime = getTimeParts(settings.dailySummaryTime, '20:00');
-            await scheduleDailySummaryNotification(reminderTime.hour, reminderTime.minute);
-          } else {
-            await cancelDailySummaryNotification();
-          }
-          await checkAndNotifyLowStock(currentBusiness.id, currentBranch.id);
-          await checkAndNotifyOverdueDebts(currentBusiness.id);
+
+        // 1. Ensure permissions and channel are configured for local notifications
+        await ensureNotificationPermissions();
+
+        // 2. Schedule or cancel the local daily summary reminder
+        if (settings.dailySummaryEnabled) {
+          const reminderTime = getTimeParts(settings.dailySummaryTime, '20:00');
+          await scheduleDailySummaryNotification(reminderTime.hour, reminderTime.minute);
+        } else {
+          await cancelDailySummaryNotification();
         }
+
+        // 3. Register remote push token if possible (non-blocking)
+        registerForPushNotifications().catch(() => {});
+
+        // 4. Background in-app checks
+        await checkAndNotifyDailySummary(currentBusiness.id, currentBranch.id);
+        await checkAndNotifyLowStock(currentBusiness.id, currentBranch.id);
+        await checkAndNotifyOverdueDebts(currentBusiness.id);
       } catch (err) {
         console.log('[Record Am] Notification setup skipped:', err);
       }
@@ -274,11 +284,25 @@ export default function RootLayout() {
       }
     };
 
-    runAutoCloseCheck();
-    const interval = setInterval(runAutoCloseCheck, 60000);
+    const runDailySummaryCheck = async () => {
+      try {
+        const { checkAndNotifyDailySummary } = await import('@/lib/notifications');
+        await checkAndNotifyDailySummary(currentBusiness.id, currentBranch.id);
+      } catch (err) {
+        console.log('[Record Am] Daily summary check skipped:', err);
+      }
+    };
+
+    const runPeriodicChecks = () => {
+      runAutoCloseCheck();
+      runDailySummaryCheck();
+    };
+
+    runPeriodicChecks();
+    const interval = setInterval(runPeriodicChecks, 60000);
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        runAutoCloseCheck();
+        runPeriodicChecks();
       }
     });
 
@@ -293,14 +317,15 @@ export default function RootLayout() {
     if (isExpoGo) return;
 
     let active = true;
-    let subscription: any = null;
+    let responseSubscription: any = null;
+    let receivedSubscription: any = null;
 
-    const setupListener = async () => {
+    const setupListeners = async () => {
       try {
         const Notifications = await import('expo-notifications');
         if (!active) return;
-        subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-          const data = response.notification.request.content.data;
+
+        const handleNavigation = (data: any) => {
           const type = data?.type as string | undefined;
           const route = data?.actionRoute as string | undefined;
 
@@ -319,18 +344,94 @@ export default function RootLayout() {
           } else if (type === 'daily_summary' || type === 'close_day') {
             router.push('/(app)/close-day');
           }
+        };
+
+        // When a notification is received while the app is running
+        receivedSubscription = Notifications.addNotificationReceivedListener(async (notification) => {
+          const content = notification.request.content;
+          const data = (content.data || {}) as Record<string, any>;
+          const type = (data.type as any) || 'system';
+          const actionRoute = (data.actionRoute as string) || (type === 'daily_summary' ? '/(app)/close-day' : undefined);
+
+          try {
+            const { useNotificationStore } = await import('@/store/notificationStore');
+            await useNotificationStore.getState().addNotification({
+              title: content.title || 'Record Am Alert',
+              body: content.body || '',
+              type,
+              actionRoute,
+              data,
+            });
+          } catch (err) {
+            console.log('[notifications] failed to store received notification:', err);
+          }
         });
+
+        // When the user taps a notification
+        responseSubscription = Notifications.addNotificationResponseReceivedListener(async (response) => {
+          const content = response.notification.request.content;
+          const data = (content.data || {}) as Record<string, any>;
+          const type = (data.type as any) || 'system';
+          const actionRoute = (data.actionRoute as string) || (type === 'daily_summary' ? '/(app)/close-day' : undefined);
+
+          try {
+            const { useNotificationStore } = await import('@/store/notificationStore');
+            const notifStore = useNotificationStore.getState();
+            await notifStore.addNotification({
+              title: content.title || 'Record Am Alert',
+              body: content.body || '',
+              type,
+              actionRoute,
+              data,
+              read: true,
+            });
+            await notifStore.markMatchingAsRead((n) => {
+              if (n.title === content.title && n.body === content.body) return true;
+              if (data.productId && n.data?.productId === data.productId) return true;
+              if (data.mismatchId && n.data?.mismatchId === data.mismatchId) return true;
+              if (data.debtId && n.data?.debtId === data.debtId) return true;
+              if (type === 'daily_summary' && n.type === 'daily_summary') return true;
+              return false;
+            });
+          } catch (_) {}
+
+          handleNavigation(data);
+        });
+
+        // Cold launch handling if app was opened via notification response
+        const lastResponse = await Notifications.getLastNotificationResponseAsync();
+        if (lastResponse && active) {
+          const content = lastResponse.notification.request.content;
+          const data = (content.data || {}) as Record<string, any>;
+          const type = (data.type as any) || 'system';
+          try {
+            const { useNotificationStore } = await import('@/store/notificationStore');
+            const notifStore = useNotificationStore.getState();
+            await notifStore.markMatchingAsRead((n) => {
+              if (n.title === content.title && n.body === content.body) return true;
+              if (data.productId && n.data?.productId === data.productId) return true;
+              if (data.mismatchId && n.data?.mismatchId === data.mismatchId) return true;
+              if (data.debtId && n.data?.debtId === data.debtId) return true;
+              if (type === 'daily_summary' && n.type === 'daily_summary') return true;
+              return false;
+            });
+          } catch (_) {}
+          handleNavigation(data);
+        }
       } catch (err) {
         console.log('[notifications] listener setup failed:', err);
       }
     };
 
-    setupListener();
+    setupListeners();
 
     return () => {
       active = false;
-      if (subscription) {
-        subscription.remove();
+      if (responseSubscription) {
+        responseSubscription.remove();
+      }
+      if (receivedSubscription) {
+        receivedSubscription.remove();
       }
     };
   }, []);

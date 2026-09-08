@@ -59,5 +59,10 @@ export async function maybeAutoCloseDailyBalance(
   });
   await markAutoCloseProcessed(branchId, targetDate);
 
+  try {
+    const { useNotificationStore } = await import('@/store/notificationStore');
+    await useNotificationStore.getState().markDailySummaryAsRead(targetDate, userId);
+  } catch (_) {}
+
   return { status: 'closed', summaryDate: targetDate };
 }

@@ -62,6 +62,27 @@ const fmt = (n: number) =>
 
 const fmtCount = (n: number) => n.toLocaleString();
 
+const formatFullCurrency = (val: number, options?: { showSign?: boolean }) => {
+  const isNegative = val < 0;
+  const absVal = Math.abs(val);
+  const formatted = absVal.toLocaleString('en-NG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+  if (isNegative) {
+    return `-${CURRENCY_SYMBOL}${formatted}`;
+  }
+  if (options?.showSign && val > 0) {
+    return `+${CURRENCY_SYMBOL}${formatted}`;
+  }
+  return `${CURRENCY_SYMBOL}${formatted}`;
+};
+
+const formatFullCount = (val: number) => {
+  const rounded = Math.round(val);
+  return rounded.toLocaleString('en-NG');
+};
+
 export default function AnalyticsScreen() {
   const { currentBusiness, currentBranch, userRole } = useAuthStore();
   const { products } = useBusinessStore();
@@ -120,7 +141,19 @@ export default function AnalyticsScreen() {
     color: EXPENSE_COLORS[index % EXPENSE_COLORS.length],
   }));
 
+  const revenue = summary?.total_revenue ?? 0;
+  const grossProfit = summary?.gross_profit ?? 0;
+  const netProfit = summary?.net_profit ?? 0;
   const totalExpenses = summary?.total_expenses ?? 0;
+  const totalTransactions = summary?.total_transactions ?? 0;
+  const avgTransaction = summary?.avg_transaction_value ?? 0;
+  const stockItems = summary?.historical_stock_items ?? 0;
+  const stockValue = summary?.historical_stock_value ?? 0;
+
+  const netMarginPct = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+  const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
+  const expenseRatioPct = revenue > 0 ? (totalExpenses / revenue) * 100 : 0;
+  const isProfitable = netProfit >= 0;
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
@@ -185,120 +218,434 @@ export default function AnalyticsScreen() {
           </View>
         ) : (
           <View style={{ padding: 20, gap: 24 }}>
-            <View style={{ gap: 8 }}>
-              <SectionHeader title="Financial Overview" />
+            <View style={{ gap: 14 }}>
+              <SectionHeader
+                title="Financial Overview"
+                color={COLORS.text.secondary}
+                style={{ fontFamily: FONT.bold }}
+              />
+
+              {/* Master Hero Card: Total Revenue & Net Profit */}
               <Card style={{ padding: 20 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                  <View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                      <View style={{ width: 28, height: 28, borderRadius: 8, backgroundColor: COLORS.ink + '14', alignItems: 'center', justifyContent: 'center' }}>
-                        <Feather name="dollar-sign" size={14} color={COLORS.ink} />
+                {/* Revenue Header & Figure */}
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <View
+                        style={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: 8,
+                          backgroundColor: COLORS.ink + '12',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Feather name="trending-up" size={13} color={COLORS.ink} />
                       </View>
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.secondary }}>Total Revenue</Text>
+                      <Text
+                        style={{
+                          fontFamily: FONT.bold,
+                          fontSize: 11,
+                          letterSpacing: 0.8,
+                          color: COLORS.text.secondary,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        Total Revenue
+                      </Text>
                     </View>
-                    <Text style={{ fontSize: 32, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 4 }}>
-                      {fmt(summary?.total_revenue ?? 0)}
+
+                    <Text
+                      style={{
+                        fontSize: 28,
+                        fontFamily: FONT.bold,
+                        color: COLORS.text.primary,
+                        letterSpacing: -0.5,
+                      }}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      {formatFullCurrency(revenue)}
+                    </Text>
+
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
+                      Gross cash collected from completed sales
                     </Text>
                   </View>
+
                   {summary?.revenue_growth !== undefined && summary.revenue_growth !== 0 && (
                     <View
                       style={{
                         flexDirection: 'row',
                         alignItems: 'center',
-                        backgroundColor: summary.revenue_growth >= 0 ? COLORS.successLight : COLORS.dangerLight,
+                        backgroundColor: summary.revenue_growth >= 0 ? '#EAFBF1' : '#FEF3F2',
+                        borderColor: summary.revenue_growth >= 0 ? '#A6F4C5' : '#FECDCA',
+                        borderWidth: 1,
                         borderRadius: RADIUS.full,
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        gap: 2,
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        gap: 4,
                       }}
                     >
-                      <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: summary.revenue_growth >= 0 ? COLORS.success : COLORS.danger }}>
+                      <Feather
+                        name={summary.revenue_growth >= 0 ? 'arrow-up-right' : 'arrow-down-right'}
+                        size={12}
+                        color={summary.revenue_growth >= 0 ? '#027A48' : '#B42318'}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontFamily: FONT.bold,
+                          color: summary.revenue_growth >= 0 ? '#027A48' : '#B42318',
+                        }}
+                      >
                         {summary.revenue_growth >= 0 ? '+' : ''}{summary.revenue_growth.toFixed(1)}%
                       </Text>
                     </View>
                   )}
                 </View>
-                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 8 }}>
-                  Total cash collected from sales
-                </Text>
 
-                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 16 }} />
+                {/* Net Profit Spotlight Banner */}
+                <View
+                  style={{
+                    marginTop: 18,
+                    padding: 14,
+                    borderRadius: RADIUS.md,
+                    backgroundColor: isProfitable ? '#F0FDF4' : '#FEF2F2',
+                    borderWidth: 1,
+                    borderColor: isProfitable ? '#BBF7D0' : '#FECACA',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Feather
+                        name={isProfitable ? 'check-circle' : 'alert-circle'}
+                        size={14}
+                        color={isProfitable ? '#16A34A' : '#DC2626'}
+                      />
+                      <Text
+                        style={{
+                          fontFamily: FONT.bold,
+                          fontSize: 11,
+                          color: isProfitable ? '#15803D' : '#B91C1C',
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.6,
+                        }}
+                      >
+                        {isProfitable ? 'Net Profit' : 'Net Deficit'}
+                      </Text>
+                    </View>
 
-                <View style={{ flexDirection: 'row' }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Expenses</Text>
-                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                      {fmt(summary?.total_expenses ?? 0)}
-                    </Text>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
-                      Total money spent
-                    </Text>
+                    <View
+                      style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: RADIUS.full,
+                        backgroundColor: isProfitable ? '#DCFCE7' : '#FEE2E2',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontFamily: FONT.bold,
+                          color: isProfitable ? '#15803D' : '#B91C1C',
+                        }}
+                      >
+                        {netMarginPct.toFixed(1)}% net margin
+                      </Text>
+                    </View>
                   </View>
-                  <View style={{ width: 1, backgroundColor: COLORS.border }} />
-                  <View style={{ flex: 1, paddingHorizontal: 8 }}>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Gross Profit</Text>
-                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accent, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                      {fmt(summary?.gross_profit ?? 0)}
-                    </Text>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
-                      Rev. minus goods cost
-                    </Text>
+
+                  <Text
+                    style={{
+                      fontSize: 22,
+                      fontFamily: FONT.bold,
+                      color: isProfitable ? '#15803D' : '#DC2626',
+                    }}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                  >
+                    {formatFullCurrency(netProfit, { showSign: true })}
+                  </Text>
+
+                  <Text
+                    style={{
+                      fontFamily: FONT.regular,
+                      fontSize: 11,
+                      color: isProfitable ? '#166534' : '#991B1B',
+                      marginTop: 2,
+                    }}
+                  >
+                    {isProfitable
+                      ? 'Clear take-home earnings after product costs & operating expenses'
+                      : 'Total product costs and business expenses exceeded sales revenue'}
+                  </Text>
+                </View>
+              </Card>
+
+              {/* Breakdown Card: Gross Profit & Operating Expenses */}
+              <Card style={{ padding: 18 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <View
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 8,
+                      backgroundColor: COLORS.ink + '12',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="sliders" size={13} color={COLORS.ink} />
                   </View>
-                  <View style={{ width: 1, backgroundColor: COLORS.border }} />
-                  <View style={{ flex: 1, paddingLeft: 8 }}>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Net Profit</Text>
-                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.success, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                      {fmt(summary?.net_profit ?? 0)}
+                  <Text
+                    style={{
+                      fontFamily: FONT.bold,
+                      fontSize: 11,
+                      letterSpacing: 0.8,
+                      color: COLORS.text.secondary,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Cost & Profit Flow
+                  </Text>
+                </View>
+
+                {/* Gross Profit Item */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
+                    <View
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        backgroundColor: COLORS.accent + '15',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Feather name="pie-chart" size={17} color={COLORS.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
+                        Gross Profit
+                      </Text>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
+                        Revenue minus goods cost
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text
+                      style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.text.primary }}
+                      numberOfLines={1}
+                    >
+                      {formatFullCurrency(grossProfit)}
                     </Text>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
-                      After all expenses
+                    <View
+                      style={{
+                        backgroundColor: COLORS.accentLight,
+                        borderRadius: RADIUS.full,
+                        paddingHorizontal: 7,
+                        paddingVertical: 2,
+                        marginTop: 2,
+                      }}
+                    >
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.accentMuted }}>
+                        {grossMarginPct.toFixed(0)}% gross margin
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 14 }} />
+
+                {/* Operating Expenses Item */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
+                    <View
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        backgroundColor: COLORS.danger + '14',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Feather name="arrow-down-left" size={17} color={COLORS.danger} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
+                        Operating Expenses
+                      </Text>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
+                        Overhead, bills & running costs
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text
+                      style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.danger }}
+                      numberOfLines={1}
+                    >
+                      {formatFullCurrency(totalExpenses)}
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: COLORS.dangerLight,
+                        borderRadius: RADIUS.full,
+                        paddingHorizontal: 7,
+                        paddingVertical: 2,
+                        marginTop: 2,
+                      }}
+                    >
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.danger }}>
+                        {expenseRatioPct.toFixed(0)}% of revenue
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </Card>
+
+              {/* Activity & Valuation Card */}
+              <Card style={{ padding: 18 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <View
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 8,
+                      backgroundColor: COLORS.ink + '12',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="layers" size={13} color={COLORS.ink} />
+                  </View>
+                  <Text
+                    style={{
+                      fontFamily: FONT.bold,
+                      fontSize: 11,
+                      letterSpacing: 0.8,
+                      color: COLORS.text.secondary,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Activity & Valuation
+                  </Text>
+                </View>
+
+                {/* Sales Transactions Item */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
+                    <View
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        backgroundColor: COLORS.ink + '12',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Feather name="shopping-bag" size={17} color={COLORS.ink} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
+                        Total Transactions
+                      </Text>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
+                        Avg ticket: {formatFullCurrency(avgTransaction)} / sale
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.text.primary }} numberOfLines={1}>
+                      {formatFullCount(totalTransactions)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
+                      sale{totalTransactions === 1 ? '' : 's'} recorded
                     </Text>
                   </View>
                 </View>
 
-                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 16 }} />
-                
-                <View style={{ flexDirection: 'row' }}>
-                  <View style={{ flex: 1, paddingRight: 8 }}>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Transactions</Text>
-                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.warning, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                      {String(summary?.total_transactions ?? 0)}
-                    </Text>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
-                      Avg: {fmt(summary?.avg_transaction_value ?? 0)}
-                    </Text>
-                  </View>
-                  
-                  <RoleGate allowedRoles={['owner']}>
-                    <React.Fragment>
-                      <View style={{ width: 1, backgroundColor: COLORS.border }} />
-                      <View style={{ flex: 1, paddingHorizontal: 8 }}>
-                        <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Stock Items</Text>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.ink, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                          {fmtCount(summary?.historical_stock_items ?? 0)}
+                <RoleGate allowedRoles={['owner']}>
+                  <React.Fragment>
+                    <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 14 }} />
+
+                    {/* Stock Valuation Item */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
+                        <View
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 10,
+                            backgroundColor: COLORS.warning + '16',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Feather name="package" size={17} color={COLORS.warning} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
+                            Stock Net Worth
+                          </Text>
+                          <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
+                            {formatFullCount(stockItems)} total items in stock
+                          </Text>
+                        </View>
+                      </View>
+
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <Text
+                          style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.text.primary }}
+                          numberOfLines={1}
+                        >
+                          {formatFullCurrency(stockValue)}
                         </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
-                          Total quantity
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
+                          est. catalog value
                         </Text>
                       </View>
-                      <View style={{ width: 1, backgroundColor: COLORS.border }} />
-                      <View style={{ flex: 1, paddingLeft: 8 }}>
-                        <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.secondary }}>Net Worth</Text>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accent, marginVertical: 4 }} numberOfLines={1} adjustsFontSizeToFit>
-                          {fmt(summary?.historical_stock_value ?? 0)}
-                        </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted, lineHeight: 14 }}>
-                          Est. stock value
-                        </Text>
-                      </View>
-                    </React.Fragment>
-                  </RoleGate>
-                </View>
+                    </View>
+                  </React.Fragment>
+                </RoleGate>
               </Card>
             </View>
 
-            <Card>
-              <SectionHeader title="Revenue And Profit Trend" />
+            <Card style={{ padding: 18 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <View
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    backgroundColor: COLORS.ink + '12',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather name="trending-up" size={13} color={COLORS.ink} />
+                </View>
+                <Text
+                  style={{
+                    fontFamily: FONT.bold,
+                    fontSize: 11,
+                    letterSpacing: 0.8,
+                    color: COLORS.text.secondary,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Revenue And Profit Trend
+                </Text>
+              </View>
               {salesTrend.length === 0 ? (
                 <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
                   No sales data for this period
@@ -332,8 +679,32 @@ export default function AnalyticsScreen() {
               )}
             </Card>
 
-            <Card>
-              <SectionHeader title="Daily Sales Volume" />
+            <Card style={{ padding: 18 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <View
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    backgroundColor: COLORS.ink + '12',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather name="bar-chart-2" size={13} color={COLORS.ink} />
+                </View>
+                <Text
+                  style={{
+                    fontFamily: FONT.bold,
+                    fontSize: 11,
+                    letterSpacing: 0.8,
+                    color: COLORS.text.secondary,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Daily Sales Volume
+                </Text>
+              </View>
               {salesTrend.length === 0 ? (
                 <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
                   No sales data for this period
@@ -347,8 +718,32 @@ export default function AnalyticsScreen() {
               )}
             </Card>
 
-            <Card>
-              <SectionHeader title="Top Selling Products" />
+            <Card style={{ padding: 18 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <View
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    backgroundColor: COLORS.ink + '12',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather name="award" size={13} color={COLORS.ink} />
+                </View>
+                <Text
+                  style={{
+                    fontFamily: FONT.bold,
+                    fontSize: 11,
+                    letterSpacing: 0.8,
+                    color: COLORS.text.secondary,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Top Selling Products
+                </Text>
+              </View>
               {topProducts.length === 0 ? (
                 <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
                   No product sales in this period
@@ -369,8 +764,8 @@ export default function AnalyticsScreen() {
                                 height: 24,
                                 borderWidth: 1,
                                 borderRadius: RADIUS.md,
-                                borderColor: COLORS.border,
-                                backgroundColor: COLORS.accent + '18',
+                                borderColor: COLORS.ink + '20',
+                                backgroundColor: COLORS.ink + '12',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                               }}
@@ -422,8 +817,32 @@ export default function AnalyticsScreen() {
               )}
             </Card>
 
-            <Card>
-              <SectionHeader title="Expense Breakdown" />
+            <Card style={{ padding: 18 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                <View
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    backgroundColor: COLORS.ink + '12',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather name="pie-chart" size={13} color={COLORS.ink} />
+                </View>
+                <Text
+                  style={{
+                    fontFamily: FONT.bold,
+                    fontSize: 11,
+                    letterSpacing: 0.8,
+                    color: COLORS.text.secondary,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Expense Breakdown
+                </Text>
+              </View>
               {expenseBreakdown.length === 0 ? (
                 <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
                   No expenses recorded in this period
@@ -445,8 +864,32 @@ export default function AnalyticsScreen() {
             </Card>
 
             {summary && summary.total_revenue > 0 ? (
-              <Card>
-                <SectionHeader title="Business Health" />
+              <Card style={{ padding: 18 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <View
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 8,
+                      backgroundColor: COLORS.ink + '12',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="activity" size={13} color={COLORS.ink} />
+                  </View>
+                  <Text
+                    style={{
+                      fontFamily: FONT.bold,
+                      fontSize: 11,
+                      letterSpacing: 0.8,
+                      color: COLORS.text.secondary,
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Business Health
+                  </Text>
+                </View>
                 <View style={{ gap: 20 }}>
                   {[
                     {

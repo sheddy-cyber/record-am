@@ -9,6 +9,7 @@ import {
   readCachedProducts,
   upsertCachedProducts,
 } from '@/lib/offlineStore';
+import { hasArrayChanged } from '@/lib/storeUtils';
 
 const getBranchStock = (product: Product, branchId: string) =>
   product.inventory?.find((item) => item.branch_id === branchId)?.quantity ?? 0;
@@ -133,7 +134,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     try {
       const cachedProducts = await readCachedProducts(businessId);
       if (cachedProducts.length > 0) {
-        if (JSON.stringify(cachedProducts) !== JSON.stringify(get().products)) {
+        if (hasArrayChanged(get().products, cachedProducts)) {
           set({ products: cachedProducts });
         }
       }
@@ -144,7 +145,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     try {
       const cachedProducts = await readCachedProducts(businessId);
       if (cachedProducts.length > 0) {
-        if (JSON.stringify(cachedProducts) !== JSON.stringify(get().products)) {
+        if (hasArrayChanged(get().products, cachedProducts)) {
           set({ products: cachedProducts });
         }
       }
@@ -214,14 +215,14 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       
       const activeProducts = allMerged.filter(p => p.is_active);
       
-      if (JSON.stringify(activeProducts) !== JSON.stringify(get().products)) {
+      if (hasArrayChanged(get().products, activeProducts)) {
         set({ products: activeProducts });
       }
       await cacheProducts(businessId, activeProducts);
     } catch (err: any) {
       const cachedProducts = await readCachedProducts(businessId);
       if (cachedProducts.length > 0) {
-        if (JSON.stringify(cachedProducts) !== JSON.stringify(get().products)) {
+        if (hasArrayChanged(get().products, cachedProducts)) {
           set({ products: cachedProducts, error: null });
         } else {
           set({ error: null });

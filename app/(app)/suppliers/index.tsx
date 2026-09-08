@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
@@ -21,6 +21,7 @@ export default function SuppliersScreen() {
   const fetchSuppliers = useSupplierStore((s) => s.fetchSuppliers);
   const setSelectedSupplier = useSupplierStore((s) => s.setSelectedSupplier);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -32,11 +33,15 @@ export default function SuppliersScreen() {
     setRefreshing(false);
   }, [currentBusiness?.id, fetchSuppliers]);
 
-  const filtered = suppliers.filter(
-    (supplier) =>
-      supplier.name.toLowerCase().includes(search.toLowerCase()) ||
-      (supplier.phone ?? '').includes(search),
-  );
+  const filtered = useMemo(() => {
+    const q = deferredSearch.trim().toLowerCase();
+    if (!q) return suppliers;
+    return suppliers.filter(
+      (supplier) =>
+        supplier.name.toLowerCase().includes(q) ||
+        (supplier.phone ?? '').includes(q),
+    );
+  }, [suppliers, deferredSearch]);
 
 
   return (
@@ -81,34 +86,47 @@ export default function SuppliersScreen() {
           />
         </View>
 
-        <View
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
           style={{
-            flexDirection: 'row',
+            flexGrow: 0,
             backgroundColor: '#FFFFFF',
-            paddingHorizontal: 20,
-            paddingVertical: 12,
             borderBottomWidth: 1,
             borderBottomColor: COLORS.border,
-            gap: 24,
+          }}
+          contentContainerStyle={{
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            gap: 28,
+            alignItems: 'center',
           }}
         >
           <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Total Suppliers</Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary }}>{suppliers.length}</Text>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
+              Total Suppliers
+            </Text>
+            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+              {suppliers.length}
+            </Text>
           </View>
           <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Total Purchased</Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.accent }}>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
+              Total Purchased
+            </Text>
+            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.accent }} numberOfLines={1}>
               {formatCurrency(suppliers.reduce((sum, supplier) => sum + supplier.total_purchased, 0))}
             </Text>
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>We Owe</Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.danger }}>
+          <View>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
+              We Owe
+            </Text>
+            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.danger }} numberOfLines={1}>
               {formatCurrency(suppliers.reduce((sum, supplier) => sum + supplier.outstanding_debt, 0))}
             </Text>
           </View>
-        </View>
+        </ScrollView>
 
         <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
           <ReconcileWarningBanner onReconciled={() => { if (currentBusiness) fetchSuppliers(currentBusiness.id); }} />

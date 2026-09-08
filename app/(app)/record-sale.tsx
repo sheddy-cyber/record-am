@@ -1,18 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  TouchableOpacity,
-  View,
-  InteractionManager,
   RefreshControl,
+  Text,
+  View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -25,24 +19,25 @@ import { useSaleStore } from '@/store/saleStore';
 import { useTabStore } from '@/store/tabStore';
 import { supabase } from '@/lib/supabase';
 import { recordSaleOffline, updateSaleOffline } from '@/lib/offlineRecords';
+import { checkAndNotifyLowStock } from '@/lib/notifications';
 import { readCachedRows } from '@/lib/offlineStore';
 import {
   getDefaultBundleSize,
   getSaleUnitOption,
-  getSaleUnitOptions,
   usesCustomBundleSize,
 } from '@/lib/records';
-import { Button, Card, Divider, LoadingScreen, SectionHeader } from '@/components/ui';
-import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
-import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, PAYMENT_METHODS, RADIUS } from '@/constants';
+import { Button, LoadingScreen } from '@/components/ui';
+import { KeyboardAwareScrollView } from '@/components/forms';
+import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import {
+  SaleCheckoutCard,
+  SaleCartList,
+  SaleProductPicker,
+} from '@/components/sales';
+import { COLORS, CURRENCY_SYMBOL, FONT } from '@/constants';
 import { CartItem, PaymentMethod, Product, Sale, SaleItem } from '@/types';
 
-const formatCurrency = (value: number) =>
-  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-
 const MAX_VISIBLE_PRODUCTS = 5;
-const PINNED_SALE_PRODUCTS_STORAGE_PREFIX = 'record-am:sale-pinned-products';
 
 const formatCount = (value: number) => {
   if (Number.isInteger(value)) return `${value}`;
@@ -70,6 +65,7 @@ export default function RecordSaleScreen() {
     } catch (_) {}
     setRefreshing(false);
   }, [currentBusiness]);
+
   const { products } = useBusinessStore();
   const {
     pinnedProductIds,
@@ -88,9 +84,9 @@ export default function RecordSaleScreen() {
 
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
-  const [discountAmount, setDiscountAmount] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -104,13 +100,11 @@ export default function RecordSaleScreen() {
 
   const loadProducts = useCallback(async () => {
     if (!currentBusiness || !currentBranch) return;
-    
     try {
       await loadPinnedProductIds(currentBusiness.id);
     } finally {
       setLoading(false);
     }
-    
     loadSoldProductQuantities(currentBusiness.id, currentBranch.id);
   }, [currentBusiness, currentBranch, loadPinnedProductIds, loadSoldProductQuantities]);
 
@@ -118,12 +112,16 @@ export default function RecordSaleScreen() {
     loadProducts();
   }, [loadProducts]);
 
-  const getProductStock = useCallback((product: Product) => {
-    if (!currentBranch) return 0;
-    const baseStock = product.inventory?.find((inventoryItem) => inventoryItem.branch_id === currentBranch.id)?.quantity ?? 0;
-    const originalQty = originalQuantitiesByProduct.current.get(product.id) ?? 0;
-    return baseStock + originalQty;
-  }, [currentBranch]);
+  const getProductStock = useCallback(
+    (product: Product) => {
+      if (!currentBranch) return 0;
+      const baseStock =
+        product.inventory?.find((inventoryItem) => inventoryItem.branch_id === currentBranch.id)?.quantity ?? 0;
+      const originalQty = originalQuantitiesByProduct.current.get(product.id) ?? 0;
+      return baseStock + originalQty;
+    },
+    [currentBranch],
+  );
 
   const buildCartItem = useCallback(
     (
@@ -275,7 +273,6 @@ export default function RecordSaleScreen() {
     [pinnedProductIds],
   );
 
-
   const prioritizedDefaultProducts = useMemo(() => {
     const productById = new Map(searchableProducts.map((product) => [product.id, product]));
     const prioritizedProducts: Product[] = [];
@@ -323,7 +320,7 @@ export default function RecordSaleScreen() {
   }, [pinnedProductIds, searchableProducts, soldProductQuantities]);
 
   const productResults = useMemo(() => {
-    const query = search.trim().toLowerCase();
+    const query = deferredSearch.trim().toLowerCase();
     if (query.length === 0) {
       return prioritizedDefaultProducts;
     }
@@ -343,22 +340,14 @@ export default function RecordSaleScreen() {
         if (firstIsPinned) return -1;
         if (secondIsPinned) return 1;
 
-        const soldDifference = (soldProductQuantities[secondProduct.id] ?? 0) - (soldProductQuantities[firstProduct.id] ?? 0);
+        const soldDifference =
+          (soldProductQuantities[secondProduct.id] ?? 0) - (soldProductQuantities[firstProduct.id] ?? 0);
         if (soldDifference !== 0) return soldDifference;
 
         return firstProduct.name.localeCompare(secondProduct.name);
       })
       .slice(0, 20);
-  }, [pinnedProductIndexById, prioritizedDefaultProducts, search, searchableProducts, soldProductQuantities]);
-
-  const hasMoreProductResults = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    if (query.length === 0) {
-      return searchableProducts.length > productResults.length;
-    }
-
-    return searchableProducts.filter((product) => product.name.toLowerCase().includes(query)).length > productResults.length;
-  }, [productResults.length, search, searchableProducts]);
+  }, [pinnedProductIndexById, prioritizedDefaultProducts, deferredSearch, searchableProducts, soldProductQuantities]);
 
   const handleTogglePinnedProduct = useCallback(
     (productId: string) => {
@@ -521,52 +510,6 @@ export default function RecordSaleScreen() {
     updateCartItem(productId, { quantity: nextQty });
   };
 
-  const renderQuantityArrows = (productId: string) => {
-    const item = cart.find((c) => c.product.id === productId);
-    const isMin = (item?.quantity ?? 1) <= 1;
-
-    return (
-      <View
-        style={{
-          flexDirection: 'column',
-          justifyContent: 'center',
-          alignItems: 'center',
-          height: 38,
-          marginRight: -6,
-        }}
-      >
-        <TouchableOpacity
-          onPress={() => handleStepQuantity(productId, 1)}
-          activeOpacity={0.6}
-          hitSlop={{ top: 8, bottom: 2, left: 12, right: 12 }}
-          style={{
-            paddingVertical: 2,
-            paddingHorizontal: 6,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Feather name="chevron-up" size={16} color={COLORS.text.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => handleStepQuantity(productId, -1)}
-          activeOpacity={0.6}
-          disabled={isMin}
-          hitSlop={{ top: 2, bottom: 8, left: 12, right: 12 }}
-          style={{
-            paddingVertical: 2,
-            paddingHorizontal: 6,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: isMin ? 0.3 : 1,
-          }}
-        >
-          <Feather name="chevron-down" size={16} color={COLORS.text.primary} />
-        </TouchableOpacity>
-      </View>
-    );
-  };
-
   const subtotal = cart.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
   const totalDiscount = cart.reduce((sum, item) => sum + item.discount_amount, 0);
   const cartTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
@@ -675,6 +618,7 @@ export default function RecordSaleScreen() {
         closeScreen();
 
         void useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id);
+        void checkAndNotifyLowStock(currentBusiness.id, currentBranch.id);
       } catch (err: any) {
         Toast.show({
           type: 'error',
@@ -723,11 +667,12 @@ export default function RecordSaleScreen() {
       Toast.show({
         type: 'success',
         text1: 'Sale recorded',
-        text2: `${saleNumber} · ${formatCurrency(cartTotal)} recorded`,
+        text2: `${saleNumber} · ${CURRENCY_SYMBOL}${cartTotal.toLocaleString('en-NG')} recorded`,
       });
       closeScreen();
 
       void useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id);
+      void checkAndNotifyLowStock(currentBusiness.id, currentBranch.id);
     } catch (err: any) {
       Toast.show({
         type: 'error',
@@ -774,355 +719,87 @@ export default function RecordSaleScreen() {
             <Text style={{ fontSize: 16, fontFamily: FONT.medium, color: COLORS.text.primary }}>
               No products available
             </Text>
-            <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center', paddingHorizontal: 32 }}>
-              {products.length === 0 
-                ? "You haven't added any products to your inventory yet. Add products before recording a sale." 
-                : "All your products are currently marked as inactive."}
+            <Text
+              style={{
+                fontSize: 14,
+                fontFamily: FONT.regular,
+                color: COLORS.text.muted,
+                textAlign: 'center',
+                paddingHorizontal: 32,
+              }}
+            >
+              {products.length === 0
+                ? "You haven't added any products to your inventory yet. Add products before recording a sale."
+                : 'All your products are currently marked as inactive.'}
             </Text>
             {products.length === 0 && (
               <View style={{ marginTop: 12, minWidth: 200 }}>
-                <Button 
-                  title="Go to Inventory" 
+                <Button
+                  title="Go to Inventory"
                   onPress={() => {
                     useTabStore.getState().setActiveTab('inventory');
                     closeScreen();
-                  }} 
+                  }}
                 />
               </View>
             )}
           </View>
         ) : (
           <View style={{ flex: 1 }}>
-            <InputField
-              label="Find Product"
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search by product name"
-              leftIcon={<Feather name="search" size={16} color={COLORS.text.muted} />}
+            <SaleProductPicker
+              search={search}
+              onSearchChange={setSearch}
+              products={productResults}
+              cart={cart}
+              pinnedProductIdSet={pinnedProductIdSet}
+              getProductStock={getProductStock}
+              onToggleProductInCart={toggleProductInCart}
+              onTogglePinnedProduct={handleTogglePinnedProduct}
             />
 
-          <SectionHeader title="Products" />
-          <View style={{ gap: 10, marginBottom: 20 }}>
-            <FlatSection style={{ padding: 14 }}>
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                Tap any product to add it to cart.
-              </Text>
-            </FlatSection>
-            {productResults.length === 0 ? (
-              <FlatSection style={{ padding: 16 }}>
-                <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                  No products match that search.
-                </Text>
-              </FlatSection>
-            ) : (
-              productResults.map((product) => {
-                const stock = getProductStock(product);
-                const isDisabled = !product.is_service && stock <= 0;
-                const alreadyAdded = cart.some((item) => item.product.id === product.id);
-                const isPinned = pinnedProductIdSet.has(product.id);
+            <SaleCartList
+              cart={cart}
+              quantityInputs={quantityInputs}
+              onQuantityChange={handleQuantityChange}
+              onQuantityBlur={handleQuantityBlur}
+              onStepQuantity={handleStepQuantity}
+              onDiscountChange={(productId, val) =>
+                updateCartItem(productId, { discountAmount: parseFloat(val) || 0 })
+              }
+              onSaleUnitChange={(productId, unit) => updateCartItem(productId, { saleUnit: unit })}
+              onBundleSizeChange={(productId, val) =>
+                updateCartItem(productId, { bundleSize: parseFloat(val) || 0 })
+              }
+              onUnitPriceChange={(productId, val) =>
+                updateCartItem(productId, { unitPrice: parseFloat(val) || 0 })
+              }
+              onRemoveItem={removeProductFromCart}
+            />
 
-                return (
-                  <TouchableOpacity
-                    key={product.id}
-                    onPress={() => toggleProductInCart(product)}
-                    activeOpacity={0.8}
-                    style={{
-                      borderRadius: RADIUS.lg,
-                      borderWidth: 1,
-                      borderColor: alreadyAdded ? COLORS.ink : COLORS.border,
-                      backgroundColor: alreadyAdded ? COLORS.surface2 : COLORS.card,
-                      padding: 14,
-                      opacity: isDisabled ? 0.55 : 1,
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                          {product.name}
-                        </Text>
-                        <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>
-                          {formatCurrency(product.selling_price)} per {product.unit}
-                        </Text>
-                        {!product.is_service ? (
-                          <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: 4 }}>
-                            {formatCount(stock)} {product.unit} available
-                          </Text>
-                        ) : null}
-                      </View>
-                      <View style={{ alignItems: 'flex-end', gap: 8 }}>
-                        <TouchableOpacity
-                          onPress={(event) => {
-                            event.stopPropagation();
-                            handleTogglePinnedProduct(product.id);
-                          }}
-                          activeOpacity={0.8}
-                          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: RADIUS.full,
-                            borderWidth: 1,
-                            borderColor: isPinned ? COLORS.accent : COLORS.border,
-                            backgroundColor: isPinned ? COLORS.accentLight : COLORS.card,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <Feather name="star" size={15} color={isPinned ? COLORS.accent : COLORS.text.muted} />
-                        </TouchableOpacity>
-                        <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accent }}>
-                          {isPinned ? 'Tap to unpin' : 'Tap to pin'}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })
-            )}
-          </View>
-
-          <SectionHeader title={`Cart (${cart.length})`} />
-          {cart.length === 0 ? (
-            <FlatSection style={{ padding: 20, marginBottom: 20 }}>
-              <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center' }}>
-                Products you add to the cart will appear here.
-              </Text>
-            </FlatSection>
-          ) : (
-            <View style={{ gap: 10, marginBottom: 20 }}>
-              {cart.map((item) => {
-                const unitOptions = getSaleUnitOptions(item.product, item.bundle_size);
-                const isUnitBreakdown = item.sale_unit !== item.product.unit;
-
-                return (
-                  <Card key={item.product.id} style={{ gap: 14 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                          {item.product.name}
-                        </Text>
-                        <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>
-                          {formatCurrency(item.unit_price)} per {item.sale_unit}
-                        </Text>
-                      </View>
-                      <TouchableOpacity onPress={() => removeProductFromCart(item.product.id)} activeOpacity={0.8}>
-                        <Feather name="x" size={18} color={COLORS.text.muted} />
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={{ gap: 8 }}>
-                      <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.secondary }}>
-                        Sell As
-                      </Text>
-                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                        {unitOptions.map((option) => (
-                          <TouchableOpacity
-                            key={option.value}
-                            onPress={() => updateCartItem(item.product.id, { saleUnit: option.value })}
-                            activeOpacity={0.8}
-                            style={{
-                              paddingHorizontal: 12,
-                              paddingVertical: 8,
-                              borderWidth: 1,
-                              borderRadius: RADIUS.sm,
-                              borderColor: item.sale_unit === option.value ? COLORS.ink : COLORS.border,
-                              backgroundColor: item.sale_unit === option.value ? COLORS.surface2 : COLORS.card,
-                            }}
-                          >
-                            <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                              {option.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-
-                    <View style={{ flexDirection: 'row', gap: 12 }}>
-                      <View style={{ flex: 1 }}>
-                        <InputField
-                          label="Quantity"
-                          value={quantityInputs[item.product.id] ?? `${item.quantity}`}
-                          onChangeText={(value) => handleQuantityChange(item.product.id, value)}
-                          onBlur={() => handleQuantityBlur(item.product.id)}
-                          keyboardType="numeric"
-                          placeholder="0"
-                          rightElement={renderQuantityArrows(item.product.id)}
-                          containerStyle={{ marginBottom: 0 }}
-                        />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <InputField
-                          label="Discount"
-                          value={item.discount_amount ? `${item.discount_amount}` : ''}
-                          onChangeText={(value) =>
-                            updateCartItem(item.product.id, {
-                              discountAmount: parseFloat(value) || 0,
-                            })
-                          }
-                          keyboardType="numeric"
-                          placeholder="0"
-                          prefix={CURRENCY_SYMBOL}
-                          isAmount={true}
-                          containerStyle={{ marginBottom: 0 }}
-                        />
-                      </View>
-                    </View>
-
-                    {isUnitBreakdown ? (
-                      <View style={{ flexDirection: 'row', gap: 12 }}>
-                        {item.uses_custom_bundle ? (
-                          <View style={{ flex: 1 }}>
-                            <InputField
-                              label={`Units per ${item.product.unit}`}
-                              value={item.bundle_size && item.bundle_size > 1 ? `${item.bundle_size}` : ''}
-                              onChangeText={(value) =>
-                                updateCartItem(item.product.id, {
-                                  bundleSize: parseFloat(value) || 0,
-                                })
-                              }
-                              keyboardType="numeric"
-                              placeholder="e.g. 12"
-                              hint="Needed to reduce stock correctly."
-                              containerStyle={{ marginBottom: 0 }}
-                            />
-                          </View>
-                        ) : (
-                          <View style={{ flex: 1 }}>
-                            <FlatSection style={{ padding: 12, minHeight: 82, justifyContent: 'center' }}>
-                              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                                Stock conversion
-                              </Text>
-                              <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 4 }}>
-                                {formatCount(item.bundle_size ?? getDefaultBundleSize(item.product) ?? 1)} {item.sale_unit} per {item.product.unit}
-                              </Text>
-                            </FlatSection>
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <InputField
-                            label={`Price per ${item.sale_unit}`}
-                            value={item.unit_price ? `${item.unit_price}` : ''}
-                            onChangeText={(value) =>
-                              updateCartItem(item.product.id, {
-                                unitPrice: parseFloat(value) || 0,
-                              })
-                            }
-                            keyboardType="numeric"
-                            placeholder="0"
-                            prefix={CURRENCY_SYMBOL}
-                            isAmount={true}
-                            containerStyle={{ marginBottom: 0 }}
-                          />
-                        </View>
-                      </View>
-                    ) : null}
-
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                        Uses {formatCount(item.stock_quantity)} {item.product.unit} from stock
-                      </Text>
-                      <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                        {formatCurrency(item.total_price)}
-                      </Text>
-                    </View>
-                  </Card>
-                );
-              })}
-            </View>
-          )}
-
-          {cart.length > 0 ? (
-            <View>
-              <SectionHeader title="Checkout" />
-              <Card style={{ gap: 12 }}>
-                <View style={{ gap: 8 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>Subtotal</Text>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.primary }}>{formatCurrency(subtotal)}</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>Discount</Text>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.primary }}>- {formatCurrency(totalDiscount)}</Text>
-                  </View>
-                  <Divider />
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>Total</Text>
-                    <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.accent }}>{formatCurrency(cartTotal)}</Text>
-                  </View>
-                </View>
-
-                <InputField
-                  label="Customer Name"
-                  value={customerName}
-                  onChangeText={setCustomerName}
-                  placeholder="Leave blank for walk-in"
-                  containerStyle={{ marginBottom: 0 }}
-                />
-                <InputField
-                  label="Customer Phone"
-                  value={customerPhone}
-                  onChangeText={setCustomerPhone}
-                  placeholder="08012345678"
-                  keyboardType="phone-pad"
-                  containerStyle={{ marginBottom: 0 }}
-                />
-                <InputField
-                  label="Amount Paid"
-                  value={amountPaid}
-                  onChangeText={handleAmountPaidChange}
-                  placeholder={`${cartTotal}`}
-                  keyboardType="numeric"
-                  prefix={CURRENCY_SYMBOL}
-                  isAmount={true}
-                  containerStyle={{ marginBottom: 0 }}
-                />
-                {amountOwed > 0 ? (
-                  <View
-                    style={{
-                      borderWidth: 1,
-                      borderRadius: RADIUS.md,
-                      borderColor: COLORS.warning,
-                      backgroundColor: COLORS.warningLight,
-                      padding: 12,
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
-                      Outstanding balance: {formatCurrency(amountOwed)}. You can also add a discount to reconcile this difference.
-                    </Text>
-                  </View>
-                ) : null}
-                <SelectField
-                  label="Payment Method"
-                  value={paymentMethod}
-                  options={PAYMENT_METHODS}
-                  onChange={(value) => setPaymentMethod(value as PaymentMethod)}
-                  containerStyle={{ marginBottom: 0 }}
-                />
-                <InputField
-                  label="Notes"
-                  value={saleNotes}
-                  onChangeText={setSaleNotes}
-                  placeholder="Optional note for this sale"
-                  multiline
-                  numberOfLines={3}
-                  containerStyle={{ marginBottom: 0 }}
-                />
-                <Button
-                  title={
-                    savingSale
-                      ? (isEditing ? 'Updating...' : 'Recording...')
-                      : `${isEditing ? 'Update Sale' : 'Confirm Sale'} \u00B7 ${formatCurrency(cartTotal)}`
-                  }
-                  onPress={handleRecordSale}
-                  loading={savingSale}
-                  size="lg"
-                />
-              </Card>
-            </View>
-          ) : null}
+            {cart.length > 0 ? (
+              <SaleCheckoutCard
+                subtotal={subtotal}
+                totalDiscount={totalDiscount}
+                cartTotal={cartTotal}
+                amountPaid={amountPaid}
+                amountOwed={amountOwed}
+                customerName={customerName}
+                customerPhone={customerPhone}
+                paymentMethod={paymentMethod}
+                saleNotes={saleNotes}
+                isEditing={isEditing}
+                savingSale={savingSale}
+                onCustomerNameChange={setCustomerName}
+                onCustomerPhoneChange={setCustomerPhone}
+                onAmountPaidChange={handleAmountPaidChange}
+                onPaymentMethodChange={setPaymentMethod}
+                onSaleNotesChange={setSaleNotes}
+                onSubmitSale={handleRecordSale}
+              />
+            ) : null}
           </View>
         )}
-        </KeyboardAwareScrollView>
-      </ScreenShell>
+      </KeyboardAwareScrollView>
+    </ScreenShell>
   );
 }

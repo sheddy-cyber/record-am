@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { Customer, Sale, CustomerDebt } from '@/types';
+import { Customer, Sale, CustomerDebt, SaleItem } from '@/types';
 import {
   createLocalId,
   enqueueMutations,
@@ -8,6 +8,7 @@ import {
   readCachedRows,
   upsertCachedRows,
 } from '@/lib/offlineStore';
+import { hasArrayChanged } from '@/lib/storeUtils';
 
 export interface CustomerWithStats extends Customer {
   total_spent: number;
@@ -48,7 +49,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
     try {
       const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
       if (cachedCustomers.length > 0) {
-        if (JSON.stringify(cachedCustomers) !== JSON.stringify(get().customers)) {
+        if (hasArrayChanged(get().customers, cachedCustomers)) {
           set({ customers: cachedCustomers });
         }
       }
@@ -59,7 +60,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
     try {
       const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
       if (cachedCustomers.length > 0) {
-        if (JSON.stringify(cachedCustomers) !== JSON.stringify(get().customers)) {
+        if (hasArrayChanged(get().customers, cachedCustomers)) {
           set({ customers: cachedCustomers });
         }
       }
@@ -108,14 +109,14 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         })
       );
 
-      if (JSON.stringify(customersWithStats) !== JSON.stringify(get().customers)) {
+      if (hasArrayChanged(get().customers, customersWithStats)) {
         set({ customers: customersWithStats });
       }
       await upsertCachedRows({ businessId }, 'customers', customersWithStats);
     } catch (err: any) {
       const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
       if (cachedCustomers.length > 0) {
-        if (JSON.stringify(cachedCustomers) !== JSON.stringify(get().customers)) {
+        if (hasArrayChanged(get().customers, cachedCustomers)) {
           set({ customers: cachedCustomers, error: null });
         } else {
           set({ error: null });
@@ -149,24 +150,29 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       const newDebts = (debts as CustomerDebt[]) ?? [];
       
       if (
-        JSON.stringify(newSales) !== JSON.stringify(get().customerSales) ||
-        JSON.stringify(newDebts) !== JSON.stringify(get().customerDebts)
+        hasArrayChanged(get().customerSales, newSales) ||
+        hasArrayChanged(get().customerDebts, newDebts)
       ) {
         set({ customerSales: newSales, customerDebts: newDebts });
       }
     } catch (err: any) {
       // Try loading from cache if server fails
       try {
-        const [cachedSales, cachedDebts] = await Promise.all([
+        const [cachedSales, cachedDebts, cachedSaleItems] = await Promise.all([
           readCachedRows<Sale>({ businessId }, 'sales'),
           readCachedRows<CustomerDebt>({ businessId }, 'customer_debts'),
+          readCachedRows<SaleItem>({ businessId }, 'sale_items').catch(() => [] as SaleItem[]),
         ]);
-        const newSales = cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20);
         const newDebts = cachedDebts.filter((d) => d.customer_id === customerId);
+        const filteredSales = cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20);
+        const newSales = filteredSales.map((s) => ({
+          ...s,
+          items: s.items && s.items.length > 0 ? s.items : cachedSaleItems.filter((i) => i.sale_id === s.id),
+        }));
 
         if (
-          JSON.stringify(newSales) !== JSON.stringify(get().customerSales) ||
-          JSON.stringify(newDebts) !== JSON.stringify(get().customerDebts)
+          hasArrayChanged(get().customerSales, newSales) ||
+          hasArrayChanged(get().customerDebts, newDebts)
         ) {
           set({ customerSales: newSales, customerDebts: newDebts });
         }

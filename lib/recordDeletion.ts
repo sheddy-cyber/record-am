@@ -43,6 +43,10 @@ export async function deleteExpenseRecord(expenseId: string) {
 export async function deleteCustomerDebtRecord(debtId: string) {
   const { error } = await supabase.from('customer_debts').delete().eq('id', debtId);
   throwIfError(error);
+  try {
+    const { useNotificationStore } = await import('@/store/notificationStore');
+    await useNotificationStore.getState().markDebtReminderAsRead({ debtId });
+  } catch (_) {}
 }
 
 export async function deleteSupplierDebtRecord(debtId: string) {
@@ -57,6 +61,10 @@ export async function deleteProductRecord(productId: string) {
     .eq('id', productId);
 
   throwIfError(error);
+  try {
+    const { useNotificationStore } = await import('@/store/notificationStore');
+    await useNotificationStore.getState().markLowStockAsRead(productId);
+  } catch (_) {}
 }
 
 export async function deleteDailySummaryRecord(summaryId: string) {

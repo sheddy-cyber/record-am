@@ -198,7 +198,7 @@ export default function DailyBalanceScreen() {
                   >
                     {formatCurrency(summary?.net_profit ?? 0)}
                   </Text>
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>after all expenses</Text>
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>after capital & expenses</Text>
                 </Card>
                 <Card style={{ flex: 1 }}>
                   <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginBottom: 4 }}>Expected Cash</Text>

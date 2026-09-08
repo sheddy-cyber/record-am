@@ -35,11 +35,18 @@ interface NotificationState {
   // Actions
   loadNotifications: (userId?: string) => Promise<void>;
   addNotification: (
-    item: Omit<InAppNotification, 'id' | 'read' | 'createdAt'>,
+    item: Omit<InAppNotification, 'id' | 'read' | 'createdAt'> & { read?: boolean },
     userId?: string
   ) => Promise<void>;
   markAsRead: (id: string, userId?: string) => Promise<void>;
+  markMatchingAsRead: (predicate: (n: InAppNotification) => boolean, userId?: string) => Promise<void>;
   markMismatchAsRead: (mismatchId: string, productId?: string, userId?: string) => Promise<void>;
+  markLowStockAsRead: (productId?: string, productName?: string, userId?: string) => Promise<void>;
+  markDailySummaryAsRead: (targetDate?: string, userId?: string) => Promise<void>;
+  markDebtReminderAsRead: (
+    filter: { customerName?: string; customerId?: string; debtId?: string },
+    userId?: string
+  ) => Promise<void>;
   markAllAsRead: (userId?: string) => Promise<void>;
   deleteNotification: (id: string, userId?: string) => Promise<void>;
   clearAll: (userId?: string) => Promise<void>;
@@ -90,7 +97,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         set({ activeUserId: resolvedId });
       }
 
-      const current = get().notifications;
+      let current = get().notifications;
+      const storageKey = getNotificationStorageKey(resolvedId);
+      if (!get().isLoaded && storageKey) {
+        const raw = await AsyncStorage.getItem(storageKey);
+        if (raw) {
+          try {
+            current = JSON.parse(raw);
+          } catch (_) {}
+        }
+      }
       
       // Deduplicate recent notifications with same title and body within 1 minute
       const isDuplicate = current.some((n) => {
@@ -105,14 +121,13 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       const newNotif: InAppNotification = {
         ...item,
         id: `notif_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        read: false,
+        read: Boolean(item.read),
         createdAt: new Date().toISOString(),
       };
 
       const updated = [newNotif, ...current];
-      set({ notifications: updated });
+      set({ notifications: updated, isLoaded: true });
 
-      const storageKey = getNotificationStorageKey(resolvedId);
       if (storageKey) {
         await AsyncStorage.setItem(storageKey, JSON.stringify(updated));
       }
@@ -138,7 +153,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
     }
   },
 
-  markMismatchAsRead: async (mismatchId: string, productId?: string, userId?: string) => {
+  markMatchingAsRead: async (predicate: (n: InAppNotification) => boolean, userId?: string) => {
     try {
       const resolvedId = await resolveUserId(userId, get().activeUserId);
       const storageKey = getNotificationStorageKey(resolvedId);
@@ -146,16 +161,16 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       let current = get().notifications;
       if (!get().isLoaded && storageKey) {
         const raw = await AsyncStorage.getItem(storageKey);
-        if (raw) current = JSON.parse(raw);
+        if (raw) {
+          try {
+            current = JSON.parse(raw);
+          } catch (_) {}
+        }
       }
 
       let hasChanges = false;
       const updated = current.map((n) => {
-        const isTargetMismatch =
-          n.data?.mismatchId === mismatchId ||
-          (Boolean(productId) && n.type === 'mismatch' && n.data?.productId === productId);
-
-        if (isTargetMismatch && !n.read) {
+        if (!n.read && predicate(n)) {
           hasChanges = true;
           return { ...n, read: true };
         }
@@ -169,8 +184,63 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
         }
       }
     } catch (err) {
-      console.error('[notificationStore] markMismatchAsRead failed:', err);
+      console.error('[notificationStore] markMatchingAsRead failed:', err);
     }
+  },
+
+  markMismatchAsRead: async (mismatchId: string, productId?: string, userId?: string) => {
+    await get().markMatchingAsRead(
+      (n) =>
+        n.data?.mismatchId === mismatchId ||
+        (Boolean(productId) && n.type === 'mismatch' && n.data?.productId === productId),
+      userId
+    );
+  },
+
+  markLowStockAsRead: async (productId?: string, productName?: string, userId?: string) => {
+    const normName = productName?.trim().toLowerCase();
+    await get().markMatchingAsRead((n) => {
+      if (n.type !== 'low_stock') return false;
+      if (!productId && !normName) return true;
+      if (productId && (n.data?.productId === productId || n.data?.id === productId)) return true;
+      if (normName) {
+        if (typeof n.data?.product === 'string' && n.data.product.trim().toLowerCase() === normName) {
+          return true;
+        }
+        if (n.body.toLowerCase().includes(normName)) return true;
+      }
+      return false;
+    }, userId);
+  },
+
+  markDailySummaryAsRead: async (targetDate?: string, userId?: string) => {
+    await get().markMatchingAsRead((n) => {
+      if (n.type !== 'daily_summary') return false;
+      if (!targetDate) return true;
+      if (n.data?.targetDate === targetDate) return true;
+      if (n.createdAt.slice(0, 10) === targetDate) return true;
+      return false;
+    }, userId);
+  },
+
+  markDebtReminderAsRead: async (
+    filter: { customerName?: string; customerId?: string; debtId?: string },
+    userId?: string
+  ) => {
+    const normName = filter.customerName?.trim().toLowerCase();
+    await get().markMatchingAsRead((n) => {
+      if (n.type !== 'debt_reminder') return false;
+      if (!normName && !filter.customerId && !filter.debtId) return true;
+      if (filter.debtId && n.data?.debtId === filter.debtId) return true;
+      if (filter.customerId && n.data?.customerId === filter.customerId) return true;
+      if (normName) {
+        if (typeof n.data?.customer === 'string' && n.data.customer.trim().toLowerCase() === normName) {
+          return true;
+        }
+        if (n.body.toLowerCase().includes(normName)) return true;
+      }
+      return false;
+    }, userId);
   },
 
   markAllAsRead: async (userId?: string) => {

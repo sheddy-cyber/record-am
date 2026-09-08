@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { CustomerDebt } from '@/types';
 import { cacheCustomerDebts, readCachedCustomerDebts } from '@/lib/offlineStore';
+import { hasArrayChanged } from '@/lib/storeUtils';
 
 interface DebtState {
   debts: CustomerDebt[];
@@ -23,7 +24,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       const cachedDebts = await readCachedCustomerDebts(businessId, branchId);
       const activeDebts = cachedDebts.filter(d => d.status !== 'settled');
       
-      if (JSON.stringify(activeDebts) !== JSON.stringify(get().debts)) {
+      if (hasArrayChanged(get().debts, activeDebts)) {
         set({ debts: activeDebts });
       }
     } catch {}
@@ -33,7 +34,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
     try {
       const cachedDebts = await readCachedCustomerDebts(businessId, branchId);
       const activeCached = cachedDebts.filter(d => d.status !== 'settled');
-      if (JSON.stringify(activeCached) !== JSON.stringify(get().debts)) {
+      if (hasArrayChanged(get().debts, activeCached)) {
         set({ debts: activeCached });
       }
     } catch {}
@@ -73,7 +74,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
 
       const nextDebts = nextCache.filter(d => d.status !== 'settled');
 
-      if (JSON.stringify(nextDebts) !== JSON.stringify(get().debts)) {
+      if (hasArrayChanged(get().debts, nextDebts)) {
         set({ debts: nextDebts });
       }
       
@@ -82,7 +83,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       const cachedDebts = await readCachedCustomerDebts(businessId, branchId);
       const activeCached = cachedDebts.filter(d => d.status !== 'settled');
       if (activeCached.length > 0) {
-        if (JSON.stringify(activeCached) !== JSON.stringify(get().debts)) {
+        if (hasArrayChanged(get().debts, activeCached)) {
           set({ debts: activeCached, error: null });
         } else {
           set({ error: null });

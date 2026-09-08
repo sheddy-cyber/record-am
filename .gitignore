@@ -33,3 +33,6 @@ build/
 .env.local
 supabase/.temp/
 *.keystore
+*.apk
+*.aab
+release-apks/

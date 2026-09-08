@@ -338,3 +338,667 @@ export async function shareDailyReport(data: DailyReportData) {
     }
   }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// INVENTORY STOCK SHEET (DOUBLE-COLUMN A4)
+// ─────────────────────────────────────────────────────────────────
+
+export interface InventoryPrintItem {
+  name: string;
+  quantity: number;
+  unit: string;
+  reorderLevel: number;
+  category?: string;
+}
+
+export interface InventoryPrintData {
+  business: Business;
+  branch: Branch;
+  filterType: 'all' | 'low_and_out';
+  items: InventoryPrintItem[];
+  totalProducts: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+}
+
+function escapeHtml(text: string): string {
+  return (text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+export function generateInventoryStockHTML(data: InventoryPrintData): string {
+  const isAll = data.filterType === 'all';
+  const filterLabel = isAll ? 'ALL STOCK ITEMS' : 'LOW & OUT OF STOCK ITEMS';
+  const printedAt = format(new Date(), 'MMM d, yyyy - h:mm a');
+
+  const rowsHTML: string[] = [];
+  const total = data.items.length;
+
+  for (let i = 0; i < total; i += 2) {
+    const leftItem = data.items[i];
+    const leftNum = i + 1;
+    const rightItem = i + 1 < total ? data.items[i + 1] : null;
+    const rightNum = i + 2;
+
+    const formatItemQty = (item: InventoryPrintItem) => {
+      const formattedCount = Number.isInteger(item.quantity)
+        ? `${item.quantity}`
+        : item.quantity.toFixed(2).replace(/\.00$/, '');
+
+      let badge = '';
+      let qtyColor = '#0f172a';
+      if (item.quantity <= 0) {
+        badge = '<span class="badge-out">OUT</span>';
+        qtyColor = '#dc2626';
+      } else if (item.quantity <= item.reorderLevel) {
+        badge = '<span class="badge-low">LOW</span>';
+        qtyColor = '#d97706';
+      }
+
+      return `<span style="color:${qtyColor};font-weight:700;">${formattedCount}</span> <span style="font-size:9.5px;font-weight:400;color:#64748b;">${escapeHtml(item.unit || '')}</span> ${badge}`;
+    };
+
+    const leftTDs = `
+      <td class="col-num">${leftNum}</td>
+      <td class="col-name">${escapeHtml(leftItem.name)}</td>
+      <td class="col-qty">${formatItemQty(leftItem)}</td>
+    `;
+
+    const rightTDs = rightItem
+      ? `
+      <td class="col-num">${rightNum}</td>
+      <td class="col-name">${escapeHtml(rightItem.name)}</td>
+      <td class="col-qty">${formatItemQty(rightItem)}</td>
+      `
+      : `
+      <td class="col-num"></td>
+      <td class="col-name"></td>
+      <td class="col-qty"></td>
+      `;
+
+    rowsHTML.push(`
+      <tr>
+        ${leftTDs}
+        <td class="col-divider"></td>
+        ${rightTDs}
+      </tr>
+    `);
+  }
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Inventory Stock Sheet - ${filterLabel}</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 8mm 8mm 10mm 8mm;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background: #ffffff;
+    padding: 0;
+    font-size: 11px;
+    line-height: 1.25;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 2px solid #0f172a;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+  }
+  .biz-info h1 {
+    font-size: 17px;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.2px;
+  }
+  .biz-info p {
+    font-size: 11px;
+    color: #475569;
+    margin-top: 1px;
+  }
+  .report-meta {
+    text-align: right;
+  }
+  .report-badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #0f172a;
+    color: #ffffff;
+    margin-bottom: 3px;
+  }
+  .report-date {
+    font-size: 10px;
+    color: #64748b;
+  }
+  .summary-bar {
+    display: flex;
+    justify-content: space-between;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 5px 12px;
+    margin-bottom: 10px;
+    font-size: 11px;
+  }
+  .summary-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .summary-item .label { color: #64748b; }
+  .summary-item .value { font-weight: 700; color: #0f172a; }
+  .summary-item .value.low { color: #d97706; }
+  .summary-item .value.out { color: #dc2626; }
+
+  table.stock-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  th {
+    background: #0f172a;
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 6px;
+    border: 1px solid #0f172a;
+  }
+  td {
+    padding: 3.5px 6px;
+    font-size: 10px;
+    border-bottom: 1px solid #e2e8f0;
+    vertical-align: middle;
+  }
+  tr:nth-child(even) td {
+    background-color: #f8fafc;
+  }
+  .col-num {
+    width: 24px;
+    text-align: center;
+    font-weight: 700;
+    color: #64748b;
+    font-size: 9px;
+  }
+  .col-name {
+    text-align: left;
+    font-weight: 500;
+    color: #0f172a;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .col-qty {
+    width: 82px;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .col-divider {
+    width: 10px;
+    border-top: none;
+    border-bottom: none;
+    background: transparent !important;
+    padding: 0;
+    border-right: 1.5px solid #cbd5e1;
+  }
+  th.col-divider {
+    border: none;
+    background: transparent !important;
+  }
+  .badge-low {
+    display: inline-block;
+    font-size: 8px;
+    color: #b45309;
+    background: #fef3c7;
+    padding: 0.5px 3px;
+    border-radius: 2px;
+    margin-left: 2px;
+    font-weight: 700;
+  }
+  .badge-out {
+    display: inline-block;
+    font-size: 8px;
+    color: #b91c1c;
+    background: #fee2e2;
+    padding: 0.5px 3px;
+    border-radius: 2px;
+    margin-left: 2px;
+    font-weight: 800;
+  }
+  .footer {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px dashed #cbd5e1;
+    display: flex;
+    justify-content: space-between;
+    font-size: 9px;
+    color: #94a3b8;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="biz-info">
+      <h1>${escapeHtml(data.business.name)}</h1>
+      <p>${escapeHtml(data.branch.name)}${data.business.address ? ' &bull; ' + escapeHtml(data.business.address) : ''}${data.business.phone ? ' &bull; ' + escapeHtml(data.business.phone) : ''}</p>
+    </div>
+    <div class="report-meta">
+      <div class="report-badge">${filterLabel}</div>
+      <div class="report-date">${printedAt}</div>
+    </div>
+  </div>
+
+  <div class="summary-bar">
+    <div class="summary-item">
+      <span class="label">Items Listed:</span>
+      <span class="value">${data.items.length}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Low Stock:</span>
+      <span class="value low">${data.lowStockCount}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Out of Stock:</span>
+      <span class="value out">${data.outOfStockCount}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Total Catalog:</span>
+      <span class="value">${data.totalProducts}</span>
+    </div>
+  </div>
+
+  <table class="stock-table">
+    <thead>
+      <tr>
+        <th class="col-num">#</th>
+        <th class="col-name" style="text-align:left;">Item Name</th>
+        <th class="col-qty" style="text-align:right;">Available Qty</th>
+        <th class="col-divider"></th>
+        <th class="col-num">#</th>
+        <th class="col-name" style="text-align:left;">Item Name</th>
+        <th class="col-qty" style="text-align:right;">Available Qty</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHTML.join('')}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>Record Am &bull; Physical Stock Take Sheet</span>
+    <span>Printed on ${printedAt}</span>
+  </div>
+</body>
+</html>`;
+}
+
+export async function printInventoryStock(data: InventoryPrintData) {
+  try {
+    const html = generateInventoryStockHTML(data);
+    await Print.printAsync({ html });
+  } catch (err) {
+    console.error('Print inventory stock error:', err);
+    throw err;
+  }
+}
+
+export async function shareInventoryStockPDF(data: InventoryPrintData) {
+  try {
+    const html = generateInventoryStockHTML(data);
+    const { uri } = await Print.printToFileAsync({
+      html,
+      width: 595,
+      height: 842,
+    });
+    const filterTag = data.filterType === 'all' ? 'All' : 'Low_Out';
+    const filename = `Inventory_Stock_${filterTag}_${format(new Date(), 'yyyyMMdd')}.pdf`;
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: filename,
+        UTI: 'com.adobe.pdf',
+      });
+      return;
+    }
+
+    await Share.share({
+      url: uri,
+      title: filename,
+    });
+  } catch (err) {
+    console.error('Share inventory stock PDF error:', err);
+    throw err;
+  }
+}
+
+export interface ProductAnalysisPrintItem {
+  rank: number;
+  name: string;
+  quantitySold: number;
+  revenue: number;
+  profit: number;
+}
+
+export interface ProductAnalysisPrintData {
+  business: Business;
+  branch?: Branch | null;
+  items: ProductAnalysisPrintItem[];
+  sortDescription: string;
+  searchQuery?: string;
+  totalProducts: number;
+  totalQtySold: number;
+  totalRevenue: number;
+  totalProfit: number;
+}
+
+export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): string {
+  const currency = data.business.currency_symbol ?? CURRENCY_SYMBOL;
+  const formatMoney = (val: number) =>
+    `${currency}${val.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+  const overallMargin =
+    data.totalRevenue > 0 ? ((data.totalProfit / data.totalRevenue) * 100).toFixed(1) + '%' : '0%';
+  const printedAt = format(new Date(), 'MMM d, yyyy \u00B7 h:mm a');
+
+  const rowsHTML = data.items
+    .map((item) => {
+      const margin = item.revenue > 0 ? ((item.profit / item.revenue) * 100).toFixed(1) + '%' : '0%';
+      const profitColor = item.profit >= 0 ? '#16a34a' : '#dc2626';
+      return `
+      <tr>
+        <td class="col-rank">${item.rank}</td>
+        <td class="col-name">${escapeHtml(item.name)}</td>
+        <td class="col-qty">${item.quantitySold.toLocaleString('en-NG')}</td>
+        <td class="col-money">${formatMoney(item.revenue)}</td>
+        <td class="col-money" style="color:${profitColor};font-weight:600;">${formatMoney(item.profit)}</td>
+        <td class="col-margin">${margin}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Product Analytics - ${escapeHtml(data.business.name)}</title>
+<style>
+  @page {
+    size: A4 portrait;
+    margin: 10mm 10mm 12mm 10mm;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background: #ffffff;
+    padding: 0;
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .header {
+    border-bottom: 2px solid #004e89;
+    padding-bottom: 10px;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .business-name {
+    font-size: 18px;
+    font-weight: 800;
+    color: #004e89;
+    letter-spacing: -0.2px;
+  }
+  .branch-name {
+    font-size: 11px;
+    color: #64748b;
+    margin-top: 2px;
+  }
+  .report-title-box {
+    text-align: right;
+  }
+  .report-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+  .meta-info {
+    font-size: 10px;
+    color: #64748b;
+    margin-top: 3px;
+  }
+  .summary-bar {
+    display: flex;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .summary-item {
+    display: flex;
+    flex-direction: column;
+  }
+  .summary-item .label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #64748b;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .summary-item .value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .summary-item .value.profit {
+    color: #16a34a;
+  }
+  .filter-note {
+    font-size: 10px;
+    color: #475569;
+    margin-bottom: 8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+  }
+  thead {
+    display: table-header-group;
+  }
+  th {
+    background: #004e89;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 7px 8px;
+    border: none;
+  }
+  th.col-rank { width: 36px; text-align: center; }
+  th.col-name { text-align: left; }
+  th.col-qty { width: 75px; text-align: right; }
+  th.col-money { width: 105px; text-align: right; }
+  th.col-margin { width: 65px; text-align: right; }
+  
+  tr {
+    page-break-inside: avoid;
+  }
+  tbody tr {
+    border-bottom: 1px solid #e2e8f0;
+  }
+  tbody tr:nth-child(even) {
+    background-color: #f8fafc;
+  }
+  td {
+    padding: 6px 8px;
+    font-size: 10.5px;
+  }
+  td.col-rank {
+    text-align: center;
+    font-weight: 700;
+    color: #004e89;
+  }
+  td.col-name {
+    font-weight: 500;
+    color: #0f172a;
+  }
+  td.col-qty {
+    text-align: right;
+    font-weight: 600;
+  }
+  td.col-money {
+    text-align: right;
+  }
+  td.col-margin {
+    text-align: right;
+    color: #64748b;
+  }
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 9.5px;
+    color: #94a3b8;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 6px;
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="business-name">${escapeHtml(data.business.name)}</div>
+      <div class="branch-name">${escapeHtml(data.branch?.name || 'Main Branch')}</div>
+    </div>
+    <div class="report-title-box">
+      <div class="report-title">Product Performance Analysis</div>
+      <div class="meta-info">Printed on ${printedAt}</div>
+    </div>
+  </div>
+
+  <div class="summary-bar">
+    <div class="summary-item">
+      <span class="label">Products:</span>
+      <span class="value">${data.totalProducts}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Units Sold:</span>
+      <span class="value">${data.totalQtySold.toLocaleString('en-NG')}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Total Revenue:</span>
+      <span class="value">${formatMoney(data.totalRevenue)}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Total Profit:</span>
+      <span class="value profit">${formatMoney(data.totalProfit)}</span>
+    </div>
+    <div class="summary-item">
+      <span class="label">Margin:</span>
+      <span class="value">${overallMargin}</span>
+    </div>
+  </div>
+
+  <div class="filter-note">
+    <strong>Parameters:</strong> ${escapeHtml(data.sortDescription)}${data.searchQuery ? ` &bull; <em>Filtered by: "${escapeHtml(data.searchQuery)}"</em>` : ''}
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-rank">#</th>
+        <th class="col-name">Product Name</th>
+        <th class="col-qty">Units Sold</th>
+        <th class="col-money">Revenue</th>
+        <th class="col-money">Gross Profit</th>
+        <th class="col-margin">Margin</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rowsHTML}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <span>Record Am &bull; Product Performance Analysis</span>
+    <span>Printed on ${printedAt}</span>
+  </div>
+</body>
+</html>`;
+}
+
+export async function printProductAnalysis(data: ProductAnalysisPrintData) {
+  try {
+    const html = generateProductAnalysisHTML(data);
+    await Print.printAsync({ html });
+  } catch (err) {
+    console.error('Print product analysis error:', err);
+    throw err;
+  }
+}
+
+export async function shareProductAnalysisPDF(data: ProductAnalysisPrintData) {
+  try {
+    const html = generateProductAnalysisHTML(data);
+    const { uri } = await Print.printToFileAsync({
+      html,
+      width: 595,
+      height: 842,
+    });
+    const filename = `Product_Analysis_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`;
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: filename,
+        UTI: 'com.adobe.pdf',
+      });
+      return;
+    }
+
+    await Share.share({
+      url: uri,
+      title: filename,
+    });
+  } catch (err) {
+    console.error('Share product analysis PDF error:', err);
+    throw err;
+  }
+}
+

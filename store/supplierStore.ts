@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { Supplier, Purchase, SupplierDebt } from '@/types';
+import { Supplier, Purchase, SupplierDebt, PurchaseItem } from '@/types';
 import {
   createLocalId,
   enqueueMutations,
@@ -8,6 +8,7 @@ import {
   readCachedRows,
   upsertCachedRows,
 } from '@/lib/offlineStore';
+import { hasArrayChanged } from '@/lib/storeUtils';
 
 export interface SupplierWithStats extends Supplier {
   total_purchased: number;
@@ -48,7 +49,7 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
     try {
       const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
       if (cachedSuppliers.length > 0) {
-        if (JSON.stringify(cachedSuppliers) !== JSON.stringify(get().suppliers)) {
+        if (hasArrayChanged(get().suppliers, cachedSuppliers)) {
           set({ suppliers: cachedSuppliers });
         }
       }
@@ -59,7 +60,7 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
     try {
       const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
       if (cachedSuppliers.length > 0) {
-        if (JSON.stringify(cachedSuppliers) !== JSON.stringify(get().suppliers)) {
+        if (hasArrayChanged(get().suppliers, cachedSuppliers)) {
           set({ suppliers: cachedSuppliers });
         }
       }
@@ -103,14 +104,14 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
         })
       );
 
-      if (JSON.stringify(suppliersWithStats) !== JSON.stringify(get().suppliers)) {
+      if (hasArrayChanged(get().suppliers, suppliersWithStats)) {
         set({ suppliers: suppliersWithStats });
       }
       await upsertCachedRows({ businessId }, 'suppliers', suppliersWithStats);
     } catch (err: any) {
       const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
       if (cachedSuppliers.length > 0) {
-        if (JSON.stringify(cachedSuppliers) !== JSON.stringify(get().suppliers)) {
+        if (hasArrayChanged(get().suppliers, cachedSuppliers)) {
           set({ suppliers: cachedSuppliers, error: null });
         } else {
           set({ error: null });
@@ -144,13 +145,35 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
       const newDebts = (debts as SupplierDebt[]) ?? [];
 
       if (
-        JSON.stringify(newPurchases) !== JSON.stringify(get().supplierPurchases) ||
-        JSON.stringify(newDebts) !== JSON.stringify(get().supplierDebts)
+        hasArrayChanged(get().supplierPurchases, newPurchases) ||
+        hasArrayChanged(get().supplierDebts, newDebts)
       ) {
         set({ supplierPurchases: newPurchases, supplierDebts: newDebts });
       }
     } catch (err: any) {
-      set({ error: err.message });
+      // Try loading from cache if server fails
+      try {
+        const [cachedPurchases, cachedDebts, cachedItems] = await Promise.all([
+          readCachedRows<Purchase>({ businessId }, 'purchases'),
+          readCachedRows<SupplierDebt>({ businessId }, 'supplier_debts'),
+          readCachedRows<PurchaseItem>({ businessId }, 'purchase_items').catch(() => [] as PurchaseItem[]),
+        ]);
+        const newDebts = cachedDebts.filter((d) => d.supplier_id === supplierId);
+        const filteredPurchases = cachedPurchases.filter((p) => p.supplier_id === supplierId).slice(0, 20);
+        const newPurchases = filteredPurchases.map((p) => ({
+          ...p,
+          items: p.items && p.items.length > 0 ? p.items : cachedItems.filter((i) => i.purchase_id === p.id),
+        }));
+
+        if (
+          hasArrayChanged(get().supplierPurchases, newPurchases) ||
+          hasArrayChanged(get().supplierDebts, newDebts)
+        ) {
+          set({ supplierPurchases: newPurchases, supplierDebts: newDebts });
+        }
+      } catch {
+        set({ error: err.message });
+      }
     } finally {
       set({ isLoading: false });
     }

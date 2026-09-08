@@ -76,41 +76,9 @@ const TabIcon = React.memo(function TabIcon({
 });
 
 // ─── Tab bar: isolated component — only these 5 icons re-render on tab switch ───
-function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
+function TabBar({ onTabPress }: { onTabPress: (routeKey: string, index: number) => void }) {
   const insets = useSafeAreaInsets();
   const activeTab = useTabStore((s) => s.activeTab);
-  const setActiveTab = useTabStore((s) => s.setActiveTab);
-  const isOwnPressRef = useRef(false);
-
-  // Sync PagerView when activeTab changes from an EXTERNAL source
-  // (e.g. dashboard quick-link calling setActiveTab('inventory') directly)
-  useEffect(() => {
-    if (isOwnPressRef.current) {
-      // Change came from our own handleTabPress — PagerView is already there
-      isOwnPressRef.current = false;
-      return;
-    }
-    // External change — move PagerView to match
-    const idx = ROUTES.findIndex((r) => r.key === activeTab);
-    if (idx !== -1) {
-      pagerRef.current?.setPageWithoutAnimation(idx);
-    }
-  }, [activeTab, pagerRef]);
-
-  const handleTabPress = useCallback((routeKey: string) => {
-    // Skip if already on this tab
-    if (routeKey === useTabStore.getState().activeTab) return;
-
-    const index = ROUTES.findIndex((r) => r.key === routeKey);
-    if (index !== -1) {
-      // Mark as our own press so the useEffect above doesn't double-fire
-      isOwnPressRef.current = true;
-      // Native page swap (instant, runs on UI thread before React re-renders)
-      pagerRef.current?.setPageWithoutAnimation(index);
-      // Update JS state so tab icons highlight
-      setActiveTab(routeKey);
-    }
-  }, [pagerRef, setActiveTab]);
 
   return (
     <View style={styles.tabBarContainer}>
@@ -121,12 +89,12 @@ function TabBar({ pagerRef }: { pagerRef: React.RefObject<any> }) {
           height: 62 + Math.max(insets.bottom, 8)
         }
       ]}>
-        {ROUTES.map((route) => (
+        {ROUTES.map((route, index) => (
           <TabIcon
             key={route.key}
             routeKey={route.key}
             isActive={activeTab === route.key}
-            onPressIn={() => handleTabPress(route.key)}
+            onPressIn={() => onTabPress(route.key, index)}
           />
         ))}
       </View>
@@ -143,17 +111,33 @@ const TabScene = React.memo(({ component: Component }: { component: React.Compon
 export default function TabsScreen() {
   const isFocused = useIsFocused();
   const pagerRef = useRef<any>(null);
-  const isUserSwipingRef = useRef(false);
   const hasMountedRef = useRef(false);
+  const currentPageIndexRef = useRef(0);
 
   useEffect(() => {
     useTabStore.getState().setActiveTab('dashboard');
+    currentPageIndexRef.current = 0;
     pagerRef.current?.setPageWithoutAnimation(0);
 
     const timer = setTimeout(() => {
       hasMountedRef.current = true;
-    }, 600);
+    }, 400);
     return () => clearTimeout(timer);
+  }, []);
+
+  // Sync PagerView when activeTab changes from an EXTERNAL source
+  // (e.g. dashboard quick-link calling setActiveTab('inventory') directly)
+  useEffect(() => {
+    const unsub = useTabStore.subscribe((state) => {
+      const targetIndex = ROUTES.findIndex((r) => r.key === state.activeTab);
+      // Only command PagerView if it is NOT already on this page.
+      // This ensures native swipe gestures are never abruptly interrupted with setPageWithoutAnimation.
+      if (targetIndex !== -1 && targetIndex !== currentPageIndexRef.current) {
+        currentPageIndexRef.current = targetIndex;
+        pagerRef.current?.setPageWithoutAnimation(targetIndex);
+      }
+    });
+    return unsub;
   }, []);
 
   // Hardware Back Button: Return to Dashboard if not there, otherwise exit
@@ -163,6 +147,7 @@ export default function TabsScreen() {
     const onBackPress = () => {
       const currentTab = useTabStore.getState().activeTab;
       if (currentTab !== 'dashboard') {
+        currentPageIndexRef.current = 0;
         pagerRef.current?.setPageWithoutAnimation(0);
         useTabStore.getState().setActiveTab('dashboard');
         return true; 
@@ -174,23 +159,14 @@ export default function TabsScreen() {
     return () => backHandler.remove();
   }, [isFocused]);
 
-  // Track PagerView scroll state to distinguish user swipes from programmatic changes
-  const handlePageScrollStateChanged = useCallback((e: any) => {
-    if (!hasMountedRef.current) return;
-    const state = e.nativeEvent.pageScrollState;
-    if (state === 'dragging') {
-      isUserSwipingRef.current = true;
-    } else if (state === 'idle') {
-      isUserSwipingRef.current = false;
-    }
-  }, []);
-
-  // Only update tab state for genuine user swipes.
-  // Ignore initial layout/measurement scroll events on mount.
+  // Update tab state when a new page is selected during a swipe.
+  // Note: we record currentPageIndexRef BEFORE updating activeTab so the external
+  // listener doesn't redundantly call setPageWithoutAnimation and kill the momentum!
   const handlePageSelected = useCallback((e: any) => {
-    if (!hasMountedRef.current || !isUserSwipingRef.current) return;
+    if (!hasMountedRef.current) return;
 
     const index = e.nativeEvent.position;
+    currentPageIndexRef.current = index;
     const targetRoute = ROUTES[index];
     if (targetRoute) {
       const currentTab = useTabStore.getState().activeTab;
@@ -198,6 +174,14 @@ export default function TabsScreen() {
         useTabStore.getState().setActiveTab(targetRoute.key);
       }
     }
+  }, []);
+
+  const handleTabPress = useCallback((routeKey: string, index: number) => {
+    if (routeKey === useTabStore.getState().activeTab) return;
+
+    currentPageIndexRef.current = index;
+    pagerRef.current?.setPageWithoutAnimation(index);
+    useTabStore.getState().setActiveTab(routeKey);
   }, []);
 
   return (
@@ -208,8 +192,8 @@ export default function TabsScreen() {
           style={{ flex: 1 }}
           initialPage={0}
           onPageSelected={handlePageSelected}
-          onPageScrollStateChanged={handlePageScrollStateChanged}
-          overdrag={false}
+          overdrag={true}
+          overScrollMode="auto"
           offscreenPageLimit={4}
         >
           {ROUTES.map((route) => (
@@ -220,7 +204,7 @@ export default function TabsScreen() {
         </PagerView>
       </View>
 
-      <TabBar pagerRef={pagerRef} />
+      <TabBar onTabPress={handleTabPress} />
     </View>
   );
 }

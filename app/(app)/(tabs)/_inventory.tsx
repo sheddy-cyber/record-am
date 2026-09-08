@@ -2,6 +2,8 @@ import React, { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   AlertButton,
+  Modal,
+  Pressable,
   RefreshControl,
   ScrollView,
   Text,
@@ -19,7 +21,8 @@ import { useBusinessStore } from '@/store/businessStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { deleteProductRecord } from '@/lib/recordDeletion';
 import { removeCachedProduct } from '@/lib/offlineStore';
-import { Badge, EmptyState } from '@/components/ui';
+import { printInventoryStock, shareInventoryStockPDF } from '@/lib/reports';
+import { Badge, Button, EmptyState } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
@@ -44,8 +47,10 @@ const formatCount = (value: number) =>
 
 function InventoryScreen() {
   const insets = useSafeAreaInsets();
-  const businessId = useAuthStore((s) => s.currentBusiness?.id);
-  const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const currentBranch = useAuthStore((s) => s.currentBranch);
+  const businessId = currentBusiness?.id;
+  const branchId = currentBranch?.id;
   const userRole = useAuthStore((s) => s.userRole);
   const products = useBusinessStore((s) => s.products);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
@@ -54,6 +59,10 @@ function InventoryScreen() {
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [refreshing, setRefreshing] = useState(false);
+  const [printModalVisible, setPrintModalVisible] = useState(false);
+  const [printFilterType, setPrintFilterType] = useState<'all' | 'low_and_out'>('all');
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isSharingPDF, setIsSharingPDF] = useState(false);
 
   const openCreateProduct = () => router.push('/(app)/add-stock');
 
@@ -201,6 +210,79 @@ function InventoryScreen() {
     );
   };
 
+  const physicalProductsCount = useMemo(() => {
+    return products.filter((p) => !p.is_service).length;
+  }, [products]);
+
+  const lowAndOutCount = useMemo(() => {
+    return stats.lowStockCount + stats.outOfStockCount;
+  }, [stats.lowStockCount, stats.outOfStockCount]);
+
+  const handlePrintInventory = async (action: 'print' | 'share') => {
+    if (!currentBusiness || !currentBranch) return;
+
+    const physicalProducts = products.filter((p) => !p.is_service);
+    const targetProducts =
+      printFilterType === 'all'
+        ? physicalProducts
+        : physicalProducts.filter((p) => {
+            const stock = getProductStock(p);
+            return stock <= 0 || stock <= p.reorder_level;
+          });
+
+    if (targetProducts.length === 0) {
+      Alert.alert(
+        'No Items Found',
+        printFilterType === 'all'
+          ? 'There are no physical products in inventory to print.'
+          : 'There are currently no low stock or out of stock items to print.'
+      );
+      return;
+    }
+
+    const sorted = [...targetProducts].sort((a, b) => a.name.localeCompare(b.name));
+
+    const printItems = sorted.map((p) => ({
+      name: p.name,
+      quantity: getProductStock(p),
+      unit: p.unit || 'units',
+      reorderLevel: p.reorder_level ?? 0,
+      category: p.category?.name,
+    }));
+
+    const printData = {
+      business: currentBusiness,
+      branch: currentBranch,
+      filterType: printFilterType,
+      items: printItems,
+      totalProducts: physicalProducts.length,
+      lowStockCount: stats.lowStockCount,
+      outOfStockCount: stats.outOfStockCount,
+    };
+
+    if (action === 'print') {
+      setIsPrinting(true);
+      try {
+        await printInventoryStock(printData);
+        setPrintModalVisible(false);
+      } catch (err: any) {
+        Alert.alert('Print Error', err?.message || 'Failed to open print dialog.');
+      } finally {
+        setIsPrinting(false);
+      }
+    } else {
+      setIsSharingPDF(true);
+      try {
+        await shareInventoryStockPDF(printData);
+        setPrintModalVisible(false);
+      } catch (err: any) {
+        Alert.alert('PDF Export Error', err?.message || 'Failed to export PDF.');
+      } finally {
+        setIsSharingPDF(false);
+      }
+    }
+  };
+
   return (
     <SwipeableTabScreen name="inventory">
       <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
@@ -208,7 +290,18 @@ function InventoryScreen() {
           title="Inventory"
           subtitle={`${products.length} ${products.length === 1 ? 'product' : 'products'} in catalog`}
           theme="dark"
-          right={<HeaderAction icon="plus" label="Add" onPress={openCreateProduct} />}
+          right={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <HeaderAction
+                icon="printer"
+                onPress={() => {
+                  setPrintFilterType(stockFilter === 'all' ? 'all' : 'low_and_out');
+                  setPrintModalVisible(true);
+                }}
+              />
+              <HeaderAction icon="plus" label="Add" onPress={openCreateProduct} />
+            </View>
+          }
         />
 
         {/* ── Fixed Search & Filters Bar (stays pinned at top) ───────────── */}
@@ -694,6 +787,237 @@ function InventoryScreen() {
             }}
           />
         </View>
+
+        {/* ── Print Inventory Sheet Modal ─────────────────────────────────── */}
+        <Modal
+          visible={printModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (!isPrinting && !isSharingPDF) setPrintModalVisible(false);
+          }}
+        >
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0, 20, 50, 0.45)',
+              justifyContent: 'center',
+              alignItems: 'center',
+              paddingHorizontal: SP.page,
+            }}
+            onPress={() => {
+              if (!isPrinting && !isSharingPDF) setPrintModalVisible(false);
+            }}
+          >
+            <Pressable
+              style={{
+                backgroundColor: COLORS.card,
+                borderRadius: RADIUS.xl,
+                width: '100%',
+                maxWidth: 420,
+                padding: 20,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.15,
+                shadowRadius: 16,
+                elevation: 8,
+              }}
+              onPress={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: RADIUS.md,
+                      backgroundColor: 'rgba(255, 107, 53, 0.1)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="printer" size={18} color={COLORS.accent} />
+                  </View>
+                  <View>
+                    <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                      Print Stock Sheet
+                    </Text>
+                    <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                      Double-column A4 tabular list
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => setPrintModalVisible(false)}
+                  disabled={isPrinting || isSharingPDF}
+                >
+                  <Feather name="x" size={20} color={COLORS.text.muted} />
+                </TouchableOpacity>
+              </View>
+
+              <Text
+                style={{
+                  fontSize: 12.5,
+                  fontFamily: FONT.medium,
+                  color: COLORS.text.secondary,
+                  marginBottom: 10,
+                }}
+              >
+                Select which items to include:
+              </Text>
+
+              {/* Option 1: All Stock Items */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setPrintFilterType('all')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  padding: 12,
+                  borderRadius: RADIUS.md,
+                  borderWidth: 1.5,
+                  borderColor: printFilterType === 'all' ? COLORS.accent : COLORS.border,
+                  backgroundColor: printFilterType === 'all' ? 'rgba(255, 107, 53, 0.05)' : COLORS.surface,
+                  marginBottom: 10,
+                  gap: 12,
+                }}
+              >
+                <View
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: printFilterType === 'all' ? COLORS.accent : COLORS.borderDark,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {printFilterType === 'all' ? (
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor: COLORS.accent,
+                      }}
+                    />
+                  ) : null}
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                    All Stock Items
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 }}>
+                    Full inventory catalog ({physicalProductsCount} items)
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Option 2: Low and Out of Stock */}
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setPrintFilterType('low_and_out')}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  padding: 12,
+                  borderRadius: RADIUS.md,
+                  borderWidth: 1.5,
+                  borderColor: printFilterType === 'low_and_out' ? COLORS.accent : COLORS.border,
+                  backgroundColor: printFilterType === 'low_and_out' ? 'rgba(255, 107, 53, 0.05)' : COLORS.surface,
+                  marginBottom: 14,
+                  gap: 12,
+                }}
+              >
+                <View
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    borderWidth: 2,
+                    borderColor: printFilterType === 'low_and_out' ? COLORS.accent : COLORS.borderDark,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {printFilterType === 'low_and_out' ? (
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor: COLORS.accent,
+                      }}
+                    />
+                  ) : null}
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                    Low & Out of Stock Items
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 }}>
+                    Only depleted and low items ({lowAndOutCount} items)
+                  </Text>
+                </View>
+              </TouchableOpacity>
+
+              {/* Note Box */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: 10,
+                  borderRadius: RADIUS.sm,
+                  backgroundColor: COLORS.surface2,
+                  marginBottom: 16,
+                }}
+              >
+                <Feather name="file-text" size={14} color={COLORS.text.muted} />
+                <Text style={{ fontSize: 11.5, fontFamily: FONT.regular, color: COLORS.text.secondary, flex: 1 }}>
+                  Runs in double columns on A4 paper (~75 items per page) for quick physical stock taking.
+                </Text>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={{ gap: 8 }}>
+                <Button
+                  title="Print Stock Sheet"
+                  variant="accent"
+                  size="md"
+                  loading={isPrinting}
+                  disabled={isSharingPDF}
+                  icon="printer"
+                  onPress={() => handlePrintInventory('print')}
+                />
+
+                <Button
+                  title="Share as PDF"
+                  variant="secondary"
+                  size="md"
+                  loading={isSharingPDF}
+                  disabled={isPrinting}
+                  icon="share-2"
+                  onPress={() => handlePrintInventory('share')}
+                />
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </ScreenShell>
     </SwipeableTabScreen>
   );

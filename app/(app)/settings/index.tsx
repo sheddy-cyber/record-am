@@ -1,16 +1,21 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, Alert, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
+import { View, Text, Alert, KeyboardAvoidingView, Platform, RefreshControl, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { Button, Card, SectionHeader } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField, Toggle } from '@/components/forms';
-import { BrandMark, BrandWordmark, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { APP_FOOTER_TEXT, BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BusinessType } from '@/types';
 import { getAppSettings, getTimeParts, isValidTimeInput, saveAppSettings } from '@/lib/appSettings';
-import { cancelDailySummaryNotification, scheduleDailySummaryNotification } from '@/lib/notifications';
+import {
+  cancelDailySummaryNotification,
+  scheduleDailySummaryNotification,
+  ensureNotificationPermissions,
+  sendImmediateNotification,
+} from '@/lib/notifications';
 import { getPendingMutationCount, flushOfflineQueue } from '@/lib/offlineStore';
 import { useOfflineStore } from '@/store/offlineStore';
 import Toast from 'react-native-toast-message';
@@ -124,6 +129,7 @@ export default function SettingsScreen() {
       });
 
       if (dailySummaryEnabled) {
+        await ensureNotificationPermissions();
         await scheduleDailySummaryNotification(reminder.hour, reminder.minute);
       } else {
         await cancelDailySummaryNotification();
@@ -143,6 +149,29 @@ export default function SettingsScreen() {
       Alert.alert('Error', err.message);
     } finally {
       setDailyCloseSaving(false);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    try {
+      const granted = await ensureNotificationPermissions();
+      if (!granted) {
+        Alert.alert('Permission Needed', 'Please allow notifications for Record Am in your device settings to receive reminders.');
+        return;
+      }
+      await sendImmediateNotification(
+        'Daily Summary Ready',
+        "Time to close your books. Tap to review today's balance.",
+        { type: 'daily_summary', actionRoute: '/(app)/close-day' },
+        '/(app)/close-day'
+      );
+      Toast.show({
+        type: 'success',
+        text1: 'Test reminder sent',
+        text2: 'Check your notification shade and in-app notifications.',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to send test reminder');
     }
   };
 
@@ -274,13 +303,35 @@ export default function SettingsScreen() {
               onChange={setDailySummaryEnabled}
             />
             {dailySummaryEnabled ? (
-              <InputField
-                label="Reminder Time"
-                value={dailySummaryTime}
-                onChangeText={setDailySummaryTime}
-                placeholder="20:00"
-                hint="Use 24-hour time, for example 20:00."
-              />
+              <>
+                <InputField
+                  label="Reminder Time"
+                  value={dailySummaryTime}
+                  onChangeText={setDailySummaryTime}
+                  placeholder="20:00"
+                  hint="Use 24-hour time, for example 20:00."
+                />
+                <View style={{ marginTop: -8, marginBottom: 24, flexDirection: 'row', justifyContent: 'flex-start' }}>
+                  <TouchableOpacity
+                    onPress={handleTestNotification}
+                    activeOpacity={0.7}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingVertical: 6,
+                      paddingHorizontal: 10,
+                      borderRadius: RADIUS.sm,
+                      backgroundColor: 'rgba(255, 107, 53, 0.08)',
+                    }}
+                  >
+                    <Feather name="bell" size={13} color={COLORS.accent} />
+                    <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accent }}>
+                      Send Test Reminder
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             ) : null}
             <Toggle
               label="Auto Close And Balance"
@@ -381,16 +432,6 @@ export default function SettingsScreen() {
                 style={{ marginTop: 8 }}
               />
             )}
-          </Card>
-
-          <Card style={{ backgroundColor: '#F9FAFB' }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-              <BrandMark size={68} />
-              <View style={{ flex: 1 }}>
-                <BrandWordmark size={22} />
-                <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted, marginTop: 6 }}>{APP_FOOTER_TEXT}</Text>
-              </View>
-            </View>
           </Card>
         </KeyboardAwareScrollView>
       </ScreenShell>

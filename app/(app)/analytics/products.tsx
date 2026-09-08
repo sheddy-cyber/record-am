@@ -1,12 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { View, Text, FlatList, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import React, { useDeferredValue, useMemo, useState } from 'react';
+import { View, Text, FlatList, TextInput, TouchableOpacity, ScrollView, Modal, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
+import { useAuthStore } from '@/store/authStore';
 import { useAnalyticsStore, TopProduct } from '@/store/analyticsStore';
-import { ScreenShell, ScreenHeader } from '@/components/layout';
+import { ScreenShell, ScreenHeader, HeaderAction } from '@/components/layout';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL } from '@/constants';
-import { EmptyState } from '@/components/ui';
+import { Button, EmptyState } from '@/components/ui';
+import { ProductAnalysisPrintData, printProductAnalysis, shareProductAnalysisPDF } from '@/lib/reports';
 
 const fmtCount = (n: number) => n.toLocaleString();
 const fmt = (n: number) =>
@@ -21,15 +24,20 @@ type SortOrder = 'desc' | 'asc';
 
 export default function AnalyticsProductsScreen() {
   const insets = useSafeAreaInsets();
+  const { currentBusiness, currentBranch } = useAuthStore();
   const { allProducts } = useAnalyticsStore();
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [sortField, setSortField] = useState<SortField>('quantity');
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
+  const [printModalVisible, setPrintModalVisible] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isSharingPDF, setIsSharingPDF] = useState(false);
   
   const sortedAndFiltered = useMemo(() => {
     let filtered = allProducts;
-    if (search.trim()) {
-      const q = search.toLowerCase();
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.toLowerCase();
       filtered = filtered.filter((p) => p.product_name.toLowerCase().includes(q));
     }
     
@@ -44,7 +52,7 @@ export default function AnalyticsProductsScreen() {
       }
       return sortOrder === 'desc' ? valB - valA : valA - valB;
     });
-  }, [allProducts, search, sortField, sortOrder]);
+  }, [allProducts, deferredSearch, sortField, sortOrder]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -52,6 +60,70 @@ export default function AnalyticsProductsScreen() {
     } else {
       setSortField(field);
       setSortOrder('desc');
+    }
+  };
+
+  const handlePrint = async (type: 'print' | 'share') => {
+    if (!currentBusiness) {
+      Toast.show({ type: 'error', text1: 'Business information missing' });
+      return;
+    }
+
+    if (sortedAndFiltered.length === 0) {
+      Toast.show({ type: 'info', text1: 'No products to print' });
+      return;
+    }
+
+    const sortFieldLabel =
+      sortField === 'quantity'
+        ? 'Quantity Sold'
+        : sortField === 'revenue'
+          ? 'Revenue'
+          : 'Gross Profit';
+    const sortDescription = `Sorted by ${sortFieldLabel} (${sortOrder === 'desc' ? 'Highest to Lowest' : 'Lowest to Highest'})`;
+
+    const totalQtySold = sortedAndFiltered.reduce((sum, p) => sum + p.total_qty, 0);
+    const totalRevenue = sortedAndFiltered.reduce((sum, p) => sum + p.total_revenue, 0);
+    const totalProfit = sortedAndFiltered.reduce((sum, p) => sum + p.total_profit, 0);
+
+    const printData: ProductAnalysisPrintData = {
+      business: currentBusiness,
+      branch: currentBranch,
+      items: sortedAndFiltered.map((p, idx) => ({
+        rank: idx + 1,
+        name: p.product_name,
+        quantitySold: p.total_qty,
+        revenue: p.total_revenue,
+        profit: p.total_profit,
+      })),
+      sortDescription,
+      searchQuery: search.trim() || undefined,
+      totalProducts: sortedAndFiltered.length,
+      totalQtySold,
+      totalRevenue,
+      totalProfit,
+    };
+
+    if (type === 'print') {
+      setIsPrinting(true);
+      try {
+        await printProductAnalysis(printData);
+        setPrintModalVisible(false);
+      } catch (err: any) {
+        Toast.show({ type: 'error', text1: 'Unable to print', text2: err?.message });
+      } finally {
+        setIsPrinting(false);
+      }
+    } else {
+      setIsSharingPDF(true);
+      try {
+        await shareProductAnalysisPDF(printData);
+        setPrintModalVisible(false);
+      } catch (err: any) {
+        Toast.show({ type: 'error', text1: 'Unable to export PDF', text2: err?.message });
+      } finally {
+        setIsSharingPDF(false);
+      }
     }
   };
 
@@ -86,8 +158,8 @@ export default function AnalyticsProductsScreen() {
                 height: 28,
                 borderWidth: 1,
                 borderRadius: RADIUS.md,
-                borderColor: COLORS.border,
-                backgroundColor: COLORS.accent + '18',
+                borderColor: COLORS.ink + '20',
+                backgroundColor: COLORS.ink + '12',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -125,10 +197,18 @@ export default function AnalyticsProductsScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader 
         title="Product Analytics" 
-        left={
-          <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
-            <Feather name="chevron-left" size={24} color={COLORS.ink} />
-          </TouchableOpacity>
+        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        right={
+          <HeaderAction 
+            icon="printer" 
+            onPress={() => {
+              if (sortedAndFiltered.length === 0) {
+                Toast.show({ type: 'info', text1: 'No products to print' });
+                return;
+              }
+              setPrintModalVisible(true);
+            }} 
+          />
         }
       />
       
@@ -231,6 +311,147 @@ export default function AnalyticsProductsScreen() {
           />
         }
       />
+      <Modal
+        visible={printModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isPrinting && !isSharingPDF) setPrintModalVisible(false);
+        }}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            justifyContent: 'flex-end',
+          }}
+          onPress={() => {
+            if (!isPrinting && !isSharingPDF) setPrintModalVisible(false);
+          }}
+        >
+          <Pressable
+            style={{
+              backgroundColor: COLORS.surface,
+              borderTopLeftRadius: RADIUS.xl,
+              borderTopRightRadius: RADIUS.xl,
+              paddingHorizontal: 20,
+              paddingTop: 20,
+              paddingBottom: insets.bottom + 20,
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 16,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: RADIUS.md,
+                    backgroundColor: COLORS.ink + '12',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather name="printer" size={18} color={COLORS.ink} />
+                </View>
+                <View>
+                  <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                    Print Product Analytics
+                  </Text>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                    Executive A4 performance sheet
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => setPrintModalVisible(false)}
+                disabled={isPrinting || isSharingPDF}
+              >
+                <Feather name="x" size={20} color={COLORS.text.muted} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Summary Details Card */}
+            <View
+              style={{
+                backgroundColor: COLORS.card,
+                borderRadius: RADIUS.md,
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                padding: 14,
+                marginBottom: 16,
+                gap: 8,
+              }}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Products</Text>
+                <Text style={{ fontSize: 12.5, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                  {sortedAndFiltered.length} items
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Sorted By</Text>
+                <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                  {sortField === 'quantity' ? 'Quantity Sold' : sortField === 'revenue' ? 'Revenue' : 'Gross Profit'} ({sortOrder === 'desc' ? 'High to Low' : 'Low to High'})
+                </Text>
+              </View>
+              {search.trim() ? (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Filter Search</Text>
+                  <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: COLORS.text.secondary }}>
+                    "{search.trim()}"
+                  </Text>
+                </View>
+              ) : null}
+              <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 2 }} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Total Revenue</Text>
+                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                  {CURRENCY_SYMBOL}{sortedAndFiltered.reduce((s, p) => s + p.total_revenue, 0).toLocaleString('en-NG')}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Gross Profit</Text>
+                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.success }}>
+                  {CURRENCY_SYMBOL}{sortedAndFiltered.reduce((s, p) => s + p.total_profit, 0).toLocaleString('en-NG')}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ gap: 8 }}>
+              <Button
+                title="Print Report"
+                variant="accent"
+                size="md"
+                loading={isPrinting}
+                disabled={isSharingPDF}
+                icon="printer"
+                onPress={() => handlePrint('print')}
+              />
+
+              <Button
+                title="Share as PDF"
+                variant="secondary"
+                size="md"
+                loading={isSharingPDF}
+                disabled={isPrinting}
+                icon="share-2"
+                onPress={() => handlePrint('share')}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScreenShell>
   );
 }

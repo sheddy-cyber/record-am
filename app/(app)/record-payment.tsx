@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useDebtStore } from '@/store/debtStore';
+import { useNotificationStore } from '@/store/notificationStore';
 import { supabase } from '@/lib/supabase';
 import { recordRepaymentOffline } from '@/lib/offlineRecords';
 import { readCachedCustomerDebts } from '@/lib/offlineStore';
@@ -103,6 +104,14 @@ export default function RecordPaymentScreen() {
       closeScreen();
 
       void useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id);
+      void useNotificationStore.getState().markDebtReminderAsRead(
+        {
+          customerName: selectedDebt.customer_name,
+          customerId: selectedDebt.customer_id,
+          debtId: selectedDebt.id,
+        },
+        user.id,
+      );
     } catch (err: any) {
       Toast.show({
         type: 'error',

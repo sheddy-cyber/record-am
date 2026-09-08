@@ -6,6 +6,8 @@ import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
+import { useBusinessStore } from '@/store/businessStore';
+import { Product, Sale } from '@/types';
 import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
@@ -13,10 +15,26 @@ import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
+const getSaleItemsSummary = (sale: Sale, allProducts: Product[]) => {
+  if (sale.items && sale.items.length > 0) {
+    return sale.items
+      .map((item) => {
+        const pName =
+          item.product?.name ||
+          allProducts.find((p) => p.id === item.product_id)?.name ||
+          'Item';
+        return `${item.quantity !== 1 ? `${item.quantity}x ` : ''}${pName}`;
+      })
+      .join(', ');
+  }
+  return sale.notes?.trim() || '1 purchase';
+};
+
 export default function CustomerDetailScreen() {
   const params = useLocalSearchParams<{ customerId?: string | string[] }>();
   const customerId = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
   const { currentBusiness } = useAuthStore();
+  const { products } = useBusinessStore();
   const [refreshing, setRefreshing] = useState(false);
   const {
     customers,
@@ -270,12 +288,12 @@ export default function CustomerDetailScreen() {
             <Card style={{ padding: 0, overflow: 'hidden' }}>
               {customerSales.map((sale, index) => (
                 <View key={sale.id}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', padding: 14 }}>
                     <View style={{ flex: 1, marginRight: 12 }}>
                       <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                        {sale.sale_number}
+                        {getSaleItemsSummary(sale, products)}
                       </Text>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 2 }}>
                         {format(new Date(sale.created_at), 'MMM d, yyyy \u00B7 h:mm a')}
                       </Text>
                       <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary, marginTop: 1 }}>

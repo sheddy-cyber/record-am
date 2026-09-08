@@ -20,6 +20,7 @@ import { getAppSettings } from '@/lib/appSettings';
 import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
 import { addMismatch, removeMismatch } from '@/lib/mismatchService';
 import { updateProductAndInventoryOffline } from '@/lib/offlineRecords';
+import { checkAndNotifyLowStock } from '@/lib/notifications';
 import { calculateWeightedAverageCost, calculateProfitMargin } from '@/lib/costing';
 import { Button, EmptyState, LoadingScreen, RoleGate } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
@@ -518,6 +519,17 @@ export default function UpdateStockScreen() {
             ? `${cleanProductName} was saved as a service item.`
             : `${cleanProductName} now has ${formatCount(nextQuantity)} ${cleanProductUnit} in stock. Sync queued.`,
         });
+
+        if (currentBusiness && currentBranch) {
+          void checkAndNotifyLowStock(currentBusiness.id, currentBranch.id);
+        }
+
+        if (isService || nextQuantity > parsedReorderLevel) {
+          try {
+            const { useNotificationStore } = await import('@/store/notificationStore');
+            void useNotificationStore.getState().markLowStockAsRead(product.id, cleanProductName);
+          } catch (_) {}
+        }
 
         if (mismatchId) {
           await removeMismatch(mismatchId, currentBusiness?.id);

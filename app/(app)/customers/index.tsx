@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useDeferredValue, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
@@ -19,6 +19,7 @@ export default function CustomersScreen() {
   const fetchCustomers = useCustomerStore((s) => s.fetchCustomers);
   const setSelectedCustomer = useCustomerStore((s) => s.setSelectedCustomer);
   const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -30,11 +31,15 @@ export default function CustomersScreen() {
     setRefreshing(false);
   }, [currentBusiness?.id, fetchCustomers]);
 
-  const filtered = customers.filter(
-    (customer) =>
-      customer.name.toLowerCase().includes(search.toLowerCase()) ||
-      (customer.phone ?? '').includes(search),
-  );
+  const filtered = useMemo(() => {
+    const q = deferredSearch.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter(
+      (customer) =>
+        customer.name.toLowerCase().includes(q) ||
+        (customer.phone ?? '').includes(q),
+    );
+  }, [customers, deferredSearch]);
 
 
   return (
@@ -79,34 +84,47 @@ export default function CustomersScreen() {
           />
         </View>
 
-        <View
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
           style={{
-            flexDirection: 'row',
+            flexGrow: 0,
             backgroundColor: '#FFFFFF',
-            paddingHorizontal: 20,
-            paddingVertical: 12,
             borderBottomWidth: 1,
             borderBottomColor: COLORS.border,
-            gap: 24,
+          }}
+          contentContainerStyle={{
+            paddingHorizontal: 20,
+            paddingVertical: 12,
+            gap: 28,
+            alignItems: 'center',
           }}
         >
           <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Total Customers</Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary }}>{customers.length}</Text>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
+              Total Customers
+            </Text>
+            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+              {customers.length}
+            </Text>
           </View>
           <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Total Revenue</Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.success }}>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
+              Total Revenue
+            </Text>
+            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.success }} numberOfLines={1}>
               {formatCurrency(customers.reduce((sum, customer) => sum + customer.total_spent, 0))}
             </Text>
           </View>
           <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Outstanding Debts</Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.danger }}>
+            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
+              Outstanding Debts
+            </Text>
+            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.danger }} numberOfLines={1}>
               {formatCurrency(customers.reduce((sum, customer) => sum + customer.outstanding_debt, 0))}
             </Text>
           </View>
-        </View>
+        </ScrollView>
 
         {filtered.length === 0 ? (
           <ScrollView

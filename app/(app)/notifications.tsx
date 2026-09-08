@@ -83,7 +83,7 @@ export default function NotificationsScreen() {
 
   const handleNotificationPress = async (item: InAppNotification) => {
     if (!item.read) {
-      await markAsRead(item.id);
+      await markAsRead(item.id, userId);
     }
 
     const type = (item.type || item.data?.type) as string;

@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useDeferredValue, useMemo } from 'react';
 import {
   Alert,
   View,
   Text,
   ScrollView,
+  SectionList,
   TouchableOpacity,
   RefreshControl,
   TextInput,
+  Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -86,6 +88,7 @@ export default function ExpensesScreen() {
   // Time Period & Search & Category Filters
   const [selectedPeriod, setSelectedPeriod] = useState<string>('this_month');
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [selectedCategory, setSelectedCategory] = useState('all');
 
   // Form Fields
@@ -411,7 +414,7 @@ export default function ExpensesScreen() {
   const groupedExpenses = useMemo(() => {
     const filtered = periodExpenses.filter((item) => {
       const matchesCat = selectedCategory === 'all' || item.category === selectedCategory;
-      const q = searchQuery.trim().toLowerCase();
+      const q = deferredSearchQuery.trim().toLowerCase();
       const matchesQuery =
         !q ||
         item.description.toLowerCase().includes(q) ||
@@ -451,19 +454,21 @@ export default function ExpensesScreen() {
           } else if (isYesterday(parsed)) {
             dateLabel = `Yesterday · ${format(parsed, 'd MMM yyyy')}`;
           } else {
-            dateLabel = format(parsed, 'EEEE, d MMM yyyy');
+            dateLabel = format(parsed, 'EEEE · d MMM yyyy');
           }
         }
       } catch {}
 
       return {
-        date: dateKey,
+        title: dateKey,
+        dateKey,
         dateLabel,
         totalAmount,
         items,
+        data: items,
       };
     });
-  }, [periodExpenses, selectedCategory, searchQuery]);
+  }, [periodExpenses, selectedCategory, deferredSearchQuery]);
 
   if (loading && expenses.length === 0) {
     return <LoadingScreen message="Loading expenses..." />;
@@ -633,7 +638,7 @@ export default function ExpensesScreen() {
           backgroundColor: COLORS.surface,
           paddingHorizontal: 16,
           paddingTop: 10,
-          paddingBottom: 6,
+          paddingBottom: 14,
           gap: 8,
           zIndex: 10,
         }}
@@ -825,10 +830,15 @@ export default function ExpensesScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 40, gap: 14 }}
+      <SectionList
+        sections={groupedExpenses}
+        keyExtractor={(item) => item.id}
+        stickySectionHeadersEnabled={true}
         showsVerticalScrollIndicator={false}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -840,226 +850,236 @@ export default function ExpensesScreen() {
             colors={[COLORS.accent]}
           />
         }
-      >
+        renderSectionHeader={({ section: { dateLabel, totalAmount } }) => (
+          <View
+            style={{
+              backgroundColor: COLORS.surface,
+              paddingHorizontal: 20,
+              paddingTop: 8,
+              paddingBottom: 8,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Feather name="calendar" size={13} color={COLORS.text.muted} />
+              <Text
+                style={{
+                  fontFamily: FONT.bold,
+                  fontSize: 13,
+                  color: COLORS.text.primary,
+                }}
+              >
+                {dateLabel}
+              </Text>
+            </View>
+            <Text
+              style={{
+                fontFamily: FONT.bold,
+                fontSize: 13,
+                color: COLORS.danger,
+              }}
+            >
+              -{formatCurrency(totalAmount)}
+            </Text>
+          </View>
+        )}
+        renderItem={({ item, index, section }) => {
+          const isFirst = index === 0;
+          const isLast = index === section.data.length - 1;
+          const meta = getCategoryMeta(item.category);
+          const timeStr = item.created_at
+            ? format(new Date(item.created_at), 'h:mm a')
+            : null;
 
-        {/* ── Grouped Expenses List ────────────────────────────────────── */}
-        {groupedExpenses.length > 0 ? (
-          <View style={{ gap: 16 }}>
-            {groupedExpenses.map((group) => (
-              <View key={group.date}>
-                {/* Date Header with Day Total */}
-                <View
+          return (
+            <View style={{ paddingHorizontal: 16 }}>
+              <View
+                style={{
+                  backgroundColor: COLORS.card,
+                  borderTopLeftRadius: isFirst ? RADIUS.lg : 0,
+                  borderTopRightRadius: isFirst ? RADIUS.lg : 0,
+                  borderBottomLeftRadius: isLast ? RADIUS.lg : 0,
+                  borderBottomRightRadius: isLast ? RADIUS.lg : 0,
+                  borderLeftWidth: 1,
+                  borderRightWidth: 1,
+                  borderTopWidth: isFirst ? 1 : 0,
+                  borderBottomWidth: isLast ? 1 : 0,
+                  borderColor: COLORS.border,
+                  overflow: 'hidden',
+                }}
+              >
+                <TouchableOpacity
+                  onPress={() => startEditExpense(item)}
+                  activeOpacity={0.7}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: 8,
-                    paddingHorizontal: 4,
+                    padding: 14,
+                    gap: 12,
                   }}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Feather name="calendar" size={13} color={COLORS.text.muted} />
-                    <Text
-                      style={{
-                        fontFamily: FONT.bold,
-                        fontSize: 13,
-                        color: COLORS.text.primary,
-                      }}
-                    >
-                      {group.dateLabel}
-                    </Text>
-                  </View>
-                  <Text
+                  {/* Category Icon */}
+                  <View
                     style={{
-                      fontFamily: FONT.bold,
-                      fontSize: 13,
-                      color: COLORS.danger,
+                      width: 42,
+                      height: 42,
+                      borderRadius: 12,
+                      backgroundColor: meta.bg,
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
-                    -{formatCurrency(group.totalAmount)}
-                  </Text>
-                </View>
+                    <Feather name={meta.icon} size={18} color={meta.color} />
+                  </View>
 
-                {/* Date Group Card */}
-                <Card style={{ padding: 0, overflow: 'hidden' }}>
-                  {group.items.map((item, index) => {
-                    const meta = getCategoryMeta(item.category);
-                    const timeStr = item.created_at
-                      ? format(new Date(item.created_at), 'h:mm a')
-                      : null;
-
-                    return (
-                      <View key={item.id}>
-                        <TouchableOpacity
-                          onPress={() => startEditExpense(item)}
-                          activeOpacity={0.7}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            padding: 14,
-                            gap: 12,
-                          }}
-                        >
-                          {/* Category Icon */}
-                          <View
+                  {/* Details */}
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontFamily: FONT.bold,
+                        color: COLORS.text.primary,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {item.description}
+                    </Text>
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        marginTop: 3,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: FONT.medium,
+                          fontSize: 11,
+                          color: meta.color,
+                        }}
+                      >
+                        {meta.label}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: COLORS.text.muted }}>·</Text>
+                      <Text
+                        style={{
+                          fontFamily: FONT.regular,
+                          fontSize: 11,
+                          color: COLORS.text.muted,
+                        }}
+                      >
+                        {item.payment_method.toUpperCase()}
+                      </Text>
+                      {timeStr ? (
+                        <>
+                          <Text style={{ fontSize: 11, color: COLORS.text.muted }}>·</Text>
+                          <Text
                             style={{
-                              width: 42,
-                              height: 42,
-                              borderRadius: 12,
-                              backgroundColor: meta.bg,
-                              alignItems: 'center',
-                              justifyContent: 'center',
+                              fontFamily: FONT.regular,
+                              fontSize: 11,
+                              color: COLORS.text.muted,
                             }}
                           >
-                            <Feather name={meta.icon} size={18} color={meta.color} />
-                          </View>
+                            {timeStr}
+                          </Text>
+                        </>
+                      ) : null}
+                    </View>
+                  </View>
 
-                          {/* Details */}
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={{
-                                fontSize: 14,
-                                fontFamily: FONT.bold,
-                                color: COLORS.text.primary,
-                              }}
-                              numberOfLines={1}
-                            >
-                              {item.description}
-                            </Text>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                                marginTop: 3,
-                                flexWrap: 'wrap',
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  fontFamily: FONT.medium,
-                                  fontSize: 11,
-                                  color: meta.color,
-                                }}
-                              >
-                                {meta.label}
-                              </Text>
-                              <Text style={{ fontSize: 11, color: COLORS.text.muted }}>·</Text>
-                              <Text
-                                style={{
-                                  fontFamily: FONT.regular,
-                                  fontSize: 11,
-                                  color: COLORS.text.muted,
-                                }}
-                              >
-                                {item.payment_method.toUpperCase()}
-                              </Text>
-                              {timeStr ? (
-                                <>
-                                  <Text style={{ fontSize: 11, color: COLORS.text.muted }}>·</Text>
-                                  <Text
-                                    style={{
-                                      fontFamily: FONT.regular,
-                                      fontSize: 11,
-                                      color: COLORS.text.muted,
-                                    }}
-                                  >
-                                    {timeStr}
-                                  </Text>
-                                </>
-                              ) : null}
-                            </View>
-                          </View>
+                  {/* Amount and Edit Button */}
+                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontFamily: FONT.bold,
+                        color: COLORS.danger,
+                      }}
+                    >
+                      -{formatCurrency(item.amount)}
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => startEditExpense(item)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        backgroundColor: COLORS.surface2,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: RADIUS.sm,
+                        borderWidth: 1,
+                        borderColor: COLORS.border,
+                      }}
+                    >
+                      <Feather name="edit-2" size={11} color={COLORS.text.secondary} />
+                      <Text
+                        style={{
+                          fontFamily: FONT.medium,
+                          fontSize: 11,
+                          color: COLORS.text.secondary,
+                        }}
+                      >
+                        Edit
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
 
-                          {/* Amount and Edit Button */}
-                          <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                            <Text
-                              style={{
-                                fontSize: 15,
-                                fontFamily: FONT.bold,
-                                color: COLORS.danger,
-                              }}
-                            >
-                              -{formatCurrency(item.amount)}
-                            </Text>
-                            <TouchableOpacity
-                              onPress={() => startEditExpense(item)}
-                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 4,
-                                backgroundColor: COLORS.surface2,
-                                paddingHorizontal: 8,
-                                paddingVertical: 3,
-                                borderRadius: RADIUS.sm,
-                                borderWidth: 1,
-                                borderColor: COLORS.border,
-                              }}
-                            >
-                              <Feather name="edit-2" size={11} color={COLORS.text.secondary} />
-                              <Text
-                                style={{
-                                  fontFamily: FONT.medium,
-                                  fontSize: 11,
-                                  color: COLORS.text.secondary,
-                                }}
-                              >
-                                Edit
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
-                        </TouchableOpacity>
-
-                        {index < group.items.length - 1 ? (
-                          <View
-                            style={{
-                              height: 1,
-                              backgroundColor: COLORS.border,
-                              marginHorizontal: 14,
-                            }}
-                          />
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </Card>
+                {!isLast ? (
+                  <View
+                    style={{
+                      height: 1,
+                      backgroundColor: COLORS.border,
+                      marginHorizontal: 14,
+                    }}
+                  />
+                ) : null}
               </View>
-            ))}
+            </View>
+          );
+        }}
+        renderSectionFooter={() => <View style={{ height: 16 }} />}
+        ListEmptyComponent={
+          <View style={{ paddingHorizontal: 16, paddingTop: 20 }}>
+            <EmptyState
+              icon="dollar-sign"
+              title={
+                expenses.length === 0
+                  ? 'No expenses recorded'
+                  : `No expenses for ${selectedPeriodLabel}`
+              }
+              description={
+                expenses.length === 0
+                  ? 'Capture operational costs like rent, electricity, transport, salaries, and daily maintenance.'
+                  : searchQuery || selectedCategory !== 'all'
+                  ? 'Try adjusting your search query or selecting a different category filter.'
+                  : `No expenses recorded during ${selectedPeriodLabel}. Tap below to record one or switch time period.`
+              }
+              action={
+                expenses.length === 0 || (!searchQuery && selectedCategory === 'all')
+                  ? {
+                      label: 'Record New Expense',
+                      onPress: startNewExpense,
+                    }
+                  : {
+                      label: 'Clear Filters',
+                      onPress: () => {
+                        setSearchQuery('');
+                        setSelectedCategory('all');
+                        setSelectedPeriod('all');
+                      },
+                    }
+              }
+            />
           </View>
-        ) : (
-          <EmptyState
-            icon="dollar-sign"
-            title={
-              expenses.length === 0
-                ? 'No expenses recorded'
-                : `No expenses for ${selectedPeriodLabel}`
-            }
-            description={
-              expenses.length === 0
-                ? 'Capture operational costs like rent, electricity, transport, salaries, and daily maintenance.'
-                : searchQuery || selectedCategory !== 'all'
-                ? 'Try adjusting your search query or selecting a different category filter.'
-                : `No expenses recorded during ${selectedPeriodLabel}. Tap below to record one or switch time period.`
-            }
-            action={
-              expenses.length === 0 || (!searchQuery && selectedCategory === 'all')
-                ? {
-                    label: 'Record New Expense',
-                    onPress: startNewExpense,
-                  }
-                : {
-                    label: 'Clear Filters',
-                    onPress: () => {
-                      setSearchQuery('');
-                      setSelectedCategory('all');
-                      setSelectedPeriod('all');
-                    },
-                  }
-            }
-          />
-        )}
-      </ScrollView>
+        }
+      />
     </ScreenShell>
   );
 }

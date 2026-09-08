@@ -6,6 +6,7 @@ import Toast from 'react-native-toast-message';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
+import { useNotificationStore } from '@/store/notificationStore';
 import { Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -85,6 +86,10 @@ export default function CloseDayScreen() {
       Alert.alert('Error', 'Failed to close the day. Please try again.');
       return;
     }
+
+    try {
+      await useNotificationStore.getState().markDailySummaryAsRead(selectedDate, user.id);
+    } catch (_) {}
 
     Toast.show({
       type: 'success',

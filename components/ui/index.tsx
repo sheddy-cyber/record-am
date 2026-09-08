@@ -253,12 +253,19 @@ export const LoadingScreen: React.FC<{ message?: string }> = ({ message }) => (
 
 // ─── Section Header ─────────────────────────────────────────────────────────
 
-export const SectionHeader: React.FC<{ title: string; action?: { label: string; onPress: () => void } }> = ({
+export const SectionHeader: React.FC<{
+  title: string;
+  action?: { label: string; onPress: () => void };
+  color?: string;
+  style?: TextStyle;
+}> = ({
   title,
   action,
+  color,
+  style,
 }) => (
   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
-    <Text style={{ ...TYPE.overline, color: COLORS.text.muted }}>{title}</Text>
+    <Text style={[{ ...TYPE.overline, color: color || COLORS.text.muted }, style]}>{title}</Text>
     {action ? (
       <TouchableOpacity onPress={action.onPress} activeOpacity={0.7}>
         <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.accent }}>{action.label}</Text>

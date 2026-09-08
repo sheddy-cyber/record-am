@@ -7,6 +7,8 @@ import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
+import { useBusinessStore } from '@/store/businessStore';
+import { Product, Purchase } from '@/types';
 import { deletePurchaseRecord } from '@/lib/recordDeletion';
 import { Badge, Button, Card, EmptyState, LoadingScreen, PaymentSummary, SectionHeader, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -15,10 +17,26 @@ import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
+const getPurchaseItemsSummary = (purchase: Purchase, allProducts: Product[]) => {
+  if (purchase.items && purchase.items.length > 0) {
+    return purchase.items
+      .map((item) => {
+        const pName =
+          item.product?.name ||
+          allProducts.find((p) => p.id === item.product_id)?.name ||
+          'Item';
+        return `${item.quantity !== 1 ? `${item.quantity}x ` : ''}${pName}`;
+      })
+      .join(', ');
+  }
+  return purchase.notes?.trim() || '1 purchase';
+};
+
 export default function SupplierDetailScreen() {
   const params = useLocalSearchParams<{ supplierId?: string | string[] }>();
   const supplierId = Array.isArray(params.supplierId) ? params.supplierId[0] : params.supplierId;
   const { currentBusiness } = useAuthStore();
+  const { products } = useBusinessStore();
   const [refreshing, setRefreshing] = useState(false);
   const {
     suppliers,
@@ -258,12 +276,12 @@ export default function SupplierDetailScreen() {
               {supplierPurchases.map((purchase, index) => (
                 <View key={purchase.id}>
                   <View style={{ padding: 14, gap: 10 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <View style={{ flex: 1, marginRight: 12 }}>
                         <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                          {purchase.purchase_number}
+                          {getPurchaseItemsSummary(purchase, products)}
                         </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 2 }}>
                           {format(new Date(purchase.purchase_date || purchase.created_at), 'MMM d, yyyy')}
                         </Text>
                       </View>
@@ -296,16 +314,6 @@ export default function SupplierDetailScreen() {
                     {purchase.discount_amount > 0 ? (
                       <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.danger }}>
                         Discount: -{formatCurrency(purchase.discount_amount)}
-                      </Text>
-                    ) : null}
-                    {(purchase.items ?? []).slice(0, 3).map((item: any) => (
-                      <Text key={item.id} style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
-                        - {item.product?.name ?? 'Item'} x {item.quantity} @ {formatCurrency(item.unit_cost)}
-                      </Text>
-                    ))}
-                    {(purchase.items?.length ?? 0) > 3 ? (
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
-                        +{(purchase.items?.length ?? 0) - 3} more items
                       </Text>
                     ) : null}
                     {purchase.notes ? (

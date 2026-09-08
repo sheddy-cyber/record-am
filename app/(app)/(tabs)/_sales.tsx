@@ -1,26 +1,31 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, InteractionManager, Share, Text, TouchableOpacity, View, RefreshControl, Modal, ScrollView, StyleSheet, ActivityIndicator, LayoutAnimation, Platform, UIManager } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  SectionList,
+  Text,
+  View,
+  RefreshControl,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday } from 'date-fns';
 import Toast from 'react-native-toast-message';
-import ViewShot from 'react-native-view-shot';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
-import { readCachedRows, removeCachedRow } from '@/lib/offlineStore';
+import { removeCachedRow } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { useTabStore } from '@/store/tabStore';
-import { Button, EmptyState, LoadingScreen, PaymentSummary } from '@/components/ui';
+import { EmptyState } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
+import { ReceiptPreviewModal, SaleActivityCard } from '@/components/sales';
+import { COLORS, CURRENCY_SYMBOL, FONT, SP } from '@/constants';
 import { RevenueActivity, Sale } from '@/types';
-import { shareReceiptViaWhatsApp } from '@/lib/reports';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -40,16 +45,13 @@ function SalesScreen() {
   const businessAddress = useAuthStore((s) => s.currentBusiness?.address);
   const businessPhone = useAuthStore((s) => s.currentBusiness?.phone);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
-  // Subscribe only to primitive values so unrelated auth store updates do not refetch this tab.
+
   const [activities, setActivities] = useState<RevenueActivity[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [previewSale, setPreviewSale] = useState<Sale | null>(null);
   const [generatingReceiptId, setGeneratingReceiptId] = useState<string | null>(null);
-  const [isSharingImage, setIsSharingImage] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const receiptCaptureRef = useRef<any>(null);
 
   const openRecordSale = () => router.push('/(app)/record-sale');
 
@@ -72,7 +74,6 @@ function SalesScreen() {
   }, [businessId, branchId]);
 
   useEffect(() => {
-    // Fetch on initial mount
     loadActivities();
   }, [loadActivities]);
 
@@ -88,65 +89,55 @@ function SalesScreen() {
     watch: [businessId, branchId],
     tables: [
       ...(branchId ? [{ table: 'sales', filter: `branch_id=eq.${branchId}` }] : []),
-      ...(branchId ? [{ table: 'customer_debts', filter: `branch_id=eq.${branchId}` }] : []),
-      { table: 'debt_repayments' },
+      ...(businessId ? [{ table: 'debt_repayments', filter: `business_id=eq.${businessId}` }] : []),
     ],
-    onRefresh: () => loadActivities(true),
+    onRefresh: () => loadActivities(),
   });
 
   const generateSaleReceipt = async (saleId: string) => {
-    if (!businessId || !branchId) return;
-
     setGeneratingReceiptId(saleId);
     try {
-      const { data: sale, error: saleError } = await supabase
+      const { data: sale, error } = await supabase
         .from('sales')
-        .select('*, customer:customers(name, phone)')
+        .select(`
+          *,
+          customer:customers(*),
+          items:sale_items(
+            *,
+            product:products(*)
+          )
+        `)
         .eq('id', saleId)
         .single();
 
-      if (saleError) throw saleError;
-
-      const { data, error } = await supabase
-        .from('sale_items')
-        .select('*, product:products(name)')
-        .eq('sale_id', saleId);
-
       if (error) throw error;
-
-      setPreviewSale({
-        ...(sale as Sale),
-        items: data ?? [],
-      });
+      setPreviewSale(sale as Sale);
     } catch (err) {
-      const [cachedSales, cachedItems] = await Promise.all([
-        readCachedRows<Sale>({ businessId, branchId }, 'sales'),
-        readCachedRows<any>({ businessId, branchId }, 'sale_items'),
-      ]);
-      const cachedSale = cachedSales.find((item: any) => item.id === saleId);
-
-      if (cachedSale) {
-        setPreviewSale({
-          ...cachedSale,
-          items: cachedItems.filter((item: any) => item.sale_id === saleId),
-        });
-      } else {
-        Alert.alert('Unable to generate receipt', 'The sale receipt could not be prepared right now.');
-        console.error(err);
-      }
+      Alert.alert('Unable to generate receipt', 'The sale receipt could not be prepared right now.');
+      console.error(err);
     } finally {
       setGeneratingReceiptId(null);
     }
   };
 
   const generateRepaymentReceipt = async (repaymentId: string) => {
-    if (!businessId || !branchId) return;
-
     setGeneratingReceiptId(repaymentId);
     try {
       const { data: repayment, error: repaymentError } = await supabase
         .from('debt_repayments')
-        .select('*, debt:customer_debts!inner(*)')
+        .select(`
+          *,
+          debt:customer_debts (
+            id,
+            original_amount,
+            amount_paid,
+            balance,
+            customer_name,
+            customer_phone,
+            status,
+            sale_id
+          )
+        `)
         .eq('id', repaymentId)
         .single();
 
@@ -193,7 +184,7 @@ function SalesScreen() {
         payment_method: repayment.payment_method,
         notes: repayment.notes ?? originalSale?.notes,
         isRepayment: true,
-        originalTotalAmount: originalSale?.total_amount,
+        originalTotalAmount: originalSale?.total_amount ?? debt.original_amount,
         originalAmountPaid: originalSale?.amount_paid,
         accumulatedAmountPaid: debt.amount_paid,
       };
@@ -204,33 +195,6 @@ function SalesScreen() {
       console.error(err);
     } finally {
       setGeneratingReceiptId(null);
-    }
-  };
-
-  const downloadReceipt = async () => {
-    if (!previewSale || !businessId || !branchId) return;
-    setIsDownloading(true);
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission required',
-          'Gallery write permission is needed to download the receipt to your device.',
-        );
-        return;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      const imageUri = await receiptCaptureRef.current?.capture?.();
-      if (!imageUri) throw new Error('Could not capture receipt image');
-
-      await MediaLibrary.createAssetAsync(imageUri);
-      Alert.alert('Download Complete', 'The receipt has been successfully saved to your gallery.');
-    } catch (err) {
-      Alert.alert('Download failed', 'The receipt could not be saved to your device.');
-      console.error(err);
-    } finally {
-      setIsDownloading(false);
     }
   };
 
@@ -268,7 +232,7 @@ function SalesScreen() {
         }
       ]
     );
-  }, []);
+  }, [businessId, branchId, loadActivities]);
 
   const handleToggleExpand = useCallback((id: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -283,821 +247,174 @@ function SalesScreen() {
     }
   }, [businessId, branchId]);
 
+  const groupedActivities = useMemo(() => {
+    if (!activities || activities.length === 0) return [];
+
+    const map = new Map<string, RevenueActivity[]>();
+    for (const item of activities) {
+      let key = 'Unknown';
+      try {
+        if (item.created_at) {
+          key = format(new Date(item.created_at), 'yyyy-MM-dd');
+        }
+      } catch {
+        key = item.created_at ? item.created_at.slice(0, 10) : 'Unknown';
+      }
+
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key)!.push(item);
+    }
+
+    const sortedDates = Array.from(map.keys()).sort((a, b) => b.localeCompare(a));
+
+    return sortedDates.map((dateKey) => {
+      const items = map.get(dateKey)!.sort((a, b) => {
+        const tA = new Date(a.created_at).getTime();
+        const tB = new Date(b.created_at).getTime();
+        return tB - tA;
+      });
+
+      // Sum amount_paid to accurately reflect actual collected revenue for the day (matches Today's Revenue and prevents double-counting debt settlements)
+      const totalAmount = items.reduce((sum, item) => sum + (Number(item.amount_paid) || 0), 0);
+
+      let dateLabel = dateKey;
+      try {
+        const [y, m, d] = dateKey.split('-').map(Number);
+        if (y && m && d) {
+          const parsed = new Date(y, m - 1, d);
+          if (isToday(parsed)) {
+            dateLabel = `Today · ${format(parsed, 'd MMM yyyy')}`;
+          } else if (isYesterday(parsed)) {
+            dateLabel = `Yesterday · ${format(parsed, 'd MMM yyyy')}`;
+          } else {
+            dateLabel = format(parsed, 'EEEE, d MMM yyyy');
+          }
+        }
+      } catch {}
+
+      return {
+        date: dateKey,
+        dateLabel,
+        totalAmount,
+        data: items,
+      };
+    });
+  }, [activities]);
+
   const renderActivityItem = useCallback(({ item }: { item: RevenueActivity }) => {
     return (
-      <ActivityItem 
-        item={item}
-        isExpanded={expandedId === item.id}
-        onToggleExpand={handleToggleExpand}
-        onDelete={handleDeleteActivity}
-        generatingReceiptId={generatingReceiptId}
-        onGenerateReceipt={handleGenerateReceipt}
-      />
+      <View style={{ paddingHorizontal: SP.page }}>
+        <SaleActivityCard 
+          item={item}
+          isExpanded={expandedId === item.id}
+          onToggleExpand={handleToggleExpand}
+          onDelete={handleDeleteActivity}
+          generatingReceiptId={generatingReceiptId}
+          onGenerateReceipt={handleGenerateReceipt}
+        />
+      </View>
     );
   }, [expandedId, handleToggleExpand, handleDeleteActivity, generatingReceiptId, handleGenerateReceipt]);
 
-
-
   return (
     <SwipeableTabScreen name="sales">
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <ScreenHeader
-        title="Sales"
-        subtitle={`${activities.length} activity record${activities.length === 1 ? '' : 's'}`}
-        theme="dark"
-        right={<HeaderAction icon="plus" label="Record Sale" onPress={openRecordSale} />}
-      />
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Sales"
+          subtitle={`${activities.length} activity record${activities.length === 1 ? '' : 's'}`}
+          theme="dark"
+          right={<HeaderAction icon="plus" label="Record Sale" onPress={openRecordSale} />}
+        />
 
-
-
-      <FlatList
-        data={activities}
-        keyExtractor={(item: any) => `${item.kind}-${item.id}`}
-        contentContainerStyle={{ 
-          paddingHorizontal: SP.page, 
-          paddingTop: 10,
-          paddingBottom: insets.bottom + 92,
-          flexGrow: 1,
-        }}
-        ListEmptyComponent={
-          <EmptyState
-            icon="shopping-cart"
-            title="No sales yet"
-            description="Record your first sale or debt collection to start tracking revenue and stock movement."
-            action={{ label: 'Record Sale', onPress: openRecordSale }}
-          />
-        }
-        initialNumToRender={10}
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        removeClippedSubviews={true}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={async () => {
-              setRefreshing(true);
-              await loadActivities(true);
-            }}
-            tintColor={COLORS.accent}
-          />
-        }
-        renderItem={renderActivityItem}
-        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
-      />
-      {/* Receipt Preview Modal */}
-      <Modal
-        visible={previewSale !== null}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setPreviewSale(null)}
-      >
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(20, 33, 28, 0.85)',
-            justifyContent: 'center',
-            alignItems: 'center',
-            paddingVertical: 40,
-            paddingHorizontal: 10,
+        <SectionList
+          sections={groupedActivities}
+          keyExtractor={(item: any) => `${item.kind}-${item.id}`}
+          stickySectionHeadersEnabled={true}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ 
+            paddingTop: 6,
+            paddingBottom: insets.bottom + 92,
+            flexGrow: 1,
           }}
-        >
-          <View
-            style={{
-              backgroundColor: COLORS.surface,
-              borderRadius: RADIUS['2xl'],
-              width: '100%',
-              maxWidth: 350,
-              maxHeight: '90%',
-              overflow: 'hidden',
-              borderWidth: 1,
-              borderColor: 'rgba(255, 253, 248, 0.1)',
-            }}
-          >
-            {/* Header */}
+          ListEmptyComponent={
+            <View style={{ paddingHorizontal: SP.page, paddingTop: 20 }}>
+              <EmptyState
+                icon="shopping-cart"
+                title="No sales yet"
+                description="Record your first sale or debt collection to start tracking revenue and stock movement."
+                action={{ label: 'Record Sale', onPress: openRecordSale }}
+              />
+            </View>
+          }
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={5}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={async () => {
+                setRefreshing(true);
+                await loadActivities(true);
+              }}
+              tintColor={COLORS.accent}
+            />
+          }
+          renderSectionHeader={({ section: { dateLabel, totalAmount } }) => (
             <View
               style={{
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                paddingHorizontal: 20,
-                paddingVertical: 16,
-                borderBottomWidth: 1,
-                borderBottomColor: COLORS.border,
                 backgroundColor: COLORS.surface,
+                paddingHorizontal: SP.page,
+                paddingTop: 10,
+                paddingBottom: 8,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
               }}
             >
-              <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                Receipt Preview
-              </Text>
-              <TouchableOpacity
-                onPress={() => setPreviewSale(null)}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Feather name="calendar" size={13} color={COLORS.text.muted} />
+                <Text
+                  style={{
+                    fontFamily: FONT.bold,
+                    fontSize: 13,
+                    color: COLORS.text.primary,
+                  }}
+                >
+                  {dateLabel}
+                </Text>
+              </View>
+              <Text
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: COLORS.surface2,
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  fontFamily: FONT.bold,
+                  fontSize: 13,
+                  color: COLORS.success,
                 }}
               >
-                <Feather name="x" size={16} color={COLORS.text.muted} />
-              </TouchableOpacity>
+                +{formatCurrency(totalAmount)}
+              </Text>
             </View>
+          )}
+          renderItem={renderActivityItem}
+          ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+          renderSectionFooter={() => <View style={{ height: 14 }} />}
+        />
 
-            {/* Scrollable Receipt Area */}
-            <ScrollView
-              contentContainerStyle={{
-                alignItems: 'center',
-                paddingVertical: 20,
-                paddingHorizontal: 10,
-                backgroundColor: '#F5F0E4',
-              }}
-              showsVerticalScrollIndicator={false}
-            >
-              {previewSale && businessName && branchName && (
-                <ViewShot
-                  ref={receiptCaptureRef}
-                  options={{ format: 'png', quality: 1, result: 'tmpfile' }}
-                >
-                  <View collapsable={false}>
-                    <ReceiptShareCard
-                      sale={previewSale}
-                      businessName={businessName}
-                      businessAddress={businessAddress}
-                      businessPhone={businessPhone}
-                      branchName={branchName}
-                    />
-                  </View>
-                </ViewShot>
-              )}
-            </ScrollView>
-
-            {/* Premium Action Buttons */}
-            <View
-              style={{
-                padding: 16,
-                gap: 10,
-                borderTopWidth: 1,
-                borderTopColor: COLORS.border,
-                backgroundColor: COLORS.surface,
-              }}
-            >
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity
-                  onPress={async () => {
-                    if (!previewSale || !businessId || !branchId) return;
-                    setIsSharingImage(true);
-                    try {
-                      await new Promise((resolve) => setTimeout(resolve, 100));
-                      const imageUri = await receiptCaptureRef.current?.capture?.();
-                      if (!imageUri) throw new Error('Could not capture receipt image');
-
-                      if (await Sharing.isAvailableAsync()) {
-                        await Sharing.shareAsync(imageUri, {
-                          dialogTitle: `Receipt ${previewSale.sale_number}`,
-                          mimeType: 'image/png',
-                          UTI: 'public.png',
-                        });
-                      } else {
-                        await Share.share({
-                          url: imageUri,
-                          title: `Receipt ${previewSale.sale_number}`,
-                        });
-                      }
-                    } catch (err) {
-                      Alert.alert('Unable to share image', 'Please try again.');
-                      console.error(err);
-                    } finally {
-                      setIsSharingImage(false);
-                    }
-                  }}
-                  disabled={isSharingImage}
-                  style={{
-                    flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    backgroundColor: COLORS.ink,
-                    paddingVertical: 12,
-                    borderRadius: RADIUS.md,
-                    opacity: isSharingImage ? 0.7 : 1,
-                  }}
-                >
-                  {isSharingImage ? (
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFFDF8' }}>Preparing...</Text>
-                  ) : (
-                    <>
-                      <Feather name="image" size={16} color="#FFFDF8" />
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFFDF8' }}>Share Image</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={downloadReceipt}
-                  disabled={isDownloading}
-                  style={{
-                    flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    backgroundColor: COLORS.success,
-                    paddingVertical: 12,
-                    borderRadius: RADIUS.md,
-                    opacity: isDownloading ? 0.7 : 1,
-                  }}
-                >
-                  {isDownloading ? (
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFF' }}>Downloading...</Text>
-                  ) : (
-                    <>
-                      <Feather name="download" size={16} color="#FFF" />
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFF' }}>Download</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </ScreenShell>
+        <ReceiptPreviewModal
+          visible={previewSale !== null}
+          onClose={() => setPreviewSale(null)}
+          previewSale={previewSale}
+          businessId={businessId}
+          branchId={branchId}
+          businessName={businessName}
+          branchName={branchName}
+          businessAddress={businessAddress}
+          businessPhone={businessPhone}
+        />
+      </ScreenShell>
     </SwipeableTabScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  customerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginRight: 10,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  customerName: {
-    fontSize: 15,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-    marginBottom: 2,
-  },
-  dateText: {
-    fontSize: 11,
-    fontFamily: FONT.regular,
-    color: COLORS.text.muted,
-  },
-  amountInfo: {
-    alignItems: 'flex-end',
-  },
-  totalAmount: {
-    fontSize: 16,
-    fontFamily: FONT.bold,
-    marginBottom: 2,
-  },
-  debtBadge: {
-    backgroundColor: COLORS.dangerLight,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: RADIUS.sm,
-  },
-  debtText: {
-    fontSize: 10,
-    fontFamily: FONT.bold,
-    color: COLORS.danger,
-  },
-  paidText: {
-    fontSize: 11,
-    fontFamily: FONT.medium,
-    color: COLORS.success,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaText: {
-    fontSize: 11,
-    fontFamily: FONT.medium,
-    color: COLORS.text.muted,
-  },
-  notesContainer: {
-    marginTop: 6,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.03)',
-  },
-  notesText: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: COLORS.text.muted,
-    fontStyle: 'italic',
-  },
-  expandedContent: {
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  itemsList: {
-    marginBottom: 10,
-    backgroundColor: '#F7F5F0',
-    borderRadius: RADIUS.md,
-    padding: 10,
-  },
-  itemsHeaderText: {
-    fontSize: 10,
-    fontFamily: FONT.bold,
-    color: COLORS.text.muted,
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.03)',
-  },
-  itemName: {
-    fontSize: 13,
-    fontFamily: FONT.medium,
-    color: COLORS.text.primary,
-    flex: 1,
-    paddingRight: 10,
-  },
-  itemPrice: {
-    fontSize: 13,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-  },
-  expandedActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-});
-
 export default React.memo(SalesScreen);
-
-const ActivityItem = React.memo(({ 
-  item, 
-  isExpanded, 
-  onToggleExpand, 
-  onDelete, 
-  generatingReceiptId,
-  onGenerateReceipt 
-}: { 
-  item: RevenueActivity;
-  isExpanded: boolean;
-  onToggleExpand: (id: string) => void;
-  onDelete: (item: RevenueActivity) => void;
-  generatingReceiptId: string | null;
-  onGenerateReceipt: (item: RevenueActivity) => void;
-}) => {
-  const isRepayment = item.kind === 'debt_repayment';
-  const isGenerating = generatingReceiptId === (isRepayment ? item.id : item.sale_id);
-  
-  return (
-    <View style={[styles.card, isExpanded && { borderColor: COLORS.accent }]}>
-      <TouchableOpacity 
-        activeOpacity={0.7}
-        onLongPress={() => onDelete(item)}
-        onPress={() => onToggleExpand(item.id)}
-      >
-        <View style={styles.cardHeader}>
-          <View style={styles.customerInfo}>
-            <View style={[styles.iconContainer, { backgroundColor: isRepayment ? COLORS.successLight : COLORS.accentLight }]}>
-              <Feather 
-                name={isRepayment ? "arrow-down-left" : "shopping-cart"} 
-                size={16} 
-                color={isRepayment ? COLORS.success : COLORS.accent} 
-              />
-            </View>
-            <View>
-              <Text style={styles.customerName} numberOfLines={1}>
-                {item.customer_name}
-              </Text>
-              <Text style={styles.dateText}>
-                {format(new Date(item.created_at), 'MMM d, h:mm a')}
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.amountInfo}>
-            <Text style={[styles.totalAmount, { color: isRepayment ? COLORS.success : COLORS.accent }]}>
-              {formatCurrency(item.total_amount)}
-            </Text>
-            {item.amount_owed > 0 ? (
-              <View style={styles.debtBadge}>
-                <Text style={styles.debtText}>
-                  Owes {formatCurrency(item.amount_owed)}
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.paidText}>Fully Paid</Text>
-            )}
-          </View>
-        </View>
-
-        <View style={styles.cardFooter}>
-          <View style={styles.metaRow}>
-            <View style={styles.metaItem}>
-              <Feather name="credit-card" size={12} color={COLORS.text.muted} />
-              <Text style={styles.metaText}>{item.payment_method.replace('_', ' ').toUpperCase()}</Text>
-            </View>
-          </View>
-          
-          <Feather name={isExpanded ? "chevron-up" : "chevron-down"} size={16} color={COLORS.text.muted} />
-        </View>
-
-        {item.notes ? (
-          <View style={styles.notesContainer}>
-            <Text style={styles.notesText} numberOfLines={1}>
-              "{item.notes}"
-            </Text>
-          </View>
-        ) : null}
-      </TouchableOpacity>
-
-      {isExpanded && (
-        <View style={styles.expandedContent}>
-          {item.items && item.items.length > 0 ? (
-            <View style={styles.itemsList}>
-              <Text style={styles.itemsHeaderText}>ITEMS SOLD</Text>
-              {item.items.map((i, idx) => (
-                <View key={idx} style={styles.itemRow}>
-                  <Text style={styles.itemName}>
-                    {i.quantity}x {i.product_name}
-                  </Text>
-                  <Text style={styles.itemPrice}>
-                    {formatCurrency(i.total_price)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          ) : (
-            <Text style={[styles.notesText, { marginTop: 10 }]}>No item details available.</Text>
-          )}
-
-          <View style={styles.expandedActions}>
-            {!isRepayment && (
-              <Button 
-                title="Edit Sale"
-                icon="edit-2"
-                onPress={() => router.push(`/(app)/record-sale?saleId=${item.sale_id ?? item.id}`)}
-                variant="secondary"
-                size="sm"
-                style={{ flex: 1 }}
-              />
-            )}
-            <Button 
-              title={isGenerating ? "Preparing..." : "Get Receipt"}
-              icon="file-text"
-              disabled={isGenerating}
-              loading={isGenerating}
-              onPress={() => onGenerateReceipt(item)}
-              variant="primary"
-              size="sm"
-              style={{ flex: 1 }}
-            />
-          </View>
-        </View>
-      )}
-    </View>
-  );
-});
-
-function ReceiptShareCard({
-  sale,
-  businessName,
-  businessAddress,
-  businessPhone,
-  branchName,
-}: {
-  sale: Sale;
-  businessName: string;
-  businessAddress?: string | null;
-  businessPhone?: string | null;
-  branchName: string;
-}) {
-  const statusColor =
-    sale.payment_status === 'paid'
-      ? COLORS.success
-      : sale.payment_status === 'partial'
-        ? COLORS.warning
-        : COLORS.danger;
-
-  return (
-    <View
-      style={{
-        width: 330,
-        backgroundColor: '#FFFDF8',
-        borderWidth: 1,
-        borderColor: '#D8CEB7',
-      }}
-      collapsable={false}
-    >
-      <View style={{ backgroundColor: COLORS.ink, paddingHorizontal: 24, paddingVertical: 24 }}>
-        <Text style={{ fontSize: 22, fontFamily: FONT.bold, color: '#FFFDF8', textAlign: 'center' }}>
-          {businessName}
-        </Text>
-        <Text
-          style={{
-            fontSize: 12,
-            fontFamily: FONT.regular,
-            color: 'rgba(255,253,248,0.75)',
-            textAlign: 'center',
-            marginTop: 6,
-          }}
-        >
-          {[branchName, businessAddress, businessPhone].filter(Boolean).join(' · ')}
-        </Text>
-      </View>
-
-      <View
-        style={{
-          marginHorizontal: 24,
-          marginTop: -12,
-          backgroundColor: '#FFFDF8',
-          borderWidth: 1,
-          borderColor: '#D8CEB7',
-          paddingHorizontal: 14,
-          paddingVertical: 10,
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <View style={{ flex: 1, marginRight: 8 }}>
-          <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
-            {sale.sale_number}
-          </Text>
-          {(sale as any).isRepayment ? (
-            <Text style={{ fontSize: 9, fontFamily: FONT.bold, color: COLORS.warning, marginTop: 2 }}>
-              INSTALMENT REPAYMENT
-            </Text>
-          ) : null}
-        </View>
-        <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-          {format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}
-        </Text>
-      </View>
-
-      <View style={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8 }}>
-        <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-          CUSTOMER
-        </Text>
-        <View
-          style={{
-            marginTop: 10,
-            backgroundColor: '#F5F0E4',
-            borderWidth: 1,
-            borderColor: '#D8CEB7',
-            paddingHorizontal: 14,
-            paddingVertical: 12,
-          }}
-        >
-          <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-            {(sale.customer as any)?.name ?? 'Walk-in Customer'}
-          </Text>
-          {(sale.customer as any)?.phone ? (
-            <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: 2 }}>
-              {(sale.customer as any).phone}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-
-      {sale.items && sale.items.length > 0 ? (
-        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
-          <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-            ITEMS
-          </Text>
-          <View style={{ marginTop: 6 }}>
-            {sale.items.map((item: any, index: number) => (
-              <View
-                key={item.id ?? `${item.product_id}-${index}`}
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  paddingVertical: 10,
-                  borderBottomWidth: 1,
-                  borderBottomColor: '#F0EDE3',
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                    {(item.product as any)?.name ?? 'Item'}
-                  </Text>
-                  <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
-                    {item.quantity} × {formatCurrency(item.unit_price)}
-                    {item.discount_amount > 0 ? ` (Discount: -${formatCurrency(item.discount_amount)})` : ''}
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                  {formatCurrency(item.total_price)}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      ) : (sale as any).isRepayment ? (
-        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
-          <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-            PAYMENT DESCRIPTION
-          </Text>
-          <View style={{ marginTop: 6, paddingVertical: 10 }}>
-            <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-              Debt Repayment
-            </Text>
-            <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
-              Manual standalone debt settlement
-            </Text>
-          </View>
-        </View>
-      ) : null}
-
-      <View style={{ paddingHorizontal: 24, paddingBottom: 20 }}>
-        <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-          SUMMARY
-        </Text>
-        <View style={{ marginTop: 12, gap: 8 }}>
-          {!(sale as any).isRepayment && sale.discount_amount > 0 ? (
-            <SummaryRow label="Subtotal" value={formatCurrency(sale.subtotal)} />
-          ) : null}
-          {!(sale as any).isRepayment && sale.discount_amount > 0 ? (
-            <SummaryRow label="Discount" value={`- ${formatCurrency(sale.discount_amount)}`} />
-          ) : null}
-          {!(sale as any).isRepayment && sale.tax_amount > 0 ? (
-            <SummaryRow label="Tax" value={formatCurrency(sale.tax_amount)} />
-          ) : null}
-          
-          {(sale as any).isRepayment ? (
-            <>
-              {sale.items && sale.items.length > 0 ? (
-                <SummaryRow
-                  label="Total Purchase"
-                  value={formatCurrency(sale.total_amount)}
-                />
-              ) : null}
-              <View style={{ height: 1, backgroundColor: '#D8CEB7', marginTop: 4, marginBottom: 4 }} />
-              <SummaryRow
-                label="This Payment"
-                value={formatCurrency(sale.amount_paid)}
-                labelStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
-                valueStyle={{ color: COLORS.success, fontFamily: FONT.bold, fontSize: 15 }}
-              />
-              <SummaryRow
-                label="Total Paid (All-time)"
-                value={formatCurrency((sale as any).accumulatedAmountPaid ?? sale.amount_paid)}
-                labelStyle={{ color: COLORS.text.secondary }}
-                valueStyle={{ color: COLORS.text.secondary }}
-              />
-              <SummaryRow
-                label="Remaining Balance"
-                value={sale.amount_owed > 0 ? formatCurrency(sale.amount_owed) : 'FULLY SETTLED'}
-                labelStyle={{ color: sale.amount_owed > 0 ? COLORS.danger : COLORS.success, fontFamily: FONT.medium }}
-                valueStyle={{ color: sale.amount_owed > 0 ? COLORS.danger : COLORS.success, fontFamily: FONT.bold }}
-              />
-            </>
-          ) : (
-            <>
-              <View style={{ height: 1, backgroundColor: '#D8CEB7', marginTop: 4, marginBottom: 4 }} />
-              <SummaryRow
-                label="Total"
-                value={formatCurrency(sale.total_amount)}
-                labelStyle={{ fontFamily: FONT.bold, color: COLORS.text.primary }}
-                valueStyle={{ fontSize: 17, fontFamily: FONT.bold, color: COLORS.text.primary }}
-              />
-              <SummaryRow
-                label="Amount Paid"
-                value={formatCurrency((sale as any).accumulatedAmountPaid ?? (sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount))}
-                labelStyle={{ color: COLORS.success, fontFamily: FONT.medium }}
-                valueStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
-              />
-              {sale.amount_owed > 0 ? (
-                <SummaryRow
-                  label="Balance Owed"
-                  value={formatCurrency(sale.amount_owed)}
-                  labelStyle={{ color: COLORS.danger, fontFamily: FONT.medium }}
-                  valueStyle={{ color: COLORS.danger, fontFamily: FONT.bold }}
-                />
-              ) : null}
-            </>
-          )}
-          <SummaryRow
-            label="Payment Method"
-            value={sale.payment_method.replace('_', ' ').toUpperCase()}
-            labelStyle={{ fontSize: 11 }}
-            valueStyle={{ fontSize: 11 }}
-          />
-        </View>
-      </View>
-
-      <View
-        style={{
-          backgroundColor: `${statusColor}18`,
-          borderTopWidth: 1,
-          borderTopColor: '#D8CEB7',
-          paddingVertical: 14,
-          alignItems: 'center',
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 12,
-            fontFamily: FONT.bold,
-            color: statusColor,
-            letterSpacing: 1,
-          }}
-        >
-          {sale.payment_status === 'paid'
-            ? 'PAID IN FULL'
-            : sale.payment_status === 'partial'
-              ? 'PARTIALLY PAID'
-              : 'CREDIT / UNPAID'}
-        </Text>
-      </View>
-
-      <View style={{ paddingHorizontal: 24, paddingVertical: 18, alignItems: 'center' }}>
-        <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-          Thank you for your business.
-        </Text>
-        {sale.notes ? (
-          <Text
-            style={{
-              fontSize: 11,
-              fontFamily: FONT.regular,
-              color: COLORS.text.secondary,
-              textAlign: 'center',
-              marginTop: 6,
-            }}
-          >
-            "{sale.notes}"
-          </Text>
-        ) : null}
-        <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 10 }}>
-          Powered by <Text style={{ fontStyle: 'italic' }}>Record Am</Text> · {format(new Date(sale.created_at), 'yyyy')}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-function SummaryRow({
-  label,
-  value,
-  labelStyle,
-  valueStyle,
-}: {
-  label: string;
-  value: string;
-  labelStyle?: object;
-  valueStyle?: object;
-}) {
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-      <Text style={[{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }, labelStyle]}>
-        {label}
-      </Text>
-      <Text style={[{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, textAlign: 'right' }, valueStyle]}>
-        {value}
-      </Text>
-    </View>
-  );
-}
