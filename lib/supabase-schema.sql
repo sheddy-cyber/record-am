@@ -162,6 +162,20 @@ CREATE TABLE IF NOT EXISTS customers (
 );
 
 -- ============================================================
+-- PAYMENT ACCOUNTS (Bank accounts & POS terminals)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS payment_accounts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  account_number TEXT,
+  channel TEXT NOT NULL DEFAULT 'both', -- transfer, pos, both
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
 -- SALES
 -- ============================================================
 CREATE TABLE IF NOT EXISTS sales (
@@ -178,6 +192,10 @@ CREATE TABLE IF NOT EXISTS sales (
   amount_owed NUMERIC(12,2) DEFAULT 0, -- total - paid
   payment_status TEXT DEFAULT 'paid', -- paid, partial, credit
   payment_method TEXT DEFAULT 'cash', -- cash, transfer, pos, mobile_money, mixed
+  cash_amount NUMERIC(12,2),
+  transfer_amount NUMERIC(12,2),
+  payment_account_id UUID REFERENCES payment_accounts(id) ON DELETE SET NULL,
+  bank_name TEXT,
   notes TEXT,
   sold_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -280,6 +298,10 @@ CREATE TABLE IF NOT EXISTS debt_repayments (
   debt_id UUID NOT NULL REFERENCES customer_debts(id) ON DELETE CASCADE,
   amount NUMERIC(12,2) NOT NULL,
   payment_method TEXT DEFAULT 'cash',
+  cash_amount NUMERIC(12,2),
+  transfer_amount NUMERIC(12,2),
+  payment_account_id UUID REFERENCES payment_accounts(id) ON DELETE SET NULL,
+  bank_name TEXT,
   notes TEXT,
   recorded_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -315,6 +337,7 @@ CREATE TABLE IF NOT EXISTS daily_summaries (
   total_sales NUMERIC(12,2) DEFAULT 0,
   total_expenses NUMERIC(12,2) DEFAULT 0,
   total_purchases NUMERIC(12,2) DEFAULT 0,
+  total_discounts NUMERIC(12,2) DEFAULT 0,
   gross_profit NUMERIC(12,2) DEFAULT 0,
   net_profit NUMERIC(12,2) DEFAULT 0,
   cash_in_hand_expected NUMERIC(12,2) DEFAULT 0,

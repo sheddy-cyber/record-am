@@ -145,6 +145,7 @@ export default function AnalyticsScreen() {
   const grossProfit = summary?.gross_profit ?? 0;
   const netProfit = summary?.net_profit ?? 0;
   const totalExpenses = summary?.total_expenses ?? 0;
+  const totalDiscounts = summary?.total_discounts ?? 0;
   const totalTransactions = summary?.total_transactions ?? 0;
   const avgTransaction = summary?.avg_transaction_value ?? 0;
   const stockItems = summary?.historical_stock_items ?? 0;
@@ -153,6 +154,7 @@ export default function AnalyticsScreen() {
   const netMarginPct = revenue > 0 ? (netProfit / revenue) * 100 : 0;
   const grossMarginPct = revenue > 0 ? (grossProfit / revenue) * 100 : 0;
   const expenseRatioPct = revenue > 0 ? (totalExpenses / revenue) * 100 : 0;
+  const discountRatioPct = (revenue + totalDiscounts) > 0 ? (totalDiscounts / (revenue + totalDiscounts)) * 100 : 0;
   const isProfitable = netProfit >= 0;
 
   return (
@@ -455,6 +457,56 @@ export default function AnalyticsScreen() {
                     >
                       <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.accentMuted }}>
                         {grossMarginPct.toFixed(0)}% gross margin
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 14 }} />
+
+                {/* Discounts Given Item */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
+                    <View
+                      style={{
+                        width: 38,
+                        height: 38,
+                        borderRadius: 10,
+                        backgroundColor: COLORS.warning + '18',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Feather name="tag" size={17} color={COLORS.warning} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
+                        Discounts Given
+                      </Text>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
+                        Price reductions granted to customers
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text
+                      style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.warning }}
+                      numberOfLines={1}
+                    >
+                      {formatFullCurrency(totalDiscounts)}
+                    </Text>
+                    <View
+                      style={{
+                        backgroundColor: COLORS.warningLight,
+                        borderRadius: RADIUS.full,
+                        paddingHorizontal: 7,
+                        paddingVertical: 2,
+                        marginTop: 2,
+                      }}
+                    >
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.warning }}>
+                        {discountRatioPct.toFixed(0)}% of sales value
                       </Text>
                     </View>
                   </View>

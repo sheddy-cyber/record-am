@@ -13,6 +13,7 @@ import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { format } from 'date-fns';
+import { getPaymentBreakdown } from '@/lib/records';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { Sale } from '@/types';
 
@@ -486,10 +487,30 @@ export function ReceiptShareCard({
           )}
           <SummaryRow
             label="Payment Method"
-            value={sale.payment_method.replace('_', ' ').toUpperCase()}
+            value={
+              sale.bank_name
+                ? `${sale.payment_method.replace('_', ' ').toUpperCase()} (${sale.bank_name})`
+                : sale.payment_method.replace('_', ' ').toUpperCase()
+            }
             labelStyle={{ fontSize: 11 }}
             valueStyle={{ fontSize: 11 }}
           />
+          {sale.payment_method === 'mixed' ? (
+            <>
+              <SummaryRow
+                label="  • Cash"
+                value={formatCurrency(getPaymentBreakdown(sale).cash)}
+                labelStyle={{ fontSize: 11, color: COLORS.text.muted, paddingLeft: 8 }}
+                valueStyle={{ fontSize: 11, color: COLORS.text.secondary }}
+              />
+              <SummaryRow
+                label="  • Transfer"
+                value={`${formatCurrency(getPaymentBreakdown(sale).transfer)}${sale.bank_name ? ` (${sale.bank_name})` : ''}`}
+                labelStyle={{ fontSize: 11, color: COLORS.text.muted, paddingLeft: 8 }}
+                valueStyle={{ fontSize: 11, color: COLORS.text.secondary }}
+              />
+            </>
+          ) : null}
         </View>
       </View>
 

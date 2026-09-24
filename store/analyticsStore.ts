@@ -40,6 +40,7 @@ export interface AnalyticsSummary {
   gross_profit: number;
   net_profit: number;
   total_expenses: number;
+  total_discounts: number;
   total_transactions: number;
   avg_transaction_value: number;
   prev_revenue: number;
@@ -161,6 +162,7 @@ async function buildCachedAnalytics(
   };
 
   const totalRevenue = currentActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
+  const totalDiscounts = currentActivities.reduce((sum, activity) => sum + Number(activity.discount_amount ?? 0), 0);
   const prevRevenue = previousActivities.reduce((sum, activity) => sum + activity.amount_paid, 0);
   const totalExpenses = currentExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalProfit = currentSaleItems.reduce(
@@ -271,6 +273,7 @@ async function buildCachedAnalytics(
       gross_profit: grossProfit,
       net_profit: netProfit,
       total_expenses: totalExpenses,
+      total_discounts: totalDiscounts,
       total_transactions: totalTransactions,
       avg_transaction_value: totalTransactions > 0 ? totalRevenue / totalTransactions : 0,
       prev_revenue: prevRevenue,
@@ -348,7 +351,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       // ── Current period sales ──────────────────────────────
       const { data: currentSales } = await supabase
         .from('sales')
-        .select('id, amount_paid, created_at, notes')
+        .select('id, amount_paid, created_at, notes, discount_amount, subtotal')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('created_at', fromISO)
@@ -410,7 +413,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
 
       const saleActivities = (currentSales ?? [])
         .filter((sale) => !isDebtSettlementSale(sale.notes))
-        .map((sale) => ({
+        .map((sale: any) => ({
           id: sale.id,
           kind: 'sale' as const,
           customer_name: 'Customer',
@@ -420,6 +423,8 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           amount_owed: 0,
           payment_status: 'paid' as const,
           payment_method: 'mixed' as const,
+          subtotal: Number(sale.subtotal ?? 0),
+          discount_amount: Number(sale.discount_amount ?? 0),
           notes: sale.notes,
           created_at: sale.created_at,
           sale_id: sale.id,
@@ -486,6 +491,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       const totalRevenue =
         revenueSales.reduce((s, r) => s + r.amount_paid, 0) +
         (currentRepayments?.reduce((s, r) => s + r.amount, 0) ?? 0);
+      const totalDiscounts = revenueSales.reduce((s, r) => s + Number((r as any).discount_amount ?? 0), 0);
       const totalExpenses = currentExpenses?.reduce((s, r) => s + r.amount, 0) ?? 0;
       const prevRevenue =
         previousRevenueSales.reduce((s, r) => s + r.amount_paid, 0) +
@@ -522,6 +528,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           gross_profit: grossProfit,
           net_profit: netProfit,
           total_expenses: totalExpenses,
+          total_discounts: totalDiscounts,
           total_transactions: totalTransactions,
           avg_transaction_value: totalTransactions > 0 ? totalRevenue / totalTransactions : 0,
           prev_revenue: prevRevenue,

@@ -146,6 +146,9 @@ export default function CloseDayScreen() {
             </Text>
             {[
               { label: 'Total Revenue', value: formatCurrency(totalRevenue), color: COLORS.success },
+              ...(summary.total_discounts && summary.total_discounts > 0
+                ? [{ label: 'Total Discounts Given', value: formatCurrency(summary.total_discounts), color: COLORS.warning }]
+                : []),
               { label: 'Total Expenses', value: formatCurrency(summary.total_expenses ?? 0), color: COLORS.danger },
               {
                 label: 'Net Profit',

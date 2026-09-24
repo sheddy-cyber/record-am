@@ -19,6 +19,19 @@ export type UserRole = 'owner' | 'manager' | 'cashier' | 'auditor';
 
 export type PaymentMethod = 'cash' | 'transfer' | 'pos' | 'mobile_money' | 'mixed';
 
+export type PaymentAccountChannel = 'transfer' | 'pos' | 'both';
+
+export interface PaymentAccount {
+  id: string;
+  business_id: string;
+  name: string;
+  account_number?: string;
+  channel: PaymentAccountChannel;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type PaymentStatus = 'paid' | 'partial' | 'credit';
 
 export type StockMovementType =
@@ -180,6 +193,10 @@ export interface Sale {
   amount_owed: number;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
+  cash_amount?: number;
+  transfer_amount?: number;
+  payment_account_id?: string;
+  bank_name?: string;
   notes?: string;
   sold_by?: string;
   created_at: string;
@@ -275,6 +292,10 @@ export interface DebtRepayment {
   debt_id: string;
   amount: number;
   payment_method: PaymentMethod;
+  cash_amount?: number;
+  transfer_amount?: number;
+  payment_account_id?: string;
+  bank_name?: string;
   notes?: string;
   recorded_by?: string;
   created_at: string;
@@ -304,6 +325,7 @@ export interface DailySummary {
   total_sales: number;
   total_expenses: number;
   total_purchases: number;
+  total_discounts?: number;
   gross_profit: number;
   net_profit: number;
   cash_in_hand_expected: number;
@@ -356,12 +378,20 @@ export interface RevenueActivity {
   amount_owed: number;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
+  cash_amount?: number;
+  transfer_amount?: number;
+  payment_account_id?: string;
+  bank_name?: string;
+  subtotal?: number;
+  discount_amount?: number;
   notes?: string;
   created_at: string;
   sale_id?: string;
   debt_id?: string;
   items?: {
     quantity: number;
+    unit_price?: number;
+    discount_amount?: number;
     total_price: number;
     product_name: string;
   }[];

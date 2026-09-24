@@ -18,6 +18,8 @@ import {
 } from '@/lib/notifications';
 import { getPendingMutationCount, flushOfflineQueue } from '@/lib/offlineStore';
 import { useOfflineStore } from '@/store/offlineStore';
+import { usePaymentAccountStore } from '@/store/paymentAccountStore';
+import { PaymentAccountsSection } from '@/components/settings/PaymentAccountsSection';
 import Toast from 'react-native-toast-message';
 
 export default function SettingsScreen() {
@@ -50,14 +52,21 @@ export default function SettingsScreen() {
       setAutoCloseEnabled(settings.autoCloseEnabled);
       setAutoCloseTime(settings.autoCloseTime);
       setInventoryPurchaseSyncEnabled(settings.inventoryPurchaseSyncEnabled);
+      if (currentBusiness) {
+        await usePaymentAccountStore.getState().fetchAccounts(currentBusiness.id);
+      }
       await useOfflineStore.getState().updatePendingCount();
       await useAuthStore.getState().initialize();
     } catch (_) {}
     setRefreshing(false);
-  }, []);
+  }, [currentBusiness]);
 
   useEffect(() => {
     let active = true;
+
+    if (currentBusiness) {
+      void usePaymentAccountStore.getState().fetchAccounts(currentBusiness.id);
+    }
 
     const loadSettings = async () => {
       const settings = await getAppSettings();
@@ -293,6 +302,10 @@ export default function SettingsScreen() {
             ))}
             <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 10 }}>Multi-branch management is not available yet.</Text>
           </Card>
+
+          {currentBusiness ? (
+            <PaymentAccountsSection businessId={currentBusiness.id} />
+          ) : null}
 
           <Card>
             <SectionHeader title="Daily Close Automation" />

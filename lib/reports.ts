@@ -2,6 +2,7 @@ import { Share } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { format } from 'date-fns';
+import { cleanSaleNotes, getPaymentBreakdown } from '@/lib/records';
 import { CURRENCY_SYMBOL } from '@/constants';
 import { Branch, Business, Sale } from '@/types';
 
@@ -111,15 +112,22 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     </div>
     ${sale.amount_owed > 0 ? `<div class="totals-row owed"><span>Balance Owed</span><span>${formatMoney(sale.amount_owed)}</span></div>` : ''}
     <div class="totals-row" style="font-size:12px;color:#7D877F;padding-top:4px;">
-      <span>Payment Method</span><span>${sale.payment_method.replace('_', ' ').toUpperCase()}</span>
+      <span>Payment Method</span><span>${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}</span>
     </div>
+    ${sale.payment_method === 'mixed' ? `
+    <div class="totals-row" style="font-size:12px;color:#4C5A52;padding-top:2px;">
+      <span style="padding-left:12px;">• Cash</span><span>${formatMoney(getPaymentBreakdown(sale).cash)}</span>
+    </div>
+    <div class="totals-row" style="font-size:12px;color:#4C5A52;padding-top:2px;">
+      <span style="padding-left:12px;">• Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}</span><span>${formatMoney(getPaymentBreakdown(sale).transfer)}</span>
+    </div>` : ''}
   </div>
 
   <div class="status-badge"><span>${statusLabel}</span></div>
 
   <div class="footer">
     <p>Thank you for your business.</p>
-    ${sale.notes ? `<p style="font-style:italic;">"${sale.notes}"</p>` : ''}
+    ${cleanSaleNotes(sale.notes) ? `<p style="font-style:italic;">"${cleanSaleNotes(sale.notes)}"</p>` : ''}
     <p style="margin-top:8px;">${business.name} - ${format(new Date(sale.created_at), 'yyyy')}</p>
     <div class="powered">Powered by Record Am - Designed by PYTHRON</div>
   </div>
@@ -133,6 +141,7 @@ export interface DailyReportData {
   business: Business;
   branch: Branch;
   totalSales: number;
+  totalDiscounts?: number;
   totalExpenses: number;
   grossProfit: number;
   netProfit: number;
@@ -190,7 +199,7 @@ export function generateDailyReportHTML(data: DailyReportData): string {
     <div class="metric"><div class="label">Total Revenue</div><div class="value" style="color:#14211C;">${formatMoney(data.totalSales)}</div></div>
     <div class="metric"><div class="label">Net Profit</div><div class="value" style="color:${profitColor};">${formatMoney(data.netProfit)}</div></div>
     <div class="metric"><div class="label">Total Expenses</div><div class="value" style="color:#C44536;">${formatMoney(data.totalExpenses)}</div></div>
-    <div class="metric"><div class="label">Transactions</div><div class="value">${data.totalTransactions}</div></div>
+    <div class="metric"><div class="label">Discounts Given</div><div class="value" style="color:#D97706;">${formatMoney(data.totalDiscounts ?? 0)}</div></div>
   </div>
 
   <div class="section">
@@ -248,8 +257,12 @@ export async function shareReceiptViaWhatsApp(sale: Sale, business: Business, br
     `*TOTAL:* ${formatMoney(sale.total_amount)}\n` +
     `*PAID:* ${formatMoney(sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount)}\n` +
     (sale.amount_owed > 0 ? `*BALANCE:* ${formatMoney(sale.amount_owed)}\n` : '') +
-    `\nPayment: ${sale.payment_method.replace('_', ' ').toUpperCase()}\n` +
-    `\n_Thank you for your business._\n_Powered by Record Am - Designed by PYTHRON_`;
+    `\n*PAYMENT METHOD:* ${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}` +
+    (sale.payment_method === 'mixed'
+      ? `\n  • Cash: ${formatMoney(getPaymentBreakdown(sale).cash)}\n  • Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}: ${formatMoney(getPaymentBreakdown(sale).transfer)}`
+      : '') +
+    (cleanSaleNotes(sale.notes) ? `\n\n*NOTE:* "${cleanSaleNotes(sale.notes)}"` : '') +
+    `\n\n_Thank you for your business._\n_Powered by Record Am - Designed by PYTHRON_`;
 
   try {
     await Share.share({
@@ -321,6 +334,7 @@ export async function shareDailyReport(data: DailyReportData) {
       `Revenue: ${formatMoney(data.totalSales)}\n` +
       `Expenses: ${formatMoney(data.totalExpenses)}\n` +
       `Net Profit: ${formatMoney(data.netProfit)}\n` +
+      ((data.totalDiscounts ?? 0) > 0 ? `Discounts: -${formatMoney(data.totalDiscounts ?? 0)}\n` : '') +
       `Sales: ${data.totalTransactions} transaction${data.totalTransactions !== 1 ? 's' : ''}\n` +
       (data.cashActual !== undefined
         ? `Cash: Expected ${formatMoney(data.cashExpected)} | Actual ${formatMoney(data.cashActual)}\n`

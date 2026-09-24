@@ -13,7 +13,7 @@ import {
   StockMovement,
 } from '@/types';
 import { useBusinessStore } from '@/store/businessStore';
-import { createAltUnitNote, getSaleUnitOption } from '@/lib/records';
+import { createAltUnitNote, formatBankPaymentNote, formatMixedPaymentNote, getSaleUnitOption } from '@/lib/records';
 import {
   adjustCachedProductInventory,
   cacheExpenses,
@@ -112,6 +112,10 @@ export async function recordSaleOffline(params: {
   customerName: string;
   customerPhone: string;
   paymentMethod: PaymentMethod;
+  cashAmount?: number;
+  transferAmount?: number;
+  paymentAccountId?: string;
+  bankName?: string;
   notes?: string;
   subtotal: number;
   discountAmount: number;
@@ -150,6 +154,15 @@ export async function recordSaleOffline(params: {
     }
   }
 
+  let saleNotes =
+    params.paymentMethod === 'mixed' && params.cashAmount !== undefined && params.transferAmount !== undefined
+      ? formatMixedPaymentNote(params.cashAmount, params.transferAmount, params.notes)
+      : (params.notes || undefined);
+
+  if (params.bankName?.trim()) {
+    saleNotes = formatBankPaymentNote(params.bankName, params.paymentAccountId, saleNotes);
+  }
+
   const sale: CachedSale = {
     id: saleId,
     business_id: params.businessId,
@@ -164,7 +177,11 @@ export async function recordSaleOffline(params: {
     amount_owed: roundAmount(params.amountOwed),
     payment_status: params.paymentStatus,
     payment_method: params.paymentMethod,
-    notes: params.notes || undefined,
+    cash_amount: params.cashAmount != null ? roundAmount(params.cashAmount) : undefined,
+    transfer_amount: params.transferAmount != null ? roundAmount(params.transferAmount) : undefined,
+    payment_account_id: params.paymentAccountId,
+    bank_name: params.bankName?.trim() || undefined,
+    notes: saleNotes,
     sold_by: params.userId,
     created_at: timestamp,
     updated_at: timestamp,
@@ -303,9 +320,22 @@ export async function recordSaleOffline(params: {
     amount_owed: sale.amount_owed,
     payment_status: sale.payment_status,
     payment_method: sale.payment_method,
+    cash_amount: sale.cash_amount,
+    transfer_amount: sale.transfer_amount,
+    payment_account_id: sale.payment_account_id,
+    bank_name: sale.bank_name,
+    subtotal: sale.subtotal,
+    discount_amount: sale.discount_amount,
     notes: sale.notes,
     created_at: sale.created_at,
     sale_id: sale.id,
+    items: saleItems.map((si) => ({
+      product_name: si.product?.name ?? 'Item',
+      quantity: si.quantity,
+      unit_price: si.unit_price,
+      discount_amount: si.discount_amount,
+      total_price: si.total_price,
+    })),
   };
 
   await Promise.all([
@@ -335,6 +365,10 @@ export async function updateSaleOffline(params: {
   customerName?: string;
   customerPhone?: string;
   paymentMethod: PaymentMethod;
+  cashAmount?: number;
+  transferAmount?: number;
+  paymentAccountId?: string;
+  bankName?: string;
   notes?: string;
   subtotal: number;
   discountAmount: number;
@@ -457,6 +491,17 @@ export async function updateSaleOffline(params: {
 
   // 4. Update sales record
   const saleNumber = originalSale?.sale_number ?? `REC-${Date.now().toString(36).toUpperCase()}`;
+  let saleNotes =
+    params.paymentMethod === 'mixed' && params.cashAmount !== undefined && params.transferAmount !== undefined
+      ? formatMixedPaymentNote(params.cashAmount, params.transferAmount, params.notes)
+      : (params.notes || undefined);
+
+  const effectiveBank = params.bankName?.trim() || originalSale?.bank_name;
+  const effectiveAccId = params.paymentAccountId ?? originalSale?.payment_account_id;
+  if (effectiveBank) {
+    saleNotes = formatBankPaymentNote(effectiveBank, effectiveAccId, saleNotes);
+  }
+
   const updatedSale: CachedSale = {
     id: params.saleId,
     business_id: params.businessId,
@@ -471,7 +516,11 @@ export async function updateSaleOffline(params: {
     amount_owed: roundAmount(params.amountOwed),
     payment_status: params.paymentStatus,
     payment_method: params.paymentMethod,
-    notes: params.notes || undefined,
+    cash_amount: params.cashAmount != null ? roundAmount(params.cashAmount) : undefined,
+    transfer_amount: params.transferAmount != null ? roundAmount(params.transferAmount) : undefined,
+    payment_account_id: params.paymentAccountId ?? originalSale?.payment_account_id ?? undefined,
+    bank_name: params.bankName?.trim() || originalSale?.bank_name || undefined,
+    notes: saleNotes,
     sold_by: originalSale?.sold_by ?? params.userId,
     created_at: originalSale?.created_at ?? timestamp,
     updated_at: timestamp,
@@ -610,6 +659,12 @@ export async function updateSaleOffline(params: {
     amount_owed: updatedSale.amount_owed,
     payment_status: updatedSale.payment_status,
     payment_method: updatedSale.payment_method,
+    cash_amount: updatedSale.cash_amount,
+    transfer_amount: updatedSale.transfer_amount,
+    payment_account_id: updatedSale.payment_account_id,
+    bank_name: updatedSale.bank_name,
+    subtotal: updatedSale.subtotal,
+    discount_amount: updatedSale.discount_amount,
     notes: updatedSale.notes,
     created_at: updatedSale.created_at,
     sale_id: updatedSale.id,
@@ -617,6 +672,7 @@ export async function updateSaleOffline(params: {
       product_name: si.product?.name ?? 'Item',
       quantity: si.quantity,
       unit_price: si.unit_price,
+      discount_amount: si.discount_amount,
       total_price: si.total_price,
     })),
   };
@@ -817,6 +873,10 @@ export async function recordRepaymentOffline(params: {
   debt: CustomerDebt;
   amount: number;
   paymentMethod: PaymentMethod;
+  cashAmount?: number;
+  transferAmount?: number;
+  paymentAccountId?: string;
+  bankName?: string;
   notes?: string;
 }) {
   const timestamp = nowIso();
@@ -825,12 +885,25 @@ export async function recordRepaymentOffline(params: {
   const newBalance = Math.max(0, roundAmount(params.debt.balance - amount));
   const newStatus = newBalance <= 0 ? 'settled' : 'partial';
 
+  let repaymentNotes =
+    params.paymentMethod === 'mixed' && params.cashAmount !== undefined && params.transferAmount !== undefined
+      ? formatMixedPaymentNote(params.cashAmount, params.transferAmount, params.notes)
+      : (params.notes || undefined);
+
+  if (params.bankName?.trim()) {
+    repaymentNotes = formatBankPaymentNote(params.bankName, params.paymentAccountId, repaymentNotes);
+  }
+
   const repayment: DebtRepayment = {
     id: createLocalId(),
     debt_id: params.debt.id,
     amount,
     payment_method: params.paymentMethod,
-    notes: params.notes || undefined,
+    cash_amount: params.cashAmount != null ? roundAmount(params.cashAmount) : undefined,
+    transfer_amount: params.transferAmount != null ? roundAmount(params.transferAmount) : undefined,
+    payment_account_id: params.paymentAccountId,
+    bank_name: params.bankName?.trim() || undefined,
+    notes: repaymentNotes,
     recorded_by: params.userId,
     created_at: timestamp,
   };
@@ -854,6 +927,10 @@ export async function recordRepaymentOffline(params: {
     amount_owed: debt.balance,
     payment_status: debt.balance <= 0 ? 'paid' : 'partial',
     payment_method: repayment.payment_method,
+    cash_amount: repayment.cash_amount,
+    transfer_amount: repayment.transfer_amount,
+    payment_account_id: repayment.payment_account_id,
+    bank_name: repayment.bank_name,
     notes: repayment.notes,
     created_at: repayment.created_at,
     sale_id: debt.sale_id,

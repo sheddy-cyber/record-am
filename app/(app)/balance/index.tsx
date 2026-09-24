@@ -22,6 +22,7 @@ export default function DailyBalanceScreen() {
   const {
     summary,
     entries,
+    digitalInflows,
     isLoading,
     isSaving,
     selectedDate,
@@ -95,6 +96,9 @@ export default function DailyBalanceScreen() {
   const repaymentEntries = entries.filter((entry) => entry.type === 'debt_repayment');
   const repaymentTotal = repaymentEntries.reduce((sum, entry) => sum + entry.amount, 0);
   const totalRevenue = (summary?.total_sales ?? 0) + repaymentTotal;
+  const entryDiscounts = salesEntries.reduce((sum, entry) => sum + Number(entry.discount_amount ?? 0), 0);
+  const totalDiscounts = Math.max(summary?.total_discounts ?? 0, entryDiscounts);
+  const discountedSalesCount = salesEntries.filter((entry) => Number(entry.discount_amount ?? 0) > 0).length;
 
   const discrepancyTone =
     discrepancy === 0 ? COLORS.success : discrepancy > 0 ? COLORS.accent : COLORS.danger;
@@ -209,6 +213,51 @@ export default function DailyBalanceScreen() {
                 </Card>
               </View>
 
+              <Card style={{ padding: 14 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
+                    <View
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        backgroundColor: COLORS.warningLight,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Feather name="tag" size={16} color={COLORS.warning} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
+                        Total Discounts Given
+                      </Text>
+                      <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 1 }}>
+                        {formatCurrency(totalDiscounts)}
+                      </Text>
+                    </View>
+                  </View>
+                  <View
+                    style={{
+                      backgroundColor: totalDiscounts > 0 ? COLORS.warningLight : 'rgba(0,0,0,0.04)',
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: RADIUS.full,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: FONT.medium,
+                        fontSize: 11,
+                        color: totalDiscounts > 0 ? COLORS.warning : COLORS.text.muted,
+                      }}
+                    >
+                      {discountedSalesCount} discounted sale{discountedSalesCount === 1 ? '' : 's'}
+                    </Text>
+                  </View>
+                </View>
+              </Card>
+
               {isClosed && summary?.cash_in_hand_actual !== undefined ? (
                 <Card style={{ backgroundColor: discrepancyBg, borderColor: discrepancyBorder }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
@@ -244,6 +293,121 @@ export default function DailyBalanceScreen() {
                   </View>
                 </Card>
               ) : null}
+
+              {Boolean(digitalInflows && digitalInflows.totalDigital > 0) ? (
+                <Card style={{ padding: 14 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <View
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 17,
+                          backgroundColor: COLORS.infoLight,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Feather name="globe" size={16} color={COLORS.navy} />
+                      </View>
+                      <View>
+                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
+                          Digital & Bank Inflows
+                        </Text>
+                        <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 1 }}>
+                          {formatCurrency(digitalInflows!.totalDigital)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View
+                      style={{
+                        backgroundColor: COLORS.infoLight,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: RADIUS.full,
+                      }}
+                    >
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.navy }}>
+                        {digitalInflows!.byBank.length + digitalInflows!.byPos.length} channel{digitalInflows!.byBank.length + digitalInflows!.byPos.length === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {digitalInflows!.byBank.length > 0 ? (
+                    <View style={{ marginBottom: digitalInflows!.byPos.length > 0 ? 10 : 0 }}>
+                      <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: COLORS.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                        Bank Transfers ({formatCurrency(digitalInflows!.totalTransfer)})
+                      </Text>
+                      <View style={{ gap: 6 }}>
+                        {digitalInflows!.byBank.map((item) => (
+                          <View
+                            key={item.bankName}
+                            style={{
+                              flexDirection: 'row',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              paddingVertical: 6,
+                              paddingHorizontal: 10,
+                              backgroundColor: COLORS.surface,
+                              borderRadius: RADIUS.sm,
+                            }}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Feather name="send" size={12} color={COLORS.accent} />
+                              <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                                {item.bankName}
+                              </Text>
+                              <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                                ({item.count} payment{item.count === 1 ? '' : 's'})
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                              {formatCurrency(item.total)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+
+                  {digitalInflows!.byPos.length > 0 ? (
+                    <View>
+                      <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: COLORS.warning, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                        POS / Card Payments ({formatCurrency(digitalInflows!.totalPos)})
+                      </Text>
+                      <View style={{ gap: 6 }}>
+                        {digitalInflows!.byPos.map((item) => (
+                          <View
+                            key={item.bankName}
+                            style={{
+                              flexDirection: 'row',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              paddingVertical: 6,
+                              paddingHorizontal: 10,
+                              backgroundColor: COLORS.surface,
+                              borderRadius: RADIUS.sm,
+                            }}
+                          >
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Feather name="credit-card" size={12} color={COLORS.warning} />
+                              <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                                {item.bankName}
+                              </Text>
+                              <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                                ({item.count} payment{item.count === 1 ? '' : 's'})
+                              </Text>
+                            </View>
+                            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                              {formatCurrency(item.total)}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+                </Card>
+              ) : null}
             </View>
 
             {salesEntries.length > 0 ? (
@@ -254,11 +418,24 @@ export default function DailyBalanceScreen() {
                     <View key={entry.id}>
                       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14, gap: 12 }}>
                         <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>{entry.description}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>{entry.description}</Text>
+                            {Boolean(entry.discount_amount && entry.discount_amount > 0) && (
+                              <View style={{ backgroundColor: COLORS.warningLight, paddingHorizontal: 6, paddingVertical: 1, borderRadius: RADIUS.xs }}>
+                                <Text style={{ fontSize: 10, fontFamily: FONT.bold, color: COLORS.warning }}>
+                                  -{formatCurrency(entry.discount_amount!)} OFF
+                                </Text>
+                              </View>
+                            )}
+                          </View>
                           <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 2 }}>
                             {format(new Date(entry.time), 'h:mm a')}
                             {' \u00B7 '}
-                            {entry.payment_method.toUpperCase()}
+                            {entry.payment_method === 'mixed' && entry.cash_amount != null
+                              ? `MIXED (${formatCurrency(entry.cash_amount)} Cash · ${formatCurrency(entry.transfer_amount ?? 0)} Transfer${entry.bank_name ? ` [${entry.bank_name}]` : ''})`
+                              : entry.bank_name
+                              ? `${entry.payment_method.toUpperCase()} \u00B7 ${entry.bank_name}`
+                              : entry.payment_method.toUpperCase()}
                           </Text>
                         </View>
                         <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.success }}>+{formatCurrency(entry.amount)}</Text>
@@ -282,7 +459,11 @@ export default function DailyBalanceScreen() {
                           <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 2 }}>
                             {format(new Date(entry.time), 'h:mm a')}
                             {' \u00B7 '}
-                            {entry.payment_method.toUpperCase()}
+                            {entry.payment_method === 'mixed' && entry.cash_amount != null
+                              ? `MIXED (${formatCurrency(entry.cash_amount)} Cash · ${formatCurrency(entry.transfer_amount ?? 0)} Transfer${entry.bank_name ? ` [${entry.bank_name}]` : ''})`
+                              : entry.bank_name
+                              ? `${entry.payment_method.toUpperCase()} \u00B7 ${entry.bank_name}`
+                              : entry.payment_method.toUpperCase()}
                           </Text>
                         </View>
                         <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accent }}>+{formatCurrency(entry.amount)}</Text>
@@ -360,6 +541,7 @@ export default function DailyBalanceScreen() {
                     business: currentBusiness,
                     branch: currentBranch,
                     totalSales: totalRevenue,
+                    totalDiscounts,
                     totalExpenses: summary.total_expenses,
                     grossProfit: summary.gross_profit,
                     netProfit: summary.net_profit,
@@ -369,7 +551,14 @@ export default function DailyBalanceScreen() {
                     topProducts: [],
                     salesByMethod: Object.entries(
                       [...salesEntries, ...repaymentEntries].reduce((acc: Record<string, number>, entry) => {
-                        acc[entry.payment_method] = (acc[entry.payment_method] || 0) + entry.amount;
+                        if (entry.payment_method === 'mixed') {
+                          const cash = entry.cash_amount ?? 0;
+                          const transfer = entry.transfer_amount ?? Math.max(0, entry.amount - cash);
+                          acc['cash'] = (acc['cash'] || 0) + cash;
+                          acc['transfer'] = (acc['transfer'] || 0) + transfer;
+                        } else {
+                          acc[entry.payment_method] = (acc[entry.payment_method] || 0) + entry.amount;
+                        }
                         return acc;
                       }, {}),
                     ).map(([method, amount]) => ({ method, amount })),

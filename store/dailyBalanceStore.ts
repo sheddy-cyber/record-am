@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { format } from 'date-fns';
-import { BalanceEntry, closeDailySummary, getDailyBalanceSnapshot, reopenDailySummary } from '@/lib/dailyBalance';
+import { BalanceEntry, closeDailySummary, DigitalInflowsSummary, getDailyBalanceSnapshot, reopenDailySummary } from '@/lib/dailyBalance';
 import { DailySummary } from '@/types';
 
 interface DailyBalanceState {
   summary: DailySummary | null;
   entries: BalanceEntry[];
+  digitalInflows: DigitalInflowsSummary | null;
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
@@ -27,6 +28,7 @@ interface DailyBalanceState {
 export const useDailyBalanceStore = create<DailyBalanceState>((set, get) => ({
   summary: null,
   entries: [],
+  digitalInflows: null,
   isLoading: false,
   isSaving: false,
   error: null,
@@ -40,7 +42,11 @@ export const useDailyBalanceStore = create<DailyBalanceState>((set, get) => ({
 
     try {
       const snapshot = await getDailyBalanceSnapshot(businessId, branchId, targetDate);
-      set({ summary: snapshot.summary, entries: snapshot.entries });
+      set({
+        summary: snapshot.summary,
+        entries: snapshot.entries,
+        digitalInflows: snapshot.digitalInflows,
+      });
     } catch (err: any) {
       console.error('[dailyBalance]', err);
       set({ error: err.message });

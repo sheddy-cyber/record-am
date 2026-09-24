@@ -285,6 +285,36 @@ const executeMutation = async (mutation: OfflineMutation) => {
     const { error } = await supabase
       .from(table)
       .upsert(mutation.payload as any, mutation.onConflict ? { onConflict: mutation.onConflict } : undefined);
+
+    if (error && (table === 'sales' || table === 'debt_repayments' || table === 'daily_summaries' || table === 'payment_accounts')) {
+      const errMessage = (error.message || '').toLowerCase();
+      if (table === 'payment_accounts' && (errMessage.includes('relation') || errMessage.includes('does not exist'))) {
+        console.warn('[sync] payment_accounts table does not exist on remote Supabase. Kept in local cache.');
+        return;
+      }
+      if (errMessage.includes('column') && (
+        errMessage.includes('cash_amount') ||
+        errMessage.includes('transfer_amount') ||
+        errMessage.includes('total_discounts') ||
+        errMessage.includes('payment_account_id') ||
+        errMessage.includes('bank_name')
+      )) {
+        const {
+          cash_amount,
+          transfer_amount,
+          total_discounts,
+          payment_account_id,
+          bank_name,
+          ...strippedPayload
+        } = (mutation.payload as any) || {};
+        const { error: retryError } = await supabase
+          .from(table)
+          .upsert(strippedPayload, mutation.onConflict ? { onConflict: mutation.onConflict } : undefined);
+        throwIfError(retryError);
+        return;
+      }
+    }
+
     throwIfError(error);
     return;
   }
@@ -302,6 +332,32 @@ const executeMutation = async (mutation: OfflineMutation) => {
     }
 
     const { error } = await applyMatch(supabase.from(table).update(payload), mutation.match);
+    if (error && (table === 'sales' || table === 'debt_repayments' || table === 'payment_accounts')) {
+      const errMessage = (error.message || '').toLowerCase();
+      if (table === 'payment_accounts' && (errMessage.includes('relation') || errMessage.includes('does not exist'))) {
+        console.warn('[sync] payment_accounts table does not exist on remote Supabase. Kept in local cache.');
+        return;
+      }
+      if (errMessage.includes('column') && (
+        errMessage.includes('cash_amount') ||
+        errMessage.includes('transfer_amount') ||
+        errMessage.includes('total_discounts') ||
+        errMessage.includes('payment_account_id') ||
+        errMessage.includes('bank_name')
+      )) {
+        const {
+          cash_amount,
+          transfer_amount,
+          total_discounts,
+          payment_account_id,
+          bank_name,
+          ...stripped
+        } = payload || {};
+        const { error: retryError } = await applyMatch(supabase.from(table).update(stripped), mutation.match);
+        throwIfError(retryError);
+        return;
+      }
+    }
     throwIfError(error);
     return;
   }

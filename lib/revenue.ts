@@ -54,7 +54,7 @@ export async function fetchRevenueActivities(
     const [salesResponse, repaymentsResponse] = await Promise.all([
       supabase
         .from('sales')
-        .select('*, customer:customers(name, phone), items:sale_items(quantity, total_price, product:products(name))')
+        .select('*, customer:customers(name, phone), items:sale_items(quantity, unit_price, discount_amount, total_price, product:products(name))')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .order('created_at', { ascending: false })
@@ -112,6 +112,10 @@ export async function fetchRevenueActivities(
         amount_owed: sale.amount_owed,
         payment_status: sale.payment_status,
         payment_method: sale.payment_method,
+        cash_amount: sale.cash_amount,
+        transfer_amount: sale.transfer_amount,
+        subtotal: Number(sale.subtotal ?? 0),
+        discount_amount: Number(sale.discount_amount ?? 0),
         notes: sale.notes,
         items_summary: (sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')) &&
           ((sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')?.length ?? 0) > 40
@@ -121,6 +125,8 @@ export async function fetchRevenueActivities(
         sale_id: sale.id,
         items: sale.items?.map((item) => ({
           quantity: item.quantity,
+          unit_price: (item as any).unit_price,
+          discount_amount: (item as any).discount_amount,
           total_price: item.total_price ?? 0,
           product_name: item.product?.name ?? 'Unknown Item'
         })),

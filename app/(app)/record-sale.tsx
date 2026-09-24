@@ -17,12 +17,17 @@ import { useDebtStore } from '@/store/debtStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useSaleStore } from '@/store/saleStore';
 import { useTabStore } from '@/store/tabStore';
+import { usePaymentAccountStore } from '@/store/paymentAccountStore';
+import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
+import { PaymentAccountModal } from '@/components/settings/PaymentAccountModal';
 import { supabase } from '@/lib/supabase';
 import { recordSaleOffline, updateSaleOffline } from '@/lib/offlineRecords';
 import { checkAndNotifyLowStock } from '@/lib/notifications';
 import { readCachedRows } from '@/lib/offlineStore';
 import {
+  cleanSaleNotes,
   getDefaultBundleSize,
+  getPaymentBreakdown,
   getSaleUnitOption,
   usesCustomBundleSize,
 } from '@/lib/records';
@@ -90,9 +95,20 @@ export default function RecordSaleScreen() {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
+  const [cashAmount, setCashAmount] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [paymentAccountId, setPaymentAccountId] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [paymentAccountModalVisible, setPaymentAccountModalVisible] = useState(false);
   const [amountPaid, setAmountPaid] = useState('');
   const [saleNotes, setSaleNotes] = useState('');
   const [savingSale, setSavingSale] = useState(false);
+
+  const {
+    accounts: paymentAccounts,
+    fetchAccounts: fetchPaymentAccounts,
+    createAccount: createPaymentAccount,
+  } = usePaymentAccountStore();
 
   const pinnedProductIdSet = useMemo(() => new Set(pinnedProductIds), [pinnedProductIds]);
 
@@ -106,7 +122,8 @@ export default function RecordSaleScreen() {
       setLoading(false);
     }
     loadSoldProductQuantities(currentBusiness.id, currentBranch.id);
-  }, [currentBusiness, currentBranch, loadPinnedProductIds, loadSoldProductQuantities]);
+    void fetchPaymentAccounts(currentBusiness.id);
+  }, [currentBusiness, currentBranch, loadPinnedProductIds, loadSoldProductQuantities, fetchPaymentAccounts]);
 
   useEffect(() => {
     loadProducts();
@@ -204,7 +221,16 @@ export default function RecordSaleScreen() {
 
         setCustomerName(sale.customer?.name ?? '');
         setCustomerPhone(sale.customer?.phone ?? '');
-        setPaymentMethod((sale.payment_method as PaymentMethod) || 'cash');
+        const loadedMethod = (sale.payment_method as PaymentMethod) || 'cash';
+        setPaymentMethod(loadedMethod);
+        if (loadedMethod === 'mixed') {
+          const breakdown = getPaymentBreakdown(sale);
+          setCashAmount(breakdown.cash > 0 ? String(breakdown.cash) : '');
+          setTransferAmount(breakdown.transfer > 0 ? String(breakdown.transfer) : '');
+        }
+
+        setPaymentAccountId((sale as any).payment_account_id ?? '');
+        setBankName((sale as any).bank_name ?? '');
 
         const salePaid = sale.amount_paid != null ? Number(sale.amount_paid) : null;
         const saleTotal = Number(sale.total_amount);
@@ -212,7 +238,7 @@ export default function RecordSaleScreen() {
         autoAdjustAmountPaidRef.current = isPaidInFull;
 
         setAmountPaid(sale.amount_paid != null ? String(sale.amount_paid) : '');
-        setSaleNotes(sale.notes ?? '');
+        setSaleNotes(cleanSaleNotes(sale.notes));
 
         const origQuantities = new Map<string, number>();
         const newCart: CartItem[] = [];
@@ -518,11 +544,11 @@ export default function RecordSaleScreen() {
   const paymentStatus = paidAmount >= cartTotal ? 'paid' : paidAmount > 0 ? 'partial' : 'credit';
 
   useEffect(() => {
-    if (!isEditing) return;
-    if (cart.length === 0) return;
-
-    if (prevCartTotalRef.current === null) {
-      prevCartTotalRef.current = cartTotal;
+    if (cart.length === 0) {
+      if (autoAdjustAmountPaidRef.current && amountPaid !== '') {
+        setAmountPaid('');
+      }
+      prevCartTotalRef.current = 0;
       return;
     }
 
@@ -534,15 +560,78 @@ export default function RecordSaleScreen() {
       const wasTrackingTotal =
         autoAdjustAmountPaidRef.current ||
         amountPaid === '' ||
-        (Number.isFinite(parsedPaid) && roundAmount(parsedPaid) === roundAmount(prevTotal));
+        prevTotal === null ||
+        prevTotal === 0 ||
+        (Number.isFinite(parsedPaid) && roundAmount(parsedPaid) === roundAmount(prevTotal ?? 0));
 
       if (wasTrackingTotal) {
-        setAmountPaid(cartTotal > 0 ? `${cartTotal}` : '');
+        const nextPaid = cartTotal > 0 ? `${cartTotal}` : '';
+        setAmountPaid(nextPaid);
+        if (paymentMethod === 'mixed') {
+          const parsedCash = parseFloat(cashAmount);
+          if (Number.isFinite(parsedCash)) {
+            const remaining = Math.max(0, roundAmount(cartTotal - parsedCash));
+            setTransferAmount(`${remaining}`);
+          } else {
+            setTransferAmount(nextPaid);
+          }
+        }
       } else if (Number.isFinite(parsedPaid) && parsedPaid > cartTotal) {
         setAmountPaid(cartTotal > 0 ? `${cartTotal}` : '');
       }
     }
-  }, [isEditing, cartTotal, amountPaid, cart.length]);
+  }, [cartTotal, amountPaid, cart.length, paymentMethod, cashAmount]);
+
+  const handleAmountPaidBlur = () => {
+    if (amountPaid.trim() === '' && cartTotal > 0) {
+      setAmountPaid(`${cartTotal}`);
+      autoAdjustAmountPaidRef.current = true;
+      if (paymentMethod === 'mixed') {
+        const parsedCash = parseFloat(cashAmount);
+        if (Number.isFinite(parsedCash)) {
+          const remaining = Math.max(0, roundAmount(cartTotal - parsedCash));
+          setTransferAmount(`${remaining}`);
+        } else {
+          setTransferAmount(`${cartTotal}`);
+        }
+      }
+    }
+  };
+
+  const handlePaymentMethodChange = (method: PaymentMethod) => {
+    setPaymentMethod(method);
+    if (method === 'mixed') {
+      const currentPaid = paidAmount;
+      if (!cashAmount && !transferAmount && currentPaid > 0) {
+        setCashAmount('');
+        setTransferAmount(`${currentPaid}`);
+      }
+    }
+  };
+
+  const handleCashAmountChange = (value: string) => {
+    setCashAmount(value);
+    const currentPaid = paidAmount;
+    const parsed = parseFloat(value);
+    if (value === '') {
+      setTransferAmount(currentPaid > 0 ? `${currentPaid}` : '');
+    } else if (Number.isFinite(parsed)) {
+      const remaining = Math.max(0, roundAmount(currentPaid - parsed));
+      setTransferAmount(`${remaining}`);
+    }
+  };
+
+  const handleTransferAmountChange = (value: string) => {
+    setTransferAmount(value);
+    const currentPaid = paidAmount;
+    const parsed = parseFloat(value);
+    if (value === '') {
+      setCashAmount(currentPaid > 0 ? `${currentPaid}` : '');
+    } else if (Number.isFinite(parsed)) {
+      const remaining = Math.max(0, roundAmount(currentPaid - parsed));
+      setCashAmount(`${remaining}`);
+    }
+  };
 
   const handleAmountPaidChange = (value: string) => {
     setAmountPaid(value);
@@ -551,6 +640,17 @@ export default function RecordSaleScreen() {
       autoAdjustAmountPaidRef.current = true;
     } else {
       autoAdjustAmountPaidRef.current = false;
+    }
+
+    if (paymentMethod === 'mixed') {
+      const newPaid = value === '' ? cartTotal : (Number.isFinite(parsed) ? parsed : 0);
+      const parsedCash = parseFloat(cashAmount);
+      if (Number.isFinite(parsedCash)) {
+        const remaining = Math.max(0, roundAmount(newPaid - parsedCash));
+        setTransferAmount(`${remaining}`);
+      } else {
+        setTransferAmount(newPaid > 0 ? `${newPaid}` : '');
+      }
     }
   };
 
@@ -583,6 +683,32 @@ export default function RecordSaleScreen() {
       return;
     }
 
+    let finalCashAmount: number | undefined = undefined;
+    let finalTransferAmount: number | undefined = undefined;
+
+    if (paymentMethod === 'mixed') {
+      const parsedCash = parseFloat(cashAmount) || 0;
+      const parsedTransfer = parseFloat(transferAmount) || 0;
+      const splitSum = roundAmount(parsedCash + parsedTransfer);
+      const expectedPaid = roundAmount(paidAmount);
+
+      if (parsedCash < 0 || parsedTransfer < 0) {
+        Alert.alert('Invalid split', 'Cash and transfer amounts must be positive numbers.');
+        return;
+      }
+
+      if (Math.abs(splitSum - expectedPaid) > 0.01) {
+        Alert.alert(
+          'Split mismatch',
+          `The split total (${CURRENCY_SYMBOL}${splitSum.toLocaleString('en-NG')}) does not match the amount paid (${CURRENCY_SYMBOL}${expectedPaid.toLocaleString('en-NG')}).`,
+        );
+        return;
+      }
+
+      finalCashAmount = roundAmount(parsedCash);
+      finalTransferAmount = roundAmount(parsedTransfer);
+    }
+
     if (isEditing && saleId) {
       setSavingSale(true);
       try {
@@ -595,6 +721,10 @@ export default function RecordSaleScreen() {
           customerName: customerName.trim() || undefined,
           customerPhone: customerPhone.trim() || undefined,
           paymentMethod,
+          cashAmount: finalCashAmount,
+          transferAmount: finalTransferAmount,
+          paymentAccountId: paymentAccountId || undefined,
+          bankName: bankName.trim() || undefined,
           notes: saleNotes.trim() || undefined,
           subtotal: roundAmount(subtotal),
           discountAmount: roundAmount(totalDiscount),
@@ -608,6 +738,7 @@ export default function RecordSaleScreen() {
           useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
           useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
           useDebtStore.getState().hydrateCache(currentBusiness.id, currentBranch.id),
+          useDailyBalanceStore.getState().fetchDailyBalance(currentBusiness.id, currentBranch.id),
         ]);
 
         Toast.show({
@@ -647,6 +778,10 @@ export default function RecordSaleScreen() {
         customerName,
         customerPhone,
         paymentMethod,
+        cashAmount: finalCashAmount,
+        transferAmount: finalTransferAmount,
+        paymentAccountId: paymentAccountId || undefined,
+        bankName: bankName.trim() || undefined,
         notes: saleNotes.trim() || undefined,
         subtotal: roundAmount(subtotal),
         discountAmount: roundAmount(totalDiscount),
@@ -662,6 +797,7 @@ export default function RecordSaleScreen() {
         useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
         useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id),
         useDebtStore.getState().hydrateCache(currentBusiness.id, currentBranch.id),
+        useDailyBalanceStore.getState().fetchDailyBalance(currentBusiness.id, currentBranch.id),
       ]);
 
       Toast.show({
@@ -786,13 +922,25 @@ export default function RecordSaleScreen() {
                 customerName={customerName}
                 customerPhone={customerPhone}
                 paymentMethod={paymentMethod}
+                paymentAccountId={paymentAccountId}
+                paymentAccounts={paymentAccounts}
+                cashAmount={cashAmount}
+                transferAmount={transferAmount}
                 saleNotes={saleNotes}
                 isEditing={isEditing}
                 savingSale={savingSale}
                 onCustomerNameChange={setCustomerName}
                 onCustomerPhoneChange={setCustomerPhone}
                 onAmountPaidChange={handleAmountPaidChange}
-                onPaymentMethodChange={setPaymentMethod}
+                onAmountPaidBlur={handleAmountPaidBlur}
+                onPaymentMethodChange={handlePaymentMethodChange}
+                onPaymentAccountChange={(accId, accName) => {
+                  setPaymentAccountId(accId);
+                  setBankName(accName);
+                }}
+                onAddNewPaymentAccount={() => setPaymentAccountModalVisible(true)}
+                onCashAmountChange={handleCashAmountChange}
+                onTransferAmountChange={handleTransferAmountChange}
                 onSaleNotesChange={setSaleNotes}
                 onSubmitSale={handleRecordSale}
               />
@@ -800,6 +948,26 @@ export default function RecordSaleScreen() {
           </View>
         )}
       </KeyboardAwareScrollView>
+
+      {currentBusiness ? (
+        <PaymentAccountModal
+          visible={paymentAccountModalVisible}
+          onClose={() => setPaymentAccountModalVisible(false)}
+          initialChannel={paymentMethod === 'pos' ? 'pos' : 'transfer'}
+          onSave={async (params) => {
+            const newAcc = await createPaymentAccount({
+              businessId: currentBusiness.id,
+              name: params.name,
+              accountNumber: params.accountNumber,
+              channel: params.channel,
+            });
+            if (newAcc) {
+              setPaymentAccountId(newAcc.id);
+              setBankName(newAcc.name);
+            }
+          }}
+        />
+      ) : null}
     </ScreenShell>
   );
 }

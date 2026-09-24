@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { router } from 'expo-router';
+import { cleanSaleNotes } from '@/lib/records';
 import { Button } from '@/components/ui';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { RevenueActivity } from '@/types';
@@ -81,17 +82,31 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
               <Feather name="credit-card" size={12} color={COLORS.text.muted} />
-              <Text style={styles.metaText}>{item.payment_method.replace('_', ' ').toUpperCase()}</Text>
+              <Text style={styles.metaText}>
+                {item.payment_method === 'mixed'
+                  ? 'MIXED'
+                  : item.bank_name
+                  ? `${item.payment_method.replace('_', ' ').toUpperCase()} \u00B7 ${item.bank_name}`
+                  : item.payment_method.replace('_', ' ').toUpperCase()}
+              </Text>
             </View>
+            {Boolean(item.discount_amount && item.discount_amount > 0) && (
+              <View style={styles.discountTag}>
+                <Feather name="tag" size={10} color={COLORS.warning} />
+                <Text style={styles.discountTagText}>
+                  -{formatCurrency(item.discount_amount!)} OFF
+                </Text>
+              </View>
+            )}
           </View>
 
           <Feather name={isExpanded ? 'chevron-up' : 'chevron-down'} size={16} color={COLORS.text.muted} />
         </View>
 
-        {item.notes ? (
+        {cleanSaleNotes(item.notes) ? (
           <View style={styles.notesContainer}>
             <Text style={styles.notesText} numberOfLines={1}>
-              "{item.notes}"
+              "{cleanSaleNotes(item.notes)}"
             </Text>
           </View>
         ) : null}
@@ -104,14 +119,44 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
               <Text style={styles.itemsHeaderText}>ITEMS SOLD</Text>
               {item.items.map((i, idx) => (
                 <View key={idx} style={styles.itemRow}>
-                  <Text style={styles.itemName}>
-                    {i.quantity}x {i.product_name}
-                  </Text>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={styles.itemName}>
+                      {i.quantity}x {i.product_name}
+                    </Text>
+                    {Boolean(i.discount_amount && i.discount_amount > 0) && (
+                      <Text style={styles.itemDiscountText}>
+                        Discount: -{formatCurrency(i.discount_amount!)}
+                      </Text>
+                    )}
+                  </View>
                   <Text style={styles.itemPrice}>
                     {formatCurrency(i.total_price)}
                   </Text>
                 </View>
               ))}
+
+              {Boolean(item.discount_amount && item.discount_amount > 0) && (
+                <View style={styles.totalsBreakdown}>
+                  <View style={styles.summaryLine}>
+                    <Text style={styles.summaryLabel}>Subtotal</Text>
+                    <Text style={styles.summaryValue}>
+                      {formatCurrency(item.subtotal && item.subtotal > 0 ? item.subtotal : (item.total_amount + item.discount_amount!))}
+                    </Text>
+                  </View>
+                  <View style={styles.summaryLine}>
+                    <Text style={[styles.summaryLabel, { color: COLORS.warning }]}>Discount</Text>
+                    <Text style={[styles.summaryValue, { color: COLORS.warning }]}>
+                      -{formatCurrency(item.discount_amount!)}
+                    </Text>
+                  </View>
+                  <View style={[styles.summaryLine, styles.summaryLineTotal]}>
+                    <Text style={styles.summaryLabelTotal}>Total Amount</Text>
+                    <Text style={styles.summaryValueTotal}>
+                      {formatCurrency(item.total_amount)}
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
           ) : (
             <Text style={[styles.notesText, { marginTop: 10 }]}>No item details available.</Text>
@@ -285,5 +330,64 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  discountTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.warningLight,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: RADIUS.xs,
+  },
+  discountTagText: {
+    fontSize: 10,
+    fontFamily: FONT.bold,
+    color: COLORS.warning,
+  },
+  itemDiscountText: {
+    fontSize: 11,
+    fontFamily: FONT.regular,
+    color: COLORS.warning,
+    marginTop: 2,
+  },
+  totalsBreakdown: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E8E4D9',
+    gap: 4,
+  },
+  summaryLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  summaryLabel: {
+    fontSize: 12,
+    fontFamily: FONT.medium,
+    color: COLORS.text.muted,
+  },
+  summaryValue: {
+    fontSize: 12,
+    fontFamily: FONT.medium,
+    color: COLORS.text.primary,
+  },
+  summaryLineTotal: {
+    marginTop: 4,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#E8E4D9',
+  },
+  summaryLabelTotal: {
+    fontSize: 13,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  summaryValueTotal: {
+    fontSize: 14,
+    fontFamily: FONT.bold,
+    color: COLORS.accent,
   },
 });
