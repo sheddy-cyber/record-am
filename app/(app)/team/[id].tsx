@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, Alert, ScrollView, StyleSheet } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -7,25 +7,45 @@ import { useBusinessStore } from '@/store/businessStore';
 import { Button } from '@/components/ui';
 import { InputField, SelectField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, FONT, RADIUS, SP } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { UserRole } from '@/types';
+import { fetchTeamStaffStats, StaffMemberStats } from '@/lib/teamStats';
 import Toast from 'react-native-toast-message';
+
+const formatCurrency = (value: number) =>
+  `${CURRENCY_SYMBOL}${Number(value || 0).toLocaleString('en-NG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
 
 export default function EditTeamMemberScreen() {
   const { id, userId, name, email, phone, role: initialRole } = useLocalSearchParams<{ 
     id: string; 
     userId: string;
     name: string; 
-    email: string;
+    email: string; 
     phone: string;
     role: string;
   }>();
   
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
   const [role, setRole] = useState<UserRole>((initialRole as UserRole) || 'cashier');
   const [editedName, setEditedName] = useState(name || '');
   const [editedPhone, setEditedPhone] = useState(phone || '');
   const [saving, setSaving] = useState(false);
+  const [stats, setStats] = useState<StaffMemberStats | null>(null);
   const { updateTeamMemberRole, updateTeamMemberProfile, removeTeamMember } = useBusinessStore();
+
+  useEffect(() => {
+    if (!currentBusiness?.id || !userId) return;
+    fetchTeamStaffStats(currentBusiness.id, 'all')
+      .then((res) => {
+        if (res.memberStats[userId]) {
+          setStats(res.memberStats[userId]);
+        }
+      })
+      .catch((err) => console.warn('[team-id] Failed to load staff stats:', err));
+  }, [currentBusiness?.id, userId]);
 
   const handleSave = async () => {
     if (!id || !userId) return;
@@ -84,6 +104,53 @@ export default function EditTeamMemberScreen() {
       />
 
       <ScrollView contentContainerStyle={{ padding: SP.page, gap: 24 }}>
+        {stats && (
+          <View style={styles.card}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <Feather name="bar-chart-2" size={16} color={COLORS.ink} />
+              <Text style={[styles.cardTitle, { marginBottom: 0 }]}>Activity & Performance</Text>
+            </View>
+
+            <View style={styles.statsGrid}>
+              <View style={styles.statBox}>
+                <Text style={styles.statBoxLabel}>GOODS SOLD</Text>
+                <Text style={styles.statBoxValue}>{formatCurrency(stats.salesWorth)}</Text>
+                <Text style={styles.statBoxSub}>
+                  {stats.salesCount} {stats.salesCount === 1 ? 'sale' : 'sales'}
+                </Text>
+              </View>
+
+              <View style={styles.statBox}>
+                <Text style={styles.statBoxLabel}>GOODS RESTOCKED</Text>
+                <Text style={styles.statBoxValue}>{formatCurrency(stats.purchasesWorth)}</Text>
+                <Text style={styles.statBoxSub}>
+                  {stats.purchasesCount} {stats.purchasesCount === 1 ? 'entry' : 'entries'}
+                </Text>
+              </View>
+
+              <View style={styles.statBox}>
+                <Text style={styles.statBoxLabel}>CASH COLLECTED</Text>
+                <Text style={[styles.statBoxValue, { color: COLORS.success }]}>
+                  {formatCurrency(stats.paidAmount)}
+                </Text>
+                <Text style={styles.statBoxSub}>
+                  {stats.owedAmount > 0
+                    ? `Owes ${formatCurrency(stats.owedAmount)}`
+                    : 'Cleared'}
+                </Text>
+              </View>
+
+              {stats.expensesAmount > 0 && (
+                <View style={styles.statBox}>
+                  <Text style={styles.statBoxLabel}>EXPENSES RECORDED</Text>
+                  <Text style={styles.statBoxValue}>{formatCurrency(stats.expensesAmount)}</Text>
+                  <Text style={styles.statBoxSub}>{stats.expensesCount} logged</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Profile Information</Text>
           <View style={{ gap: 16 }}>
@@ -196,5 +263,36 @@ const styles = StyleSheet.create({
     color: COLORS.danger,
     marginBottom: 16,
     lineHeight: 18,
-  }
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  statBox: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: COLORS.background,
+    borderRadius: RADIUS.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 2,
+  },
+  statBoxLabel: {
+    fontSize: 10,
+    fontFamily: FONT.bold,
+    color: COLORS.text.muted,
+    letterSpacing: 0.5,
+  },
+  statBoxValue: {
+    fontSize: 14,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  statBoxSub: {
+    fontSize: 11,
+    fontFamily: FONT.regular,
+    color: COLORS.text.muted,
+  },
 });

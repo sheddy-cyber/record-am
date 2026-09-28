@@ -1,15 +1,38 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  RefreshControl,
+  TouchableOpacity,
+  Alert,
+  StyleSheet,
+  LayoutAnimation,
+  Platform,
+  UIManager,
+} from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
+import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { LoadingScreen } from '@/components/ui';
+import { LoadingScreen, Button } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, FONT, RADIUS, SP } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { BusinessMember, UserProfile } from '@/types';
+import {
+  fetchTeamStaffStats,
+  StaffMemberStats,
+  StaffStatsPeriod,
+  TeamOverviewStats,
+  createEmptyStaffStats,
+} from '@/lib/teamStats';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type TeamMember = BusinessMember & { user_profiles: UserProfile };
 
@@ -27,55 +50,120 @@ const ROLE_LABELS: Record<string, string> = {
   auditor: 'Auditor',
 };
 
+const PERIODS: { key: StaffStatsPeriod; label: string }[] = [
+  { key: 'all', label: 'All Time' },
+  { key: 'month', label: 'This Month' },
+  { key: 'today', label: 'Today' },
+];
+
+const formatCurrency = (value: number) =>
+  `${CURRENCY_SYMBOL}${Number(value || 0).toLocaleString('en-NG', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
+
+function formatLastActive(dateStr?: string) {
+  if (!dateStr) return 'No recorded activity yet';
+  try {
+    const d = new Date(dateStr);
+    return `Last active ${format(d, 'MMM d, h:mm a')}`;
+  } catch {
+    return 'Recent activity';
+  }
+}
+
 export default function TeamScreen() {
   const insets = useSafeAreaInsets();
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const currentBranch = useAuthStore((s) => s.currentBranch);
   const currentUserRole = useAuthStore((s) => s.userRole);
   const { fetchTeamMembers } = useBusinessStore();
 
   const [members, setMembers] = useState<TeamMember[]>([]);
+  const [period, setPeriod] = useState<StaffStatsPeriod>('all');
+  const [memberStats, setMemberStats] = useState<Record<string, StaffMemberStats>>({});
+  const [overview, setOverview] = useState<TeamOverviewStats | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [showInviteId, setShowInviteId] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadMembers = useCallback(async () => {
-    if (!currentBusiness) return;
-    try {
-      const data = await fetchTeamMembers(currentBusiness.id);
-      // Put owner at the top
-      data.sort((a, b) => (a.role === 'owner' ? -1 : 1));
-      setMembers(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentBusiness, fetchTeamMembers]);
+  const loadData = useCallback(
+    async (selectedPeriod: StaffStatsPeriod = period) => {
+      if (!currentBusiness) return;
+      try {
+        const [membersData, statsResult] = await Promise.all([
+          fetchTeamMembers(currentBusiness.id),
+          fetchTeamStaffStats(currentBusiness.id, selectedPeriod, currentBranch?.id),
+        ]);
+
+        membersData.sort((a, b) => (a.role === 'owner' ? -1 : 1));
+        setMembers(membersData);
+        setMemberStats(statsResult.memberStats);
+        setOverview(statsResult.overview);
+      } catch (err) {
+        console.error('[team] Error loading team data:', err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [currentBusiness, currentBranch?.id, fetchTeamMembers, period],
+  );
 
   useFocusEffect(
     useCallback(() => {
-      loadMembers();
-    }, [loadMembers])
+      loadData();
+    }, [loadData]),
   );
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadMembers();
+    await loadData();
     setRefreshing(false);
   };
 
-  const handleMemberPress = (member: TeamMember) => {
+  const handlePeriodChange = async (newPeriod: StaffStatsPeriod) => {
+    setPeriod(newPeriod);
+    if (!currentBusiness) return;
+    try {
+      const statsResult = await fetchTeamStaffStats(
+        currentBusiness.id,
+        newPeriod,
+        currentBranch?.id,
+      );
+      setMemberStats(statsResult.memberStats);
+      setOverview(statsResult.overview);
+    } catch (err) {
+      console.warn('[team] Error changing stats period:', err);
+    }
+  };
+
+  const toggleExpand = (memberId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(memberId)) {
+        next.delete(memberId);
+      } else {
+        next.add(memberId);
+      }
+      return next;
+    });
+  };
+
+  const handleManageMember = (member: TeamMember) => {
     if (currentUserRole !== 'owner' && currentUserRole !== 'manager') return;
-    if (member.role === 'owner') return; // Cannot edit owner
+    if (member.role === 'owner') return;
 
     router.push({
       pathname: '/(app)/team/[id]',
-      params: { 
-        id: member.id, 
+      params: {
+        id: member.id,
         userId: member.user_id,
         name: member.user_profiles?.full_name || 'Unnamed Staff',
         email: member.user_profiles?.email || '',
         phone: member.user_profiles?.phone || '',
-        role: member.role
+        role: member.role,
       },
     });
   };
@@ -88,93 +176,328 @@ export default function TeamScreen() {
   };
 
   if (loading && members.length === 0) {
-    return <LoadingScreen message="Loading team..." />;
+    return <LoadingScreen message="Loading team directory..." />;
   }
+
+  const topSellerMember = overview?.topSellerUserId
+    ? members.find((m) => m.user_id === overview.topSellerUserId)
+    : null;
 
   return (
     <ScreenShell backgroundColor={COLORS.background} statusBarStyle="dark">
       <ScreenHeader
-        title="Team Directory"
+        title="Team & Staff"
         left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
       />
 
       <ScrollView
-        contentContainerStyle={{ padding: SP.page, paddingBottom: insets.bottom + 32 }}
+        contentContainerStyle={{ padding: SP.page, paddingBottom: insets.bottom + 32, gap: 18 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={COLORS.accent} />
         }
       >
-        <View style={styles.businessIdContainer}>
-          <View style={styles.businessIdHeader}>
-            <Feather name="shield" size={18} color={COLORS.text.secondary} />
-            <Text style={styles.businessIdTitle}>Staff Invitation ID</Text>
+        {/* ── Compact Staff Invitation ID Bar ─────────────────────────────── */}
+        <View style={styles.inviteContainer}>
+          <TouchableOpacity
+            style={styles.inviteHeader}
+            onPress={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              setShowInviteId(!showInviteId);
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Feather name="shield" size={15} color={COLORS.ink} />
+              <Text style={styles.inviteTitle}>Staff Invitation ID</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.inviteToggleText}>
+                {showInviteId ? 'Hide' : 'Show ID'}
+              </Text>
+              <Feather name={showInviteId ? 'chevron-up' : 'chevron-down'} size={14} color={COLORS.text.muted} />
+            </View>
+          </TouchableOpacity>
+
+          {showInviteId && (
+            <View style={styles.inviteExpanded}>
+              <View style={styles.inviteRow}>
+                <Text style={styles.inviteValue} numberOfLines={1} ellipsizeMode="middle">
+                  {currentBusiness?.id}
+                </Text>
+                <TouchableOpacity onPress={handleCopyBusinessId} style={styles.copyButton}>
+                  <Text style={styles.copyButtonText}>Copy</Text>
+                  <Feather name="copy" size={13} color={COLORS.ink} />
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.inviteHint}>
+                Give this ID to staff members so they can connect to your business workspace.
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── Period Filter Pills ─────────────────────────────────────────── */}
+        <View style={styles.periodRow}>
+          {PERIODS.map((p) => {
+            const active = period === p.key;
+            return (
+              <TouchableOpacity
+                key={p.key}
+                onPress={() => handlePeriodChange(p.key)}
+                activeOpacity={0.7}
+                style={[styles.periodPill, active && styles.periodPillActive]}
+              >
+                <Text style={[styles.periodText, active && styles.periodTextActive]}>
+                  {p.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── Team Performance Overview Card ─────────────────────────────── */}
+        {overview && (
+          <View style={styles.overviewCard}>
+            <View style={styles.overviewHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Feather name="trending-up" size={16} color={COLORS.ink} />
+                <Text style={styles.overviewTitle}>Team Overview</Text>
+              </View>
+              {topSellerMember && overview.topSellerWorth > 0 && (
+                <View style={styles.topSellerBadge}>
+                  <Feather name="award" size={12} color="#b45309" />
+                  <Text style={styles.topSellerBadgeText} numberOfLines={1}>
+                    Top: {topSellerMember.user_profiles?.full_name || 'Staff'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.overviewStatsGrid}>
+              <View style={styles.overviewStatCol}>
+                <Text style={styles.overviewStatLabel}>GOODS SOLD</Text>
+                <Text style={styles.overviewStatValue}>
+                  {formatCurrency(overview.totalSalesWorth)}
+                </Text>
+                <Text style={styles.overviewStatSub}>
+                  {overview.totalSalesCount} {overview.totalSalesCount === 1 ? 'sale' : 'sales'}
+                </Text>
+              </View>
+
+              <View style={styles.overviewDivider} />
+
+              <View style={styles.overviewStatCol}>
+                <Text style={styles.overviewStatLabel}>GOODS RESTOCKED</Text>
+                <Text style={styles.overviewStatValue}>
+                  {formatCurrency(overview.totalPurchasesWorth)}
+                </Text>
+                <Text style={styles.overviewStatSub}>
+                  {overview.totalPurchasesCount} {overview.totalPurchasesCount === 1 ? 'entry' : 'entries'}
+                </Text>
+              </View>
+            </View>
           </View>
-          <View style={styles.businessIdRow}>
-            <Text style={styles.businessIdValue} numberOfLines={1} ellipsizeMode="middle">
-              {currentBusiness?.id}
-            </Text>
-            <TouchableOpacity onPress={handleCopyBusinessId} style={styles.copyButton}>
-              <Text style={styles.copyButtonText}>Copy ID</Text>
-              <Feather name="copy" size={14} color={COLORS.primary} />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.businessIdHint}>
-            Share this ID with your staff so they can join your business workspace.
+        )}
+
+        {/* ── Section Title ──────────────────────────────────────────────── */}
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>
+            Staff Members ({members.length})
+          </Text>
+          <Text style={styles.sectionSubtitle}>
+            {period === 'today' ? 'Today’s Stats' : period === 'month' ? 'This Month’s Stats' : 'All-Time Stats'}
           </Text>
         </View>
 
-        <Text style={styles.sectionTitle}>Members ({members.length})</Text>
-
-        <View style={styles.listContainer}>
-          {members.map((member, index) => {
-            const isLast = index === members.length - 1;
+        {/* ── Member List with Rich Activity & Worth Stats ─────────────────── */}
+        <View style={{ gap: 14 }}>
+          {members.map((member) => {
             const profile = member.user_profiles || {};
             const initials = (profile.full_name || 'U').charAt(0).toUpperCase();
-            
+            const stats = memberStats[member.user_id] || createEmptyStaffStats(member.user_id);
+            const isTopSeller =
+              overview?.topSellerUserId === member.user_id && stats.salesWorth > 0;
+            const isExpanded = expandedIds.has(member.id);
+            const canManage =
+              (currentUserRole === 'owner' || currentUserRole === 'manager') &&
+              member.role !== 'owner';
+
             return (
-              <TouchableOpacity
-                key={member.id}
-                onPress={() => handleMemberPress(member)}
-                disabled={currentUserRole !== 'owner' && currentUserRole !== 'manager'}
-                style={[styles.memberRow, !isLast && styles.borderBottom]}
-              >
-                <View style={styles.avatar}>
-                  <Text style={styles.avatarText}>{initials}</Text>
+              <View key={member.id} style={styles.memberCard}>
+                {/* Member Header / Top Row */}
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => toggleExpand(member.id)}
+                  style={styles.cardHeaderPressable}
+                >
+                  <View style={styles.avatar}>
+                    <Text style={styles.avatarText}>{initials}</Text>
+                  </View>
+
+                  <View style={styles.memberInfo}>
+                    <View style={styles.nameRow}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, paddingRight: 6 }}>
+                        <Text style={styles.memberName} numberOfLines={1}>
+                          {profile.full_name || 'Unnamed Staff'}
+                        </Text>
+                        {isTopSeller && (
+                          <View style={styles.topSellerTag}>
+                            <Feather name="award" size={10} color="#b45309" />
+                            <Text style={styles.topSellerTagText}>Top</Text>
+                          </View>
+                        )}
+                      </View>
+                      <View
+                        style={[
+                          styles.roleBadge,
+                          { backgroundColor: ROLE_COLORS[member.role] + '15' },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.roleText,
+                            { color: ROLE_COLORS[member.role] },
+                          ]}
+                        >
+                          {ROLE_LABELS[member.role] || member.role}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {profile.phone ? (
+                      <View style={styles.contactItem}>
+                        <Feather name="phone" size={11} color={COLORS.text.muted} />
+                        <Text style={styles.contactText}>{profile.phone}</Text>
+                      </View>
+                    ) : null}
+
+                    {profile.email ? (
+                      <View style={styles.contactItem}>
+                        <Feather name="mail" size={11} color={COLORS.text.muted} />
+                        <Text style={styles.contactText} numberOfLines={1}>
+                          {profile.email}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  <Feather
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={COLORS.text.muted}
+                    style={{ marginLeft: 4 }}
+                  />
+                </TouchableOpacity>
+
+                {/* ── Primary Activity Statistics Row ────────────────────── */}
+                <View style={styles.statsRow}>
+                  {/* Goods Sold */}
+                  <View style={styles.statChip}>
+                    <View style={styles.statChipHeader}>
+                      <Feather name="shopping-bag" size={12} color={COLORS.ink} />
+                      <Text style={styles.statChipTitle}>Goods Sold</Text>
+                    </View>
+                    <Text style={styles.statChipAmount} numberOfLines={1}>
+                      {formatCurrency(stats.salesWorth)}
+                    </Text>
+                    <Text style={styles.statChipSub}>
+                      {stats.salesCount} {stats.salesCount === 1 ? 'sale' : 'sales'}
+                    </Text>
+                  </View>
+
+                  {/* Stock Restocked */}
+                  <View style={styles.statChip}>
+                    <View style={styles.statChipHeader}>
+                      <Feather name="package" size={12} color={COLORS.text.secondary} />
+                      <Text style={styles.statChipTitle}>Restocked</Text>
+                    </View>
+                    <Text style={styles.statChipAmount} numberOfLines={1}>
+                      {formatCurrency(stats.purchasesWorth)}
+                    </Text>
+                    <Text style={styles.statChipSub}>
+                      {stats.purchasesCount} {stats.purchasesCount === 1 ? 'restock' : 'restocks'}
+                    </Text>
+                  </View>
+
+                  {/* Cash Collected */}
+                  <View style={styles.statChip}>
+                    <View style={styles.statChipHeader}>
+                      <Feather name="check-circle" size={12} color={COLORS.success} />
+                      <Text style={styles.statChipTitle}>Collected</Text>
+                    </View>
+                    <Text style={[styles.statChipAmount, { color: COLORS.success }]} numberOfLines={1}>
+                      {formatCurrency(stats.paidAmount)}
+                    </Text>
+                    <Text style={styles.statChipSub} numberOfLines={1}>
+                      {stats.owedAmount > 0
+                        ? `Owed ${formatCurrency(stats.owedAmount)}`
+                        : 'Cleared'}
+                    </Text>
+                  </View>
                 </View>
 
-                <View style={styles.memberInfo}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.memberName}>
-                      {profile.full_name || 'Unnamed Staff'}
-                    </Text>
-                    <View style={[styles.roleBadge, { backgroundColor: ROLE_COLORS[member.role] + '15' }]}>
-                      <Text style={[styles.roleText, { color: ROLE_COLORS[member.role] }]}>
-                        {ROLE_LABELS[member.role] || member.role}
+                {/* ── Expanded Secondary Stats & Details ─────────────────── */}
+                {isExpanded && (
+                  <View style={styles.expandedDetails}>
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Average Sale Size:</Text>
+                      <Text style={styles.detailValue}>
+                        {stats.salesCount > 0
+                          ? formatCurrency(stats.salesWorth / stats.salesCount)
+                          : '₦0'}
                       </Text>
                     </View>
+
+                    {stats.owedAmount > 0 && (
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Unsettled Credit Given:</Text>
+                        <Text style={[styles.detailValue, { color: COLORS.danger }]}>
+                          {formatCurrency(stats.owedAmount)}
+                        </Text>
+                      </View>
+                    )}
+
+                    {stats.expensesAmount > 0 && (
+                      <View style={styles.detailRow}>
+                        <Text style={styles.detailLabel}>Expenses Logged:</Text>
+                        <Text style={styles.detailValue}>
+                          {formatCurrency(stats.expensesAmount)} ({stats.expensesCount} logged)
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Recent Activity:</Text>
+                      <Text style={styles.detailSubValue}>
+                        {formatLastActive(stats.lastActiveAt)}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Member Since:</Text>
+                      <Text style={styles.detailSubValue}>
+                        {new Date(member.joined_at || member.invited_at).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </Text>
+                    </View>
+
+                    {canManage && (
+                      <View style={{ marginTop: 12 }}>
+                        <Button
+                          title="Manage Staff & Role"
+                          variant="secondary"
+                          size="sm"
+                          icon="settings"
+                          onPress={() => handleManageMember(member)}
+                        />
+                      </View>
+                    )}
                   </View>
-                  
-                  {profile.phone ? (
-                    <Text style={styles.contactText}>
-                      <Feather name="phone" size={12} /> {profile.phone}
-                    </Text>
-                  ) : null}
-                  
-                  {profile.email ? (
-                    <Text style={styles.contactText}>
-                      <Feather name="mail" size={12} /> {profile.email}
-                    </Text>
-                  ) : null}
-
-                  <Text style={styles.joinedText}>
-                    Joined {new Date(member.joined_at || member.invited_at).toLocaleDateString()}
-                  </Text>
-                </View>
-
-                {member.role !== 'owner' && (currentUserRole === 'owner' || currentUserRole === 'manager') && (
-                  <Feather name="chevron-right" size={20} color={COLORS.border} />
                 )}
-              </TouchableOpacity>
+              </View>
             );
           })}
         </View>
@@ -184,41 +507,52 @@ export default function TeamScreen() {
 }
 
 const styles = StyleSheet.create({
-  businessIdContainer: {
+  inviteContainer: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
-    padding: 20,
-    marginBottom: 24,
     borderWidth: 1,
     borderColor: COLORS.border,
+    overflow: 'hidden',
   },
-  businessIdHeader: {
+  inviteHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
   },
-  businessIdTitle: {
-    fontSize: 14,
+  inviteTitle: {
+    fontSize: 13,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+    letterSpacing: 0.3,
+  },
+  inviteToggleText: {
+    fontSize: 12,
     fontFamily: FONT.medium,
-    color: COLORS.text.secondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    color: COLORS.text.muted,
   },
-  businessIdRow: {
+  inviteExpanded: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: 12,
+    gap: 8,
+  },
+  inviteRow: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.background,
     borderRadius: RADIUS.md,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderWidth: 1,
     borderColor: COLORS.border,
-    justifyContent: 'space-between',
-    gap: 16,
+    gap: 12,
   },
-  businessIdValue: {
-    fontSize: 15,
+  inviteValue: {
+    fontSize: 13,
     fontFamily: FONT.regular,
     color: COLORS.text.primary,
     flex: 1,
@@ -226,66 +560,176 @@ const styles = StyleSheet.create({
   copyButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.primary + '15',
-    paddingHorizontal: 12,
+    gap: 4,
+    backgroundColor: COLORS.surface2,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: RADIUS.sm,
   },
   copyButtonText: {
-    fontSize: 13,
-    fontFamily: FONT.medium,
-    color: COLORS.primary,
+    fontSize: 12,
+    fontFamily: FONT.bold,
+    color: COLORS.ink,
   },
-  businessIdHint: {
-    fontSize: 13,
+  inviteHint: {
+    fontSize: 11,
     fontFamily: FONT.regular,
     color: COLORS.text.muted,
-    marginTop: 12,
-    lineHeight: 18,
+    lineHeight: 16,
   },
-  sectionTitle: {
-    fontSize: 18,
+
+  // ── Period Pills ──────────────────────────────────────────
+  periodRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  periodPill: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: COLORS.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  periodPillActive: {
+    borderColor: COLORS.ink,
+    backgroundColor: COLORS.ink,
+  },
+  periodText: {
+    fontSize: 12,
+    fontFamily: FONT.medium,
+    color: COLORS.text.secondary,
+  },
+  periodTextActive: {
+    color: COLORS.text.inverse,
+    fontFamily: FONT.bold,
+  },
+
+  // ── Overview Card ─────────────────────────────────────────
+  overviewCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 16,
+  },
+  overviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  overviewTitle: {
+    fontSize: 14,
     fontFamily: FONT.bold,
     color: COLORS.text.primary,
-    marginBottom: 16,
-    marginLeft: 4,
   },
-  listContainer: {
-    backgroundColor: COLORS.surface,
+  topSellerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: RADIUS.full,
+    maxWidth: 160,
+  },
+  topSellerBadgeText: {
+    fontSize: 11,
+    fontFamily: FONT.bold,
+    color: '#b45309',
+  },
+  overviewStatsGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
     borderRadius: RADIUS.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  overviewStatCol: {
+    flex: 1,
+    gap: 3,
+  },
+  overviewDivider: {
+    width: 1,
+    height: '80%',
+    backgroundColor: COLORS.border,
+    marginHorizontal: 14,
+  },
+  overviewStatLabel: {
+    fontSize: 10,
+    fontFamily: FONT.bold,
+    color: COLORS.text.muted,
+    letterSpacing: 0.8,
+  },
+  overviewStatValue: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  overviewStatSub: {
+    fontSize: 11,
+    fontFamily: FONT.regular,
+    color: COLORS.text.secondary,
+  },
+
+  // ── Member Section ────────────────────────────────────────
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginTop: 4,
+    paddingHorizontal: 2,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    fontFamily: FONT.medium,
+    color: COLORS.text.muted,
+  },
+
+  // ── Member Card ───────────────────────────────────────────
+  memberCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     borderColor: COLORS.border,
     overflow: 'hidden',
-  },
-  memberRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
     padding: 16,
-    gap: 16,
+    gap: 14,
   },
-  borderBottom: {
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+  cardHeaderPressable: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: COLORS.background,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.surface2,
     borderWidth: 1,
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: FONT.bold,
-    color: COLORS.text.secondary,
+    color: COLORS.ink,
   },
   memberInfo: {
     flex: 1,
-    gap: 4,
+    gap: 3,
   },
   nameRow: {
     flexDirection: 'row',
@@ -294,9 +738,23 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   memberName: {
-    fontSize: 16,
-    fontFamily: FONT.medium,
+    fontSize: 15,
+    fontFamily: FONT.bold,
     color: COLORS.text.primary,
+  },
+  topSellerTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: RADIUS.xs,
+  },
+  topSellerTagText: {
+    fontSize: 9,
+    fontFamily: FONT.bold,
+    color: '#b45309',
   },
   roleBadge: {
     paddingHorizontal: 8,
@@ -304,19 +762,82 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
   },
   roleText: {
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: FONT.bold,
     textTransform: 'uppercase',
   },
+  contactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   contactText: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: FONT.regular,
     color: COLORS.text.secondary,
   },
-  joinedText: {
+
+  // ── Stats Row ─────────────────────────────────────────────
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  statChip: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderRadius: RADIUS.md,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 2,
+  },
+  statChipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  statChipTitle: {
+    fontSize: 10,
+    fontFamily: FONT.medium,
+    color: COLORS.text.muted,
+  },
+  statChipAmount: {
+    fontSize: 13,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  statChipSub: {
+    fontSize: 10,
+    fontFamily: FONT.regular,
+    color: COLORS.text.muted,
+  },
+
+  // ── Expanded Details ──────────────────────────────────────
+  expandedDetails: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingTop: 12,
+    gap: 8,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailLabel: {
+    fontSize: 12,
+    fontFamily: FONT.medium,
+    color: COLORS.text.secondary,
+  },
+  detailValue: {
+    fontSize: 13,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  detailSubValue: {
     fontSize: 12,
     fontFamily: FONT.regular,
     color: COLORS.text.muted,
-    marginTop: 2,
-  }
+  },
 });
