@@ -184,8 +184,8 @@ function DebtsScreen() {
             paddingHorizontal: SP.page,
             paddingBottom: insets.bottom + 96,
             flexGrow: 1,
-            gap: 28,
           }}
+          ItemSeparatorComponent={() => <View style={{ height: 20 }} />}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -198,7 +198,7 @@ function DebtsScreen() {
             />
           }
           ListHeaderComponent={
-            <View style={{ gap: 14, paddingTop: SP.page, marginBottom: 4 }}>
+            <View style={{ gap: 10, paddingTop: SP.page, marginBottom: 16 }}>
               {/* ── Search Bar (always visible at top) ──────────────────────── */}
               <View style={styles.searchBar}>
                 <Feather name="search" size={15} color={COLORS.text.muted} />
