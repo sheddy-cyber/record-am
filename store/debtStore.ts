@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { CustomerDebt } from '@/types';
-import { cacheCustomerDebts, readCachedCustomerDebts } from '@/lib/offlineStore';
+import { cacheCustomerDebts, readCachedCustomerDebts, removeCachedRow } from '@/lib/offlineStore';
+import { deleteCustomerDebtRecord } from '@/lib/recordDeletion';
 import { hasArrayChanged } from '@/lib/storeUtils';
 
 interface DebtState {
@@ -12,6 +13,7 @@ interface DebtState {
   hydrateCache: (businessId: string, branchId: string) => Promise<void>;
   fetchDebts: (businessId: string, branchId: string) => Promise<void>;
   removeDebtBySaleId: (saleId: string, businessId: string, branchId: string) => Promise<void>;
+  deleteDebt: (debtId: string, businessId: string, branchId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -109,6 +111,23 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       const nextCache = cached.filter((d) => d.sale_id !== saleId);
       await cacheCustomerDebts(businessId, branchId, nextCache);
     } catch {}
+  },
+
+  deleteDebt: async (debtId, businessId, branchId) => {
+    // Optimistically remove from in-memory state
+    const next = get().debts.filter((d) => d.id !== debtId);
+    set({ debts: next });
+
+    // Evict from offline cache
+    try {
+      const cached = await readCachedCustomerDebts(businessId, branchId);
+      const nextCache = cached.filter((d) => d.id !== debtId);
+      await cacheCustomerDebts(businessId, branchId, nextCache);
+      await removeCachedRow({ businessId, branchId }, 'customer_debts', debtId);
+    } catch {}
+
+    // Delete from Supabase
+    await deleteCustomerDebtRecord(debtId);
   },
 
   reset: () =>

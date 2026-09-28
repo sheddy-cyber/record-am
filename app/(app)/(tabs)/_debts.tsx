@@ -16,9 +16,13 @@ import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { differenceInDays, format } from 'date-fns';
+import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useDebtStore } from '@/store/debtStore';
+import { useDashboardStore } from '@/store/dashboardStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
+import { decrementPersistedDashboardSales } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDebtReminderViaWhatsApp } from '@/lib/reports';
 import { Button, EmptyState } from '@/components/ui';
@@ -161,6 +165,38 @@ function DebtsScreen() {
       (a, b) => Number(b.balance || 0) - Number(a.balance || 0),
     );
   }, [debts, searchQuery]);
+
+  const handleDeleteDebt = useCallback(
+    (debt: CustomerDebt) => {
+      Alert.alert(
+        'Delete Debt',
+        `Are you sure you want to delete this debt for ${debt.customer_name} (${formatCurrency(debt.balance)})? This action cannot be undone. The corresponding sale will not be affected.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                if (businessId && branchId) {
+                  const balance = Number(debt.balance || 0);
+                  await useDebtStore.getState().deleteDebt(debt.id, businessId, branchId);
+                  await decrementPersistedDashboardSales(businessId, branchId, 0, balance);
+                  useDashboardStore.getState().decrementTodaySales(0, balance);
+                  void useDashboardStore.getState().refreshFromCache(businessId, branchId);
+                  void useAnalyticsStore.getState().refreshFromCache(businessId, branchId);
+                }
+                Toast.show({ type: 'success', text1: 'Debt deleted' });
+              } catch (err: any) {
+                Alert.alert('Unable to delete debt', err.message ?? 'Please try again.');
+              }
+            },
+          },
+        ],
+      );
+    },
+    [businessId, branchId],
+  );
 
   return (
     <SwipeableTabScreen name="debts">
@@ -388,7 +424,7 @@ function DebtsScreen() {
                         params: { debtId: item.id },
                       })
                     }
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, paddingHorizontal: 8 }}
                   />
                   <Button
                     title="Send Reminder"
@@ -411,8 +447,17 @@ function DebtsScreen() {
                         item.due_date,
                       );
                     }}
-                    style={{ flex: 1 }}
+                    style={{ flex: 1, paddingHorizontal: 8 }}
                   />
+                  <TouchableOpacity
+                    onPress={() => handleDeleteDebt(item)}
+                    style={styles.deleteActionButton}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete debt"
+                  >
+                    <Feather name="trash-2" size={16} color={COLORS.danger} />
+                  </TouchableOpacity>
                 </View>
               </View>
             );
@@ -838,8 +883,19 @@ const styles = StyleSheet.create({
   // ── Actions ───────────────────────────────────────────────
   actionsRow: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+    gap: 8,
     marginTop: 2,
+  },
+  deleteActionButton: {
+    width: 38,
+    height: 38,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    backgroundColor: COLORS.dangerLight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // ── Filter Empty State ────────────────────────────────────
