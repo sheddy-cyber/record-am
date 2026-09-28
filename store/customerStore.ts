@@ -32,6 +32,13 @@ interface CustomerState {
   createCustomer: (data: Partial<Customer>) => Promise<Customer | null>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
   deleteCustomer: (id: string) => Promise<void>;
+  removeDebt: (params: {
+    debtId: string;
+    customerId?: string;
+    customerName?: string;
+    balance: number;
+    businessId?: string;
+  }) => Promise<void>;
   setSelectedCustomer: (customer: CustomerWithStats | null) => void;
   reset: () => void;
 }
@@ -305,6 +312,71 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       ]);
     } catch (err: any) {
       set({ error: err.message });
+    }
+  },
+
+  removeDebt: async ({
+    debtId,
+    customerId,
+    customerName,
+    balance,
+    businessId,
+  }) => {
+    set((state) => {
+      const nextCustomerDebts = state.customerDebts.filter(
+        (d) => d.id !== debtId && d.sale_id !== debtId,
+      );
+
+      const nextCustomers = state.customers.map((c) => {
+        const isMatch =
+          (customerId && c.id === customerId) ||
+          (customerName && c.name.trim().toLowerCase() === customerName.trim().toLowerCase());
+        if (!isMatch) return c;
+        const newDebt = Math.max(0, Number((c.outstanding_debt - balance).toFixed(2)));
+        return {
+          ...c,
+          outstanding_debt: newDebt,
+        };
+      });
+
+      let nextSelected = state.selectedCustomer;
+      if (nextSelected) {
+        const isMatch =
+          (customerId && nextSelected.id === customerId) ||
+          (customerName && nextSelected.name.trim().toLowerCase() === customerName.trim().toLowerCase());
+        if (isMatch) {
+          nextSelected = {
+            ...nextSelected,
+            outstanding_debt: Math.max(0, Number((nextSelected.outstanding_debt - balance).toFixed(2))),
+          };
+        }
+      }
+
+      return {
+        customerDebts: nextCustomerDebts,
+        customers: nextCustomers,
+        selectedCustomer: nextSelected,
+      };
+    });
+
+    if (businessId) {
+      try {
+        const cached = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
+        const updated = cached.map((c) => {
+          const isMatch =
+            (customerId && c.id === customerId) ||
+            (customerName && c.name.trim().toLowerCase() === customerName.trim().toLowerCase());
+          if (!isMatch) return c;
+          const newDebt = Math.max(0, Number((c.outstanding_debt - balance).toFixed(2)));
+          return {
+            ...c,
+            outstanding_debt: newDebt,
+          };
+        });
+        await upsertCachedRows({ businessId }, 'customers', updated);
+      } catch (_) {}
+
+      void get().fetchCustomers(businessId);
     }
   },
 

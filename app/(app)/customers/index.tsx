@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useDeferredValue, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { Badge, EmptyState, LoadingScreen } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
@@ -30,6 +31,32 @@ export default function CustomersScreen() {
     } catch (_) {}
     setRefreshing(false);
   }, [currentBusiness?.id, fetchCustomers]);
+
+  useEffect(() => {
+    if (currentBusiness?.id) {
+      void fetchCustomers(currentBusiness.id);
+    }
+  }, [currentBusiness?.id, fetchCustomers]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (currentBusiness?.id) {
+        void fetchCustomers(currentBusiness.id);
+      }
+    }, [currentBusiness?.id, fetchCustomers]),
+  );
+
+  useRealtimeRefresh({
+    channelName: `customers-screen-${currentBusiness?.id ?? 'unknown'}`,
+    enabled: Boolean(currentBusiness?.id),
+    watch: [currentBusiness?.id],
+    tables: [
+      { table: 'customers', filter: `business_id=eq.${currentBusiness?.id}` },
+      { table: 'customer_debts', filter: `business_id=eq.${currentBusiness?.id}` },
+      { table: 'sales', filter: `business_id=eq.${currentBusiness?.id}` },
+    ],
+    onRefresh: onRefresh,
+  });
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();

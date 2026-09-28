@@ -18,6 +18,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDebtStore } from '@/store/debtStore';
+import { useCustomerStore } from '@/store/customerStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
@@ -224,6 +225,14 @@ function SalesScreen() {
                 // Remove linked debt from the debts page immediately
                 if (businessId && branchId) {
                   await useDebtStore.getState().removeDebtBySaleId(saleId, businessId, branchId);
+                  if (owedAmount > 0) {
+                    await useCustomerStore.getState().removeDebt({
+                      debtId: saleId,
+                      customerName: activity.customer_name,
+                      balance: owedAmount,
+                      businessId,
+                    });
+                  }
                 }
                 if (businessId && branchId) {
                   await removeCachedRow({ businessId, branchId }, 'sales', saleId);

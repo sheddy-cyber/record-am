@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
@@ -77,6 +77,14 @@ export default function CustomerDetailScreen() {
       fetchCustomerDetail(customerId, currentBusiness.id);
     }
   }, [currentBusiness, customerId, fetchCustomerDetail]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (currentBusiness?.id && customerId) {
+        void fetchCustomerDetail(customerId, currentBusiness.id);
+      }
+    }, [currentBusiness?.id, customerId, fetchCustomerDetail]),
+  );
 
   const handleDelete = async () => {
     if (!customer) return;

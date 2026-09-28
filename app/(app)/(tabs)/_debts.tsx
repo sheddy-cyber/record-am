@@ -173,6 +173,13 @@ function DebtsScreen() {
         if (businessId && branchId) {
           const balance = Number(debt.balance || 0);
           await useDebtStore.getState().deleteDebt(debt.id, businessId, branchId);
+          await useCustomerStore.getState().removeDebt({
+            debtId: debt.id,
+            customerId: debt.customer_id,
+            customerName: debt.customer_name,
+            balance,
+            businessId,
+          });
           await decrementPersistedDashboardSales(businessId, branchId, 0, balance);
           useDashboardStore.getState().decrementTodaySales(0, balance);
           void useDashboardStore.getState().refreshFromCache(businessId, branchId);
@@ -216,6 +223,13 @@ function DebtsScreen() {
         // 2. Remove debt from store and offline cache
         if (businessId && branchId) {
           await useDebtStore.getState().deleteDebt(debt.id, businessId, branchId);
+          await useCustomerStore.getState().removeDebt({
+            debtId: debt.id,
+            customerId: debt.customer_id,
+            customerName: debt.customer_name,
+            balance,
+            businessId,
+          });
           await removeCachedRow({ businessId, branchId }, 'sales', saleId);
           await removeCachedRow({ businessId, branchId }, 'revenue_activities', saleId);
 
