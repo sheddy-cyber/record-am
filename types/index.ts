@@ -199,6 +199,7 @@ export interface Sale {
   bank_name?: string;
   notes?: string;
   sold_by?: string;
+  sold_by_name?: string;
   created_at: string;
   updated_at: string;
   // joined
@@ -385,6 +386,7 @@ export interface RevenueActivity {
   subtotal?: number;
   discount_amount?: number;
   notes?: string;
+  sold_by_name?: string;
   created_at: string;
   sale_id?: string;
   debt_id?: string;

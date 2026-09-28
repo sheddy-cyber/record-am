@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
 import { Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
-import { BrandMark, FlatSection, ScreenHeader, ScreenShell } from '@/components/layout';
+import { BrandMark, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
 
@@ -208,19 +208,19 @@ function MoreScreen() {
           />
         }
       >
-        <FlatSection style={{ padding: 16, flexDirection: 'row', gap: 14, alignItems: 'center' }}>
+        <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center', paddingHorizontal: 4, paddingVertical: 2 }}>
           <BrandMark size={58} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
               {businessName}
             </Text>
-            <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>
+            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>
               {branchName}
               {' · '}
               {businessCurrency}
             </Text>
           </View>
-        </FlatSection>
+        </View>
 
         {sections.map((section) => (
           <View key={section.title}>

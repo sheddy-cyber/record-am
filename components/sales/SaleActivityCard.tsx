@@ -90,6 +90,14 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
                   : item.payment_method.replace('_', ' ').toUpperCase()}
               </Text>
             </View>
+            {item.sold_by_name ? (
+              <View style={styles.metaItem}>
+                <Feather name="user" size={12} color={COLORS.text.muted} />
+                <Text style={styles.metaText} numberOfLines={1}>
+                  {item.sold_by_name}
+                </Text>
+              </View>
+            ) : null}
             {Boolean(item.discount_amount && item.discount_amount > 0) && (
               <View style={styles.discountTag}>
                 <Feather name="tag" size={10} color={COLORS.warning} />
@@ -265,6 +273,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
+    flexWrap: 'wrap',
+    marginRight: 8,
   },
   metaItem: {
     flexDirection: 'row',

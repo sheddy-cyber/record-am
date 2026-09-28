@@ -287,58 +287,64 @@ function DashboardScreen() {
           />
         </View>
 
-        {/* ── Quick Actions (Sleek Horizontal Pills) ────────────────────── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 12, paddingHorizontal: SP.page, paddingBottom: 30 }}
-  
-        >
+        {/* ── Quick Actions (Two Rows Grid) ────────────────────── */}
+        <View style={{ paddingHorizontal: SP.page, paddingBottom: 30, gap: 10 }}>
           {[
-            { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale' },
-            { icon: 'plus' as const, label: 'Add Stock', route: '/(app)/add-stock' },
-            { icon: 'minus' as const, label: 'Expenses', route: '/(app)/record-expense' },
-            { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/record-debt' },
-          ].map((action) => (
-            <TouchableOpacity
-              key={action.label}
-              onPress={() => router.push(action.route as any)}
-              activeOpacity={0.7}
-              delayPressIn={0}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                paddingVertical: 12,
-                paddingHorizontal: 20,
-                borderRadius: RADIUS.full,
-                backgroundColor: 'rgba(255,255,255,0.03)',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.06)',
-              }}
-            >
-              <Feather name={action.icon} size={16} color={COLORS.text.inverse} />
-              <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.inverse }}>
-                {action.label}
-              </Text>
-            </TouchableOpacity>
+            [
+              { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale' },
+              { icon: 'plus' as const, label: 'Add Stock', route: '/(app)/add-stock' },
+            ],
+            [
+              { icon: 'minus' as const, label: 'Expenses', route: '/(app)/record-expense' },
+              { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/record-debt' },
+            ],
+          ].map((row, rowIndex) => (
+            <View key={rowIndex} style={{ flexDirection: 'row', gap: 10 }}>
+              {row.map((action) => (
+                <TouchableOpacity
+                  key={action.label}
+                  onPress={() => router.push(action.route as any)}
+                  activeOpacity={0.7}
+                  delayPressIn={0}
+                  style={{
+                    flex: 1,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    paddingVertical: 12,
+                    paddingHorizontal: 12,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.06)',
+                  }}
+                >
+                  <Feather name={action.icon} size={16} color={COLORS.text.inverse} />
+                  <Text
+                    style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.inverse }}
+                    numberOfLines={1}
+                  >
+                    {action.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           ))}
-        </ScrollView>
+        </View>
 
         {/* ── Low stock alert ─────────────────────────────── */}
         {stockAlertMessages.length > 0 ? (
           <TouchableOpacity
             onPress={() => useTabStore.getState().setActiveTab('inventory')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
             style={{
               marginHorizontal: SP.page,
               flexDirection: 'row',
               alignItems: 'center',
               gap: 16,
-              borderWidth: 1,
               borderRadius: RADIUS.xl,
-              borderColor: 'rgba(255, 255, 255, 0.06)',
-              backgroundColor: 'rgba(255, 255, 255, 0.03)',
+              backgroundColor: COLORS.surface2,
               padding: 18,
               marginBottom: 30,
             }}
@@ -347,23 +353,23 @@ function DashboardScreen() {
               width: 44,
               height: 44,
               borderRadius: RADIUS.full,
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
+              backgroundColor: 'rgba(239, 68, 68, 0.12)',
               alignItems: 'center',
               justifyContent: 'center',
             }}>
-              <Feather name="alert-circle" size={20} color="#ef4444" />
+              <Feather name="alert-circle" size={20} color="#dc2626" />
             </View>
             <View style={{ flex: 1, gap: 4 }}>
-              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: '#ef4444', letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: '#dc2626', letterSpacing: 0.5 }}>
                 INVENTORY ALERT
               </Text>
               {stockAlertMessages.map((message) => (
-                <Text key={message} style={{ fontSize: 14, fontFamily: FONT.medium, color: 'rgba(255,255,255,0.85)' }}>
+                <Text key={message} style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.ink }}>
                   {message}
                 </Text>
               ))}
             </View>
-            <Feather name="arrow-right" size={18} color="rgba(255,255,255,0.3)" />
+            <Feather name="arrow-right" size={18} color={COLORS.ink} style={{ opacity: 0.4 }} />
           </TouchableOpacity>
         ) : null}
 

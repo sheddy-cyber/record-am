@@ -13,6 +13,7 @@ import {
   StockMovement,
 } from '@/types';
 import { useBusinessStore } from '@/store/businessStore';
+import { useAuthStore } from '@/store/authStore';
 import { createAltUnitNote, formatBankPaymentNote, formatMixedPaymentNote, getSaleUnitOption } from '@/lib/records';
 import {
   adjustCachedProductInventory,
@@ -40,6 +41,7 @@ const roundAmount = (value: number) => Number(value.toFixed(2));
 
 type CachedSale = Omit<Sale, 'customer'> & {
   customer?: Pick<Customer, 'name' | 'phone'>;
+  sold_by_name?: string;
 };
 
 type CachedSaleItem = Omit<SaleItem, 'product'> & {
@@ -124,12 +126,18 @@ export async function recordSaleOffline(params: {
   amountOwed: number;
   paymentStatus: PaymentStatus;
   saleNumber?: string;
+  soldByName?: string;
 }) {
   const timestamp = nowIso();
   const saleId = createLocalId();
   const customerName = params.customerName.trim();
   const customerPhone = params.customerPhone.trim();
   const saleNumber = params.saleNumber || `OFF-${Date.now().toString(36).toUpperCase()}`;
+  const staffName =
+    params.soldByName ||
+    useAuthStore.getState().profile?.full_name ||
+    useAuthStore.getState().user?.user_metadata?.full_name ||
+    undefined;
 
   let customerId: string | undefined = undefined;
   let customer: Customer | null = null;
@@ -183,6 +191,7 @@ export async function recordSaleOffline(params: {
     bank_name: params.bankName?.trim() || undefined,
     notes: saleNotes,
     sold_by: params.userId,
+    sold_by_name: staffName,
     created_at: timestamp,
     updated_at: timestamp,
     customer: customer
@@ -207,7 +216,7 @@ export async function recordSaleOffline(params: {
   mutations.push({
     operation: 'upsert',
     table: 'sales',
-    payload: { ...sale, customer: undefined },
+    payload: { ...sale, customer: undefined, sold_by_name: undefined },
     onConflict: 'id',
     description: `Sync sale ${sale.sale_number}`,
   });
@@ -327,6 +336,7 @@ export async function recordSaleOffline(params: {
     subtotal: sale.subtotal,
     discount_amount: sale.discount_amount,
     notes: sale.notes,
+    sold_by_name: staffName,
     created_at: sale.created_at,
     sale_id: sale.id,
     items: saleItems.map((si) => ({
@@ -502,6 +512,12 @@ export async function updateSaleOffline(params: {
     saleNotes = formatBankPaymentNote(effectiveBank, effectiveAccId, saleNotes);
   }
 
+  const staffName =
+    (originalSale as any)?.sold_by_name ||
+    useAuthStore.getState().profile?.full_name ||
+    useAuthStore.getState().user?.user_metadata?.full_name ||
+    undefined;
+
   const updatedSale: CachedSale = {
     id: params.saleId,
     business_id: params.businessId,
@@ -522,6 +538,7 @@ export async function updateSaleOffline(params: {
     bank_name: params.bankName?.trim() || originalSale?.bank_name || undefined,
     notes: saleNotes,
     sold_by: originalSale?.sold_by ?? params.userId,
+    sold_by_name: staffName,
     created_at: originalSale?.created_at ?? timestamp,
     updated_at: timestamp,
     customer: customer
@@ -542,7 +559,7 @@ export async function updateSaleOffline(params: {
   mutations.push({
     operation: 'upsert',
     table: 'sales',
-    payload: { ...updatedSale, customer: undefined },
+    payload: { ...updatedSale, customer: undefined, sold_by_name: undefined },
     onConflict: 'id',
     description: `Update sale ${updatedSale.sale_number}`,
   });
@@ -666,6 +683,7 @@ export async function updateSaleOffline(params: {
     subtotal: updatedSale.subtotal,
     discount_amount: updatedSale.discount_amount,
     notes: updatedSale.notes,
+    sold_by_name: staffName,
     created_at: updatedSale.created_at,
     sale_id: updatedSale.id,
     items: newSaleItems.map((si) => ({
@@ -916,6 +934,11 @@ export async function recordRepaymentOffline(params: {
     updated_at: timestamp,
   };
 
+  const staffName =
+    useAuthStore.getState().profile?.full_name ||
+    useAuthStore.getState().user?.user_metadata?.full_name ||
+    undefined;
+
   const activity: RevenueActivity = {
     id: repayment.id,
     kind: 'debt_repayment',
@@ -932,6 +955,7 @@ export async function recordRepaymentOffline(params: {
     payment_account_id: repayment.payment_account_id,
     bank_name: repayment.bank_name,
     notes: repayment.notes,
+    sold_by_name: staffName,
     created_at: repayment.created_at,
     sale_id: debt.sale_id,
     debt_id: debt.id,

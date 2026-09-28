@@ -56,7 +56,7 @@ const roundAmount = (value: number) => Number(value.toFixed(2));
 
 export default function RecordSaleScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch, user } = useAuthStore();
+  const { currentBusiness, currentBranch, user, profile } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -774,6 +774,7 @@ export default function RecordSaleScreen() {
         businessId: currentBusiness.id,
         branchId: currentBranch.id,
         userId: user.id,
+        soldByName: profile?.full_name || user.user_metadata?.full_name || undefined,
         cart,
         customerName,
         customerPhone,
