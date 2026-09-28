@@ -184,7 +184,7 @@ function DebtsScreen() {
             paddingHorizontal: SP.page,
             paddingBottom: insets.bottom + 96,
             flexGrow: 1,
-            gap: 20,
+            gap: 28,
           }}
           refreshControl={
             <RefreshControl
@@ -221,9 +221,9 @@ function DebtsScreen() {
                 )}
               </View>
 
-              {/* ── Simple Outstanding Card ──────────────────────────────────── */}
+              {/* ── Outstanding Total ────────────────────────────────────────── */}
               {debts.length > 0 && (
-                <View style={styles.portfolioCard}>
+                <View style={styles.outstandingBlock}>
                   <Text style={styles.heroAmountLabel}>TOTAL OUTSTANDING</Text>
                   <Text style={styles.heroAmountValue}>
                     {formatCurrency(totalOutstanding)}
@@ -295,22 +295,14 @@ function DebtsScreen() {
                     </View>
                   </View>
 
-                  {/* Status Badge */}
+                  {/* Status Badge — overdue only */}
                   <View>
                     {isOverdue ? (
                       <View style={styles.overdueBadge}>
                         <Feather name="alert-circle" size={11} color="#b91c1c" />
                         <Text style={styles.overdueBadgeText}>{dueInfo?.label}</Text>
                       </View>
-                    ) : isPartial ? (
-                      <View style={styles.partialBadge}>
-                        <Text style={styles.partialBadgeText}>Paying</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.activeBadge}>
-                        <Text style={styles.activeBadgeText}>Outstanding</Text>
-                      </View>
-                    )}
+                    ) : null}
                   </View>
                 </View>
 
@@ -431,15 +423,11 @@ function DebtsScreen() {
 }
 
 const styles = StyleSheet.create({
-  // ── Simple Outstanding Card ──────────────────────────────────
-  portfolioCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    gap: 4,
+  // ── Outstanding Total (no card chrome) ───────────────────────
+  outstandingBlock: {
+    paddingHorizontal: 2,
+    paddingVertical: 4,
+    gap: 3,
   },
   portfolioHeader: {
     flexDirection: 'row',
