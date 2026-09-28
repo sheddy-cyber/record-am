@@ -167,6 +167,7 @@ function DebtsScreen() {
       <ScreenShell backgroundColor={COLORS.background} statusBarStyle="light">
         <ScreenHeader
           title="Debts"
+          subtitle={`${debts.length} ${debts.length === 1 ? 'debtor' : 'debtors'}`}
           theme="dark"
           right={
             <HeaderAction
