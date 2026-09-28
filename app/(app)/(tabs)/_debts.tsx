@@ -15,14 +15,15 @@ import { FlashList } from '@shopify/flash-list';
 import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { differenceInDays, format } from 'date-fns';
+import { differenceInDays, format, isToday } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useDebtStore } from '@/store/debtStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
-import { decrementPersistedDashboardSales } from '@/lib/offlineStore';
+import { decrementPersistedDashboardSales, removeCachedRow } from '@/lib/offlineStore';
+import { deleteSaleRecord } from '@/lib/recordDeletion';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDebtReminderViaWhatsApp } from '@/lib/reports';
 import { Button, EmptyState } from '@/components/ui';
@@ -166,36 +167,118 @@ function DebtsScreen() {
     );
   }, [debts, searchQuery]);
 
+  const handleDeleteDebtOnly = useCallback(
+    async (debt: CustomerDebt) => {
+      try {
+        if (businessId && branchId) {
+          const balance = Number(debt.balance || 0);
+          await useDebtStore.getState().deleteDebt(debt.id, businessId, branchId);
+          await decrementPersistedDashboardSales(businessId, branchId, 0, balance);
+          useDashboardStore.getState().decrementTodaySales(0, balance);
+          void useDashboardStore.getState().refreshFromCache(businessId, branchId);
+          void useAnalyticsStore.getState().refreshFromCache(businessId, branchId);
+        }
+        await loadDebts();
+        Toast.show({
+          type: 'success',
+          text1: 'Debt deleted',
+          text2: 'Original sale record was preserved.',
+        });
+      } catch (err: any) {
+        Alert.alert('Unable to delete debt', err.message ?? 'Please try again.');
+      }
+    },
+    [businessId, branchId, loadDebts],
+  );
+
+  const handleDeleteDebtAndSale = useCallback(
+    async (debt: CustomerDebt) => {
+      try {
+        if (!debt.sale_id) {
+          await handleDeleteDebtOnly(debt);
+          return;
+        }
+
+        const isRecordedToday = debt.created_at
+          ? isToday(new Date(debt.created_at))
+          : true;
+        const paidAmount = Number(debt.amount_paid || 0);
+        const balance = Number(debt.balance || 0);
+        const saleId = debt.sale_id;
+
+        // 1. Delete sale record (restores inventory & deletes customer_debts from DB)
+        try {
+          await deleteSaleRecord(saleId);
+        } catch (saleErr) {
+          console.warn('Sale record deletion warning:', saleErr);
+        }
+
+        // 2. Remove debt from store and offline cache
+        if (businessId && branchId) {
+          await useDebtStore.getState().deleteDebt(debt.id, businessId, branchId);
+          await removeCachedRow({ businessId, branchId }, 'sales', saleId);
+          await removeCachedRow({ businessId, branchId }, 'revenue_activities', saleId);
+
+          if (isRecordedToday) {
+            await decrementPersistedDashboardSales(businessId, branchId, paidAmount, balance);
+            useDashboardStore.getState().decrementTodaySales(paidAmount, balance);
+          } else {
+            await decrementPersistedDashboardSales(businessId, branchId, 0, balance);
+            useDashboardStore.getState().decrementTodaySales(0, balance);
+          }
+
+          void useDashboardStore.getState().refreshFromCache(businessId, branchId);
+          void useAnalyticsStore.getState().refreshFromCache(businessId, branchId);
+        }
+
+        await loadDebts();
+        Toast.show({
+          type: 'success',
+          text1: 'Debt and related sale deleted',
+          text2: 'Items have been returned to inventory.',
+        });
+      } catch (err: any) {
+        Alert.alert('Unable to delete sale', err.message ?? 'Please try again.');
+      }
+    },
+    [businessId, branchId, handleDeleteDebtOnly, loadDebts],
+  );
+
   const handleDeleteDebt = useCallback(
     (debt: CustomerDebt) => {
-      Alert.alert(
-        'Delete Debt',
-        `Are you sure you want to delete this debt for ${debt.customer_name} (${formatCurrency(debt.balance)})? This action cannot be undone. The corresponding sale will not be affected.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Delete',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                if (businessId && branchId) {
-                  const balance = Number(debt.balance || 0);
-                  await useDebtStore.getState().deleteDebt(debt.id, businessId, branchId);
-                  await decrementPersistedDashboardSales(businessId, branchId, 0, balance);
-                  useDashboardStore.getState().decrementTodaySales(0, balance);
-                  void useDashboardStore.getState().refreshFromCache(businessId, branchId);
-                  void useAnalyticsStore.getState().refreshFromCache(businessId, branchId);
-                }
-                Toast.show({ type: 'success', text1: 'Debt deleted' });
-              } catch (err: any) {
-                Alert.alert('Unable to delete debt', err.message ?? 'Please try again.');
-              }
+      if (debt.sale_id) {
+        Alert.alert(
+          'Delete Debt',
+          `Why are you deleting this debt for ${debt.customer_name} (${formatCurrency(debt.balance)})?\n\n• Delete Debt Only: The debt is forgiven. The related sale remains in your records.\n\n• Delete Debt & Sale: The sale was canceled. Both this debt and the sale are deleted, and inventory is restored.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete Debt Only',
+              onPress: () => void handleDeleteDebtOnly(debt),
             },
-          },
-        ],
-      );
+            {
+              text: 'Delete Debt & Sale',
+              style: 'destructive',
+              onPress: () => void handleDeleteDebtAndSale(debt),
+            },
+          ],
+        );
+      } else {
+        Alert.alert(
+          'Delete Debt',
+          `Are you sure you want to delete this debt for ${debt.customer_name} (${formatCurrency(debt.balance)})? This action cannot be undone.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Delete',
+              style: 'destructive',
+              onPress: () => void handleDeleteDebtOnly(debt),
+            },
+          ],
+        );
+      }
     },
-    [businessId, branchId],
+    [handleDeleteDebtOnly, handleDeleteDebtAndSale],
   );
 
   return (
