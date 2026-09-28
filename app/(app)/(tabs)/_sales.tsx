@@ -15,10 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, isToday, isYesterday } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
+import { useDashboardStore } from '@/store/dashboardStore';
+import { useAnalyticsStore } from '@/store/analyticsStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
-import { removeCachedRow } from '@/lib/offlineStore';
+import { decrementPersistedDashboardSales, removeCachedRow } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EmptyState } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -209,20 +211,46 @@ function SalesScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              const isRecordedToday = activity.created_at
+                ? isToday(new Date(activity.created_at))
+                : true;
+              const paidAmount = Number(activity.amount_paid || 0);
+              const owedAmount = Number(activity.amount_owed || 0);
+
               if (activity.kind === 'sale') {
                 const saleId = activity.sale_id ?? activity.id;
                 await deleteSaleRecord(saleId);
                 if (businessId && branchId) {
                   await removeCachedRow({ businessId, branchId }, 'sales', saleId);
                   await removeCachedRow({ businessId, branchId }, 'revenue_activities', activity.id);
+                  if (isRecordedToday) {
+                    await decrementPersistedDashboardSales(businessId, branchId, paidAmount, owedAmount);
+                  }
+                }
+                if (isRecordedToday) {
+                  useDashboardStore.getState().decrementTodaySales(paidAmount, owedAmount);
+                } else if (owedAmount > 0) {
+                  useDashboardStore.getState().decrementTodaySales(0, owedAmount);
                 }
               } else {
                 await deleteDebtRepaymentRecord(activity.id);
                 if (businessId && branchId) {
                   await removeCachedRow({ businessId, branchId }, 'debt_repayments', activity.id);
                   await removeCachedRow({ businessId, branchId }, 'revenue_activities', activity.id);
+                  if (isRecordedToday) {
+                    await decrementPersistedDashboardSales(businessId, branchId, paidAmount, 0);
+                  }
+                }
+                if (isRecordedToday) {
+                  useDashboardStore.getState().decrementRepaymentFromTodaySales(paidAmount);
                 }
               }
+
+              if (businessId && branchId) {
+                void useDashboardStore.getState().refreshFromCache(businessId, branchId);
+                void useAnalyticsStore.getState().refreshFromCache(businessId, branchId);
+              }
+
               await loadActivities();
               Toast.show({ type: 'success', text1: 'Record deleted' });
             } catch (err: any) {

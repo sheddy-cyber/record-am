@@ -750,6 +750,36 @@ export async function incrementPersistedDashboardSales(
   return updatedStats;
 }
 
+export async function decrementPersistedDashboardSales(
+  businessId: string,
+  branchId: string,
+  amountPaid: number,
+  debtAmount = 0,
+): Promise<DashboardStats | null> {
+  const todayDate = format(new Date(), 'yyyy-MM-dd');
+  const cached = await readPersistedDashboardStats(businessId, branchId);
+  if (!cached || cached.date !== todayDate) return null;
+
+  const nextSales = Number(Math.max(0, cached.stats.today_sales - amountPaid).toFixed(2));
+  const nextExpenses = cached.stats.today_expenses;
+  const nextProfit = Number((nextSales - nextExpenses).toFixed(2));
+  const nextDebts = Number(Math.max(0, cached.stats.outstanding_debts - debtAmount).toFixed(2));
+
+  const updatedStats: DashboardStats = {
+    ...cached.stats,
+    today_sales: nextSales,
+    today_profit: nextProfit,
+    outstanding_debts: nextDebts,
+  };
+
+  await writePersistedDashboardStats(businessId, branchId, {
+    date: todayDate,
+    stats: updatedStats,
+  });
+
+  return updatedStats;
+}
+
 export async function applyExpenseToPersistedDashboardStats(
   businessId: string,
   branchId: string,
@@ -822,16 +852,41 @@ export async function buildCachedDashboardData(
 
   const hasValidTodayStats = persistedStatsEntry && persistedStatsEntry.date === todayDate;
   const persistedTodaySales = hasValidTodayStats ? persistedStatsEntry.stats.today_sales : 0;
-  const effectiveTodaySales = Math.max(persistedTodaySales, activityTodaySales);
+  // If activities exist in cache for today, activityTodaySales is the true sum of active transactions.
+  // This ensures deleted sales immediately reduce today's sales in cache.
+  const effectiveTodaySales = todayActivities.length > 0
+    ? activityTodaySales
+    : (hasValidTodayStats ? persistedTodaySales : 0);
 
   const persistedTodayExpenses = hasValidTodayStats ? persistedStatsEntry.stats.today_expenses : 0;
-  const effectiveTodayExpenses = Math.max(persistedTodayExpenses, todayExpenseTotal);
+  const effectiveTodayExpenses = todayExpenses.length > 0
+    ? todayExpenseTotal
+    : (hasValidTodayStats ? persistedTodayExpenses : 0);
   const effectiveTodayProfit = effectiveTodaySales - effectiveTodayExpenses;
 
   const totalOutstandingDebts = openDebts.reduce((sum, debt) => sum + debt.balance, 0);
   const effectiveOutstandingDebts = hasValidTodayStats
-    ? Math.max(persistedStatsEntry.stats.outstanding_debts, totalOutstandingDebts)
+    ? (totalOutstandingDebts > 0 ? totalOutstandingDebts : persistedStatsEntry.stats.outstanding_debts)
     : totalOutstandingDebts;
+
+  // Reconcile persisted stats with current cached reality so stale accumulators don't linger
+  if (
+    hasValidTodayStats &&
+    (persistedStatsEntry.stats.today_sales !== effectiveTodaySales ||
+      persistedStatsEntry.stats.today_expenses !== effectiveTodayExpenses ||
+      persistedStatsEntry.stats.outstanding_debts !== effectiveOutstandingDebts)
+  ) {
+    void writePersistedDashboardStats(businessId, branchId, {
+      date: todayDate,
+      stats: {
+        ...persistedStatsEntry.stats,
+        today_sales: effectiveTodaySales,
+        today_expenses: effectiveTodayExpenses,
+        today_profit: effectiveTodayProfit,
+        outstanding_debts: effectiveOutstandingDebts,
+      },
+    });
+  }
 
   return {
     stats: {
