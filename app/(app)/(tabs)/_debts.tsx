@@ -37,8 +37,7 @@ const formatCurrency = (value: number) =>
     maximumFractionDigits: 0,
   })}`;
 
-type DebtFilterTab = 'all' | 'overdue' | 'partial' | 'due_soon';
-type DebtSortOption = 'highest_balance' | 'most_overdue' | 'recent';
+
 
 function getDueInfo(dueDate?: string) {
   if (!dueDate) return null;
@@ -105,8 +104,6 @@ function DebtsScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTab, setFilterTab] = useState<DebtFilterTab>('all');
-  const [sortBy, setSortBy] = useState<DebtSortOption>('highest_balance');
 
   const loadDebts = useCallback(async () => {
     if (businessId && branchId) {
@@ -137,85 +134,17 @@ function DebtsScreen() {
   });
 
   // ── Portfolio Metrics ───────────────────────────────────────────────────
-  const {
-    totalOutstanding,
-    totalOriginal,
-    totalPaid,
-    recoveryRate,
-    overdueDebts,
-    partialDebts,
-    dueSoonDebts,
-    onTrackDebts,
-    overdueTotal,
-    partialTotal,
-    onTrackTotal,
-  } = useMemo(() => {
+  const totalOutstanding = useMemo(() => {
     let outstanding = 0;
-    let original = 0;
-    let paid = 0;
-    const overdueList: CustomerDebt[] = [];
-    const partialList: CustomerDebt[] = [];
-    const dueSoonList: CustomerDebt[] = [];
-    const onTrackList: CustomerDebt[] = [];
-    let overdueSum = 0;
-    let partialSum = 0;
-    let onTrackSum = 0;
-
     for (const d of debts) {
       outstanding += Number(d.balance || 0);
-      original += Number(d.original_amount || 0);
-      paid += Number(d.amount_paid || 0);
-
-      const dueInfo = getDueInfo(d.due_date);
-      const isOverdue = dueInfo?.isOverdue ?? false;
-      const isPartial = d.status === 'partial' || Number(d.amount_paid || 0) > 0;
-      const isDueSoon = (dueInfo?.isDueSoon || dueInfo?.isDueToday) ?? false;
-
-      if (isOverdue) {
-        overdueList.push(d);
-        overdueSum += Number(d.balance || 0);
-      } else if (isPartial) {
-        partialList.push(d);
-        partialSum += Number(d.balance || 0);
-      } else {
-        onTrackList.push(d);
-        onTrackSum += Number(d.balance || 0);
-      }
-
-      if (isDueSoon || isOverdue) {
-        dueSoonList.push(d);
-      }
     }
-
-    const rate = original > 0 ? Math.min(100, Math.round((paid / original) * 100)) : 0;
-
-    return {
-      totalOutstanding: outstanding,
-      totalOriginal: original,
-      totalPaid: paid,
-      recoveryRate: rate,
-      overdueDebts: overdueList,
-      partialDebts: partialList,
-      dueSoonDebts: dueSoonList,
-      onTrackDebts: onTrackList,
-      overdueTotal: overdueSum,
-      partialTotal: partialSum,
-      onTrackTotal: onTrackSum,
-    };
+    return outstanding;
   }, [debts]);
 
   // ── Filtered and Sorted Debts ───────────────────────────────────────────
   const displayedDebts = useMemo(() => {
     let result = debts;
-
-    // Filter by tab
-    if (filterTab === 'overdue') {
-      result = overdueDebts;
-    } else if (filterTab === 'partial') {
-      result = partialDebts;
-    } else if (filterTab === 'due_soon') {
-      result = dueSoonDebts;
-    }
 
     // Filter by search query
     const q = searchQuery.trim().toLowerCase();
@@ -228,48 +157,16 @@ function DebtsScreen() {
       });
     }
 
-    // Sort
-    return [...result].sort((a, b) => {
-      if (sortBy === 'highest_balance') {
-        return Number(b.balance || 0) - Number(a.balance || 0);
-      }
-      if (sortBy === 'most_overdue') {
-        const aDue = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-        const bDue = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-        return aDue - bDue;
-      }
-      // 'recent'
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-  }, [debts, filterTab, searchQuery, sortBy, overdueDebts, partialDebts, dueSoonDebts]);
-
-  const handleTabChange = (tab: DebtFilterTab) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setFilterTab(tab);
-  };
-
-  const handleCycleSort = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setSortBy((prev) => {
-      if (prev === 'highest_balance') return 'most_overdue';
-      if (prev === 'most_overdue') return 'recent';
-      return 'highest_balance';
-    });
-  };
-
-  const sortLabel =
-    sortBy === 'highest_balance'
-      ? 'Highest Balance'
-      : sortBy === 'most_overdue'
-      ? 'Most Overdue'
-      : 'Most Recent';
+    return [...result].sort(
+      (a, b) => Number(b.balance || 0) - Number(a.balance || 0),
+    );
+  }, [debts, searchQuery]);
 
   return (
     <SwipeableTabScreen name="debts">
       <ScreenShell backgroundColor={COLORS.background} statusBarStyle="light">
         <ScreenHeader
-          title="Receivables"
-          subtitle={`${debts.length} active debtors · ${formatCurrency(totalOutstanding)} outstanding`}
+          title="Debts"
           theme="dark"
           right={
             <HeaderAction
@@ -287,7 +184,7 @@ function DebtsScreen() {
             paddingHorizontal: SP.page,
             paddingBottom: insets.bottom + 96,
             flexGrow: 1,
-            gap: 12,
+            gap: 20,
           }}
           refreshControl={
             <RefreshControl
@@ -302,196 +199,35 @@ function DebtsScreen() {
           }
           ListHeaderComponent={
             <View style={{ gap: 14, paddingTop: SP.page, marginBottom: 4 }}>
-              {/* ── Executive Receivables Portfolio Card ────────────────────── */}
-              <View style={styles.portfolioCard}>
-                <View style={styles.portfolioHeader}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View style={styles.portfolioIconBox}>
-                      <Feather name="shield" size={15} color={COLORS.ink} />
-                    </View>
-                    <Text style={styles.portfolioTitle}>Receivables Portfolio</Text>
-                  </View>
-                  <View style={styles.recoveryRateBadge}>
-                    <Feather name="check" size={11} color={COLORS.success} />
-                    <Text style={styles.recoveryRateText}>{recoveryRate}% Recovered</Text>
-                  </View>
-                </View>
-
-                {/* Hero Total Balance */}
-                <View style={styles.heroAmountRow}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.heroAmountLabel}>TOTAL OUTSTANDING</Text>
-                    <Text style={styles.heroAmountValue}>
-                      {formatCurrency(totalOutstanding)}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={styles.heroSubLabel}>Credit Extended</Text>
-                    <Text style={styles.heroSubValue}>{formatCurrency(totalOriginal)}</Text>
-                  </View>
-                </View>
-
-                {/* Sleek Recovery Progress Bar */}
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressBarTrack}>
-                    <View
-                      style={[
-                        styles.progressBarFill,
-                        { width: `${Math.max(2, recoveryRate)}%` },
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.progressTextRow}>
-                    <Text style={styles.progressSubText}>
-                      Recovered: {formatCurrency(totalPaid)}
-                    </Text>
-                    <Text style={styles.progressSubText}>
-                      Uncollected: {formatCurrency(totalOutstanding)}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* 3-Column Portfolio Metrics */}
-                <View style={styles.portfolioBreakdownGrid}>
-                  <View style={styles.portfolioBreakdownCol}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <View style={[styles.dotIndicator, { backgroundColor: COLORS.danger }]} />
-                      <Text style={styles.breakdownLabel}>OVERDUE</Text>
-                    </View>
-                    <Text style={[styles.breakdownValue, { color: COLORS.danger }]}>
-                      {formatCurrency(overdueTotal)}
-                    </Text>
-                    <Text style={styles.breakdownCount}>
-                      {overdueDebts.length} {overdueDebts.length === 1 ? 'debt' : 'debts'}
-                    </Text>
-                  </View>
-
-                  <View style={styles.portfolioColDivider} />
-
-                  <View style={styles.portfolioBreakdownCol}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <View style={[styles.dotIndicator, { backgroundColor: '#d97706' }]} />
-                      <Text style={styles.breakdownLabel}>PARTIAL</Text>
-                    </View>
-                    <Text style={styles.breakdownValue}>{formatCurrency(partialTotal)}</Text>
-                    <Text style={styles.breakdownCount}>{partialDebts.length} paying</Text>
-                  </View>
-
-                  <View style={styles.portfolioColDivider} />
-
-                  <View style={styles.portfolioBreakdownCol}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <View style={[styles.dotIndicator, { backgroundColor: COLORS.success }]} />
-                      <Text style={styles.breakdownLabel}>ON-TRACK</Text>
-                    </View>
-                    <Text style={styles.breakdownValue}>{formatCurrency(onTrackTotal)}</Text>
-                    <Text style={styles.breakdownCount}>{onTrackDebts.length} current</Text>
-                  </View>
-                </View>
+              {/* ── Search Bar (always visible at top) ──────────────────────── */}
+              <View style={styles.searchBar}>
+                <Feather name="search" size={15} color={COLORS.text.muted} />
+                <TextInput
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Search customer, phone, or notes..."
+                  placeholderTextColor={COLORS.text.muted}
+                  style={styles.searchInput}
+                  returnKeyType="search"
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity
+                    onPress={() => setSearchQuery('')}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Feather name="x-circle" size={15} color={COLORS.text.muted} />
+                  </TouchableOpacity>
+                )}
               </View>
 
-              {/* ── Search & Filter Controls ────────────────────────────────── */}
+              {/* ── Simple Outstanding Card ──────────────────────────────────── */}
               {debts.length > 0 && (
-                <View style={{ gap: 10 }}>
-                  {/* Search Bar */}
-                  <View style={styles.searchBar}>
-                    <Feather name="search" size={15} color={COLORS.text.muted} />
-                    <TextInput
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      placeholder="Search customer, phone, or notes..."
-                      placeholderTextColor={COLORS.text.muted}
-                      style={styles.searchInput}
-                      returnKeyType="search"
-                      autoCorrect={false}
-                    />
-                    {searchQuery.length > 0 && (
-                      <TouchableOpacity
-                        onPress={() => setSearchQuery('')}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      >
-                        <Feather name="x-circle" size={15} color={COLORS.text.muted} />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {/* Filter Pills & Sort Row */}
-                  <View style={styles.filterBarRow}>
-                    <View style={styles.filterPillsContainer}>
-                      {[
-                        { key: 'all' as const, label: 'All', count: debts.length },
-                        {
-                          key: 'overdue' as const,
-                          label: 'Overdue',
-                          count: overdueDebts.length,
-                          isDanger: overdueDebts.length > 0,
-                        },
-                        {
-                          key: 'partial' as const,
-                          label: 'Partial',
-                          count: partialDebts.length,
-                        },
-                        {
-                          key: 'due_soon' as const,
-                          label: 'Due Soon',
-                          count: dueSoonDebts.length,
-                        },
-                      ].map((tab) => {
-                        const active = filterTab === tab.key;
-                        return (
-                          <TouchableOpacity
-                            key={tab.key}
-                            onPress={() => handleTabChange(tab.key)}
-                            activeOpacity={0.7}
-                            style={[
-                              styles.filterPill,
-                              active && styles.filterPillActive,
-                              tab.isDanger && !active && styles.filterPillDangerAlert,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.filterPillText,
-                                active && styles.filterPillTextActive,
-                                tab.isDanger && !active && { color: COLORS.danger },
-                              ]}
-                            >
-                              {tab.label}
-                            </Text>
-                            <View
-                              style={[
-                                styles.filterCountBadge,
-                                active && styles.filterCountBadgeActive,
-                                tab.isDanger && !active && { backgroundColor: '#fee2e2' },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.filterCountText,
-                                  active && styles.filterCountTextActive,
-                                  tab.isDanger && !active && { color: COLORS.danger },
-                                ]}
-                              >
-                                {tab.count}
-                              </Text>
-                            </View>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-
-                    {/* Sort Button */}
-                    <TouchableOpacity
-                      onPress={handleCycleSort}
-                      style={styles.sortButton}
-                      activeOpacity={0.7}
-                    >
-                      <Feather name="sliders" size={12} color={COLORS.ink} />
-                      <Text style={styles.sortButtonText} numberOfLines={1}>
-                        {sortLabel}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
+                <View style={styles.portfolioCard}>
+                  <Text style={styles.heroAmountLabel}>TOTAL OUTSTANDING</Text>
+                  <Text style={styles.heroAmountValue}>
+                    {formatCurrency(totalOutstanding)}
+                  </Text>
                 </View>
               )}
             </View>
@@ -512,13 +248,10 @@ function DebtsScreen() {
                 <Feather name="search" size={32} color={COLORS.text.muted} />
                 <Text style={styles.emptyFilterTitle}>No Matching Debts</Text>
                 <Text style={styles.emptyFilterSubtitle}>
-                  No customer debts match your current search or filter criteria.
+                  No customer debts match your current search.
                 </Text>
                 <TouchableOpacity
-                  onPress={() => {
-                    setSearchQuery('');
-                    setFilterTab('all');
-                  }}
+                  onPress={() => setSearchQuery('')}
                   style={styles.clearFilterButton}
                 >
                   <Text style={styles.clearFilterButtonText}>Reset Filters</Text>
@@ -571,7 +304,7 @@ function DebtsScreen() {
                       </View>
                     ) : isPartial ? (
                       <View style={styles.partialBadge}>
-                        <Text style={styles.partialBadgeText}>{paidRatio}% Paid</Text>
+                        <Text style={styles.partialBadgeText}>Paying</Text>
                       </View>
                     ) : (
                       <View style={styles.activeBadge}>
@@ -698,14 +431,15 @@ function DebtsScreen() {
 }
 
 const styles = StyleSheet.create({
-  // ── Executive Portfolio Card ──────────────────────────────
+  // ── Simple Outstanding Card ──────────────────────────────────
   portfolioCard: {
     backgroundColor: COLORS.surface,
     borderRadius: RADIUS.xl,
-    padding: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     borderWidth: 1,
     borderColor: COLORS.border,
-    gap: 16,
+    gap: 4,
   },
   portfolioHeader: {
     flexDirection: 'row',
