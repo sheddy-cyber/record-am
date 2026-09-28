@@ -415,14 +415,23 @@ function DebtsScreen() {
                     </View>
                   </View>
 
-                  {/* Status Badge — overdue only */}
-                  <View>
+                  {/* Top Right Corner Actions: Overdue Badge & Delete Button */}
+                  <View style={styles.cardHeaderRight}>
                     {isOverdue ? (
                       <View style={styles.overdueBadge}>
                         <Feather name="alert-circle" size={11} color="#b91c1c" />
                         <Text style={styles.overdueBadgeText}>{dueInfo?.label}</Text>
                       </View>
                     ) : null}
+                    <TouchableOpacity
+                      onPress={() => handleDeleteDebt(item)}
+                      style={styles.deleteIconButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete debt"
+                    >
+                      <Feather name="trash-2" size={15} color={COLORS.danger} />
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -507,7 +516,7 @@ function DebtsScreen() {
                         params: { debtId: item.id },
                       })
                     }
-                    style={{ flex: 1, paddingHorizontal: 8 }}
+                    style={{ flex: 1 }}
                   />
                   <Button
                     title="Send Reminder"
@@ -530,17 +539,8 @@ function DebtsScreen() {
                         item.due_date,
                       );
                     }}
-                    style={{ flex: 1, paddingHorizontal: 8 }}
+                    style={{ flex: 1 }}
                   />
-                  <TouchableOpacity
-                    onPress={() => handleDeleteDebt(item)}
-                    style={styles.deleteActionButton}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel="Delete debt"
-                  >
-                    <Feather name="trash-2" size={16} color={COLORS.danger} />
-                  </TouchableOpacity>
                 </View>
               </View>
             );
@@ -842,7 +842,22 @@ const styles = StyleSheet.create({
     color: COLORS.text.muted,
   },
 
-  // ── Badges ────────────────────────────────────────────────
+  // ── Header Right & Badges ─────────────────────────────────
+  cardHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  deleteIconButton: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.full,
+    backgroundColor: COLORS.dangerLight,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   overdueBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -966,19 +981,8 @@ const styles = StyleSheet.create({
   // ── Actions ───────────────────────────────────────────────
   actionsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    gap: 10,
     marginTop: 2,
-  },
-  deleteActionButton: {
-    width: 38,
-    height: 38,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: '#fca5a5',
-    backgroundColor: COLORS.dangerLight,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 
   // ── Filter Empty State ────────────────────────────────────
