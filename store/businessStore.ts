@@ -61,6 +61,7 @@ interface BusinessState {
   updateTeamMemberRole: (memberId: string, role: UserRole) => Promise<void>;
   updateTeamMemberProfile: (userId: string, fullName: string, phone: string) => Promise<void>;
   removeTeamMember: (memberId: string) => Promise<void>;
+  transferOwnership: (businessId: string, newOwnerUserId: string) => Promise<void>;
   updateBusiness: (id: string, data: Partial<Business>) => Promise<void>;
   createCategory: (data: Partial<Category>) => Promise<Category | null>;
   createProduct: (data: Partial<Product>) => Promise<Product | null>;
@@ -379,6 +380,27 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       if (error) throw error;
     } catch (err: any) {
       console.error('[removeTeamMember] Error:', err.message);
+      throw err;
+    }
+  },
+
+  transferOwnership: async (businessId: string, newOwnerUserId: string) => {
+    try {
+      const { error } = await supabase.rpc('transfer_ownership', {
+        p_business_id: businessId,
+        p_new_owner_user_id: newOwnerUserId,
+      });
+
+      if (error) throw error;
+
+      // Update local businesses list so owner_id reflects the transfer immediately
+      set((state) => ({
+        businesses: state.businesses.map((b) =>
+          b.id === businessId ? { ...b, owner_id: newOwnerUserId } : b,
+        ),
+      }));
+    } catch (err: any) {
+      console.error('[transferOwnership] Error:', err.message);
       throw err;
     }
   },

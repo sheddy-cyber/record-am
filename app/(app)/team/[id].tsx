@@ -29,12 +29,16 @@ export default function EditTeamMemberScreen() {
   }>();
   
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  const currentUserRole = useAuthStore((s) => s.userRole);
+  const setUserRole = useAuthStore((s) => s.setUserRole);
+  const { updateTeamMemberRole, updateTeamMemberProfile, removeTeamMember, transferOwnership } = useBusinessStore();
+
   const [role, setRole] = useState<UserRole>((initialRole as UserRole) || 'cashier');
   const [editedName, setEditedName] = useState(name || '');
   const [editedPhone, setEditedPhone] = useState(phone || '');
   const [saving, setSaving] = useState(false);
   const [stats, setStats] = useState<StaffMemberStats | null>(null);
-  const { updateTeamMemberRole, updateTeamMemberProfile, removeTeamMember } = useBusinessStore();
 
   useEffect(() => {
     if (!currentBusiness?.id || !userId) return;
@@ -93,6 +97,40 @@ export default function EditTeamMemberScreen() {
           },
         },
       ]
+    );
+  };
+
+  // Only the owner can transfer; only makes sense for this screen's subject
+  const handleTransferOwnership = () => {
+    if (!currentBusiness?.id || !userId) return;
+
+    Alert.alert(
+      'Transfer Ownership',
+      `Are you sure you want to make ${name || 'this staff member'} the new owner of ${currentBusiness.name}?\n\nYou will become a Manager and lose owner-level controls. This cannot be undone without the new owner's cooperation.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Transfer',
+          style: 'destructive',
+          onPress: async () => {
+            setSaving(true);
+            try {
+              await transferOwnership(currentBusiness.id, userId);
+              // Immediately update our own role in the auth store
+              setUserRole('manager');
+              Toast.show({
+                type: 'success',
+                text1: 'Ownership transferred',
+                text2: `${name || 'Staff member'} is now the business owner.`,
+              });
+              router.back();
+            } catch (err: any) {
+              Alert.alert('Transfer Failed', err.message || 'Could not transfer ownership. Please try again.');
+              setSaving(false);
+            }
+          },
+        },
+      ],
     );
   };
 
@@ -197,6 +235,27 @@ export default function EditTeamMemberScreen() {
           style={{ marginTop: 8 }}
         />
 
+        {/* ── Transfer Ownership — owner only, not for viewing yourself ── */}
+        {currentUserRole === 'owner' && userId !== currentUserId && (
+          <View style={styles.transferCard}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <Feather name="shield" size={15} color={COLORS.ink} />
+              <Text style={styles.transferTitle}>Transfer Ownership</Text>
+            </View>
+            <Text style={styles.transferSubtitle}>
+              Make {name || 'this staff member'} the new owner of this business. You will become a Manager.
+            </Text>
+            <Button
+              title="Transfer Ownership to This Member"
+              onPress={handleTransferOwnership}
+              variant="secondary"
+              disabled={saving}
+              icon="shield"
+              style={{ marginTop: 12 }}
+            />
+          </View>
+        )}
+
         <View style={[styles.card, styles.dangerCard]}>
           <Text style={styles.dangerTitle}>Danger Zone</Text>
           <Text style={styles.dangerSubtitle}>
@@ -294,5 +353,24 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: FONT.regular,
     color: COLORS.text.muted,
+  },
+  transferCard: {
+    backgroundColor: COLORS.surface,
+    padding: 20,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    borderColor: COLORS.ink + '30',
+    marginTop: 8,
+  },
+  transferTitle: {
+    fontSize: 15,
+    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+  },
+  transferSubtitle: {
+    fontSize: 13,
+    fontFamily: FONT.regular,
+    color: COLORS.text.secondary,
+    lineHeight: 18,
   },
 });
