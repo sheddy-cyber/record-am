@@ -284,8 +284,10 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 11,
+    lineHeight: 14,
     fontFamily: FONT.medium,
     color: COLORS.text.muted,
+    textAlignVertical: 'center',
   },
   notesContainer: {
     marginTop: 6,
