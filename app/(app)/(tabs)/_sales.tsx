@@ -17,6 +17,7 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
+import { useDebtStore } from '@/store/debtStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
@@ -220,6 +221,10 @@ function SalesScreen() {
               if (activity.kind === 'sale') {
                 const saleId = activity.sale_id ?? activity.id;
                 await deleteSaleRecord(saleId);
+                // Remove linked debt from the debts page immediately
+                if (businessId && branchId) {
+                  await useDebtStore.getState().removeDebtBySaleId(saleId, businessId, branchId);
+                }
                 if (businessId && branchId) {
                   await removeCachedRow({ businessId, branchId }, 'sales', saleId);
                   await removeCachedRow({ businessId, branchId }, 'revenue_activities', activity.id);

@@ -11,6 +11,7 @@ interface DebtState {
 
   hydrateCache: (businessId: string, branchId: string) => Promise<void>;
   fetchDebts: (businessId: string, branchId: string) => Promise<void>;
+  removeDebtBySaleId: (saleId: string, businessId: string, branchId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -94,6 +95,20 @@ export const useDebtStore = create<DebtState>((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+
+  removeDebtBySaleId: async (saleId, businessId, branchId) => {
+    // Optimistically remove from in-memory state
+    const next = get().debts.filter((d) => d.sale_id !== saleId);
+    set({ debts: next });
+
+    // Evict from offline cache too
+    try {
+      const cached = await readCachedCustomerDebts(businessId, branchId);
+      const nextCache = cached.filter((d) => d.sale_id !== saleId);
+      await cacheCustomerDebts(businessId, branchId, nextCache);
+    } catch {}
   },
 
   reset: () =>
