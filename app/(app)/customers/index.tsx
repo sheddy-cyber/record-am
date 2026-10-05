@@ -7,12 +7,19 @@ import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { Badge, EmptyState, LoadingScreen } from '@/components/ui';
+import { Badge, EmptyState } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
 const formatCurrency = (value: number | undefined | null) =>
   `${CURRENCY_SYMBOL}${(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+
+const formatSummaryCurrency = (value: number) => {
+  const amount = Math.abs(value || 0);
+  if (amount >= 1000000) return `${CURRENCY_SYMBOL}${(amount / 1000000).toFixed(1)}m`;
+  if (amount >= 1000) return `${CURRENCY_SYMBOL}${(amount / 1000).toFixed(1)}k`;
+  return formatCurrency(amount);
+};
 
 export default function CustomersScreen() {
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
@@ -22,6 +29,7 @@ export default function CustomersScreen() {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [refreshing, setRefreshing] = useState(false);
+  const [customerView, setCustomerView] = useState<'all' | 'owing'>('all');
 
   const onRefresh = useCallback(async () => {
     if (!currentBusiness?.id) return;
@@ -60,13 +68,29 @@ export default function CustomersScreen() {
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter(
-      (customer) =>
+    return customers.filter((customer) => {
+      const matchesSearch =
+        !q ||
         customer.name.toLowerCase().includes(q) ||
-        (customer.phone ?? '').includes(q),
-    );
-  }, [customers, deferredSearch]);
+        (customer.phone ?? '').includes(q);
+      const matchesView = customerView === 'all' || customer.outstanding_debt > 0;
+      return matchesSearch && matchesView;
+    });
+  }, [customers, customerView, deferredSearch]);
+
+  const shownRevenue = useMemo(
+    () => filtered.reduce((sum, customer) => sum + customer.total_spent, 0),
+    [filtered],
+  );
+  const shownDebt = useMemo(
+    () => filtered.reduce((sum, customer) => sum + customer.outstanding_debt, 0),
+    [filtered],
+  );
+  const hasActiveFilter = customerView !== 'all' || Boolean(search.trim());
+  const clearFilters = () => {
+    setSearch('');
+    setCustomerView('all');
+  };
 
 
   return (
@@ -74,84 +98,74 @@ export default function CustomersScreen() {
       <View style={{ flex: 1 }}>
         <ScreenHeader
           title="Customers"
-          subtitle={`${customers.length} total`}
+          subtitle={`${filtered.length} shown`}
           theme="dark"
           right={<HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/customer-create')} />}
         />
 
         <View
           style={{
-            backgroundColor: COLORS.card,
-            borderBottomWidth: 1,
-            borderBottomColor: COLORS.border,
-            paddingHorizontal: 20,
-            paddingVertical: 14,
+            backgroundColor: COLORS.surface,
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 10,
+            gap: 10,
           }}
         >
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search by name or phone..."
-            placeholderTextColor={COLORS.text.muted}
-            underlineColorAndroid="transparent"
-            selectionColor={COLORS.accent}
-            cursorColor={COLORS.accent}
-            importantForAutofill="no"
-            style={{
-              fontFamily: FONT.regular,
-              borderWidth: 1,
-              borderRadius: RADIUS.md,
-              borderColor: COLORS.border,
-              backgroundColor: '#FFFFFF',
-              paddingHorizontal: 14,
-              paddingVertical: 12,
-              color: COLORS.text.primary,
-              fontSize: 14,
-            }}
-          />
-        </View>
+          <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, paddingHorizontal: 13 }}>
+            <Feather name="search" size={16} color={COLORS.text.muted} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search name or phone"
+              placeholderTextColor={COLORS.text.muted}
+              underlineColorAndroid="transparent"
+              selectionColor={COLORS.accent}
+              cursorColor={COLORS.accent}
+              importantForAutofill="no"
+              style={{ flex: 1, fontFamily: FONT.regular, color: COLORS.text.primary, fontSize: 14, paddingVertical: 9 }}
+            />
+            {search ? (
+              <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
+                <Feather name="x" size={16} color={COLORS.text.muted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{
-            flexGrow: 0,
-            backgroundColor: '#FFFFFF',
-            borderBottomWidth: 1,
-            borderBottomColor: COLORS.border,
-          }}
-          contentContainerStyle={{
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            gap: 28,
-            alignItems: 'center',
-          }}
-        >
-          <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
-              Total Customers
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setCustomerView('all')}
+              activeOpacity={0.8}
+              style={{ minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.full, borderColor: customerView === 'all' ? COLORS.ink : COLORS.border, backgroundColor: customerView === 'all' ? COLORS.ink : COLORS.card }}
+            >
+              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: customerView === 'all' ? COLORS.text.inverse : COLORS.text.secondary }}>All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setCustomerView('owing')}
+              activeOpacity={0.8}
+              style={{ minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.full, borderColor: customerView === 'owing' ? COLORS.danger : COLORS.border, backgroundColor: customerView === 'owing' ? '#FEF3F2' : COLORS.card }}
+            >
+              <Feather name="alert-circle" size={13} color={customerView === 'owing' ? COLORS.danger : COLORS.text.muted} />
+              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: customerView === 'owing' ? COLORS.danger : COLORS.text.secondary }}>Owing</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            {hasActiveFilter ? (
+              <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <Feather name="x-circle" size={14} color={COLORS.text.muted} />
+                <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Clear</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 }}>
+            <Text numberOfLines={1} style={{ flex: 1, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
+              {filtered.length} shown · <Text style={{ fontFamily: FONT.medium, color: COLORS.success }}>{formatSummaryCurrency(shownRevenue)} spent</Text>
             </Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
-              {customers.length}
+            <Text numberOfLines={1} style={{ marginLeft: 8, fontFamily: FONT.bold, fontSize: 13, color: shownDebt > 0 ? COLORS.danger : COLORS.text.muted }}>
+              {shownDebt > 0 ? `Owed ${formatSummaryCurrency(shownDebt)}` : 'All clear'}
             </Text>
           </View>
-          <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
-              Total Revenue
-            </Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.success }} numberOfLines={1}>
-              {formatCurrency(customers.reduce((sum, customer) => sum + customer.total_spent, 0))}
-            </Text>
-          </View>
-          <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
-              Outstanding Debts
-            </Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.danger }} numberOfLines={1}>
-              {formatCurrency(customers.reduce((sum, customer) => sum + customer.outstanding_debt, 0))}
-            </Text>
-          </View>
-        </ScrollView>
+        </View>
 
         {filtered.length === 0 ? (
           <ScrollView
@@ -167,9 +181,9 @@ export default function CustomersScreen() {
           >
             <EmptyState
               icon="users"
-              title="No customers yet"
-              description="Add your first customer to start tracking purchases and debts."
-              action={{ label: 'Add Customer', onPress: () => router.push('/(app)/customer-create') }}
+              title={customers.length === 0 ? 'No customers yet' : 'No matching customers'}
+              description={customers.length === 0 ? 'Add your first customer to start tracking purchases and debts.' : 'Try another search or return to all customers.'}
+              action={customers.length === 0 ? { label: 'Add Customer', onPress: () => router.push('/(app)/customer-create') } : { label: 'Clear Filters', onPress: clearFilters }}
             />
           </ScrollView>
         ) : (

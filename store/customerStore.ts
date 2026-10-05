@@ -9,6 +9,7 @@ import {
   upsertCachedRows,
 } from '@/lib/offlineStore';
 import { hasArrayChanged } from '@/lib/storeUtils';
+import { attachProductSummaries, maskSaleItemCosts, saleItemsTable } from '@/lib/dataAccess';
 
 export interface CustomerWithStats extends Customer {
   total_spent: number;
@@ -141,7 +142,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
     try {
       const { data: sales } = await supabase
         .from('sales')
-        .select('*, items:sale_items(*, product:products(name, unit))')
+        .select(`*, items:${saleItemsTable()}(*)`)
         .eq('customer_id', customerId)
         .eq('business_id', businessId)
         .order('created_at', { ascending: false })
@@ -153,7 +154,10 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
 
-      const newSales = (sales as Sale[]) ?? [];
+      const newSales = ((sales as Sale[]) ?? []).map((sale) => ({
+        ...sale,
+        items: attachProductSummaries(maskSaleItemCosts(sale.items ?? [])),
+      }));
       const newDebts = (debts as CustomerDebt[]) ?? [];
       
       if (
@@ -174,7 +178,11 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         const filteredSales = cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20);
         const newSales = filteredSales.map((s) => ({
           ...s,
-          items: s.items && s.items.length > 0 ? s.items : cachedSaleItems.filter((i) => i.sale_id === s.id),
+          items: maskSaleItemCosts(
+            attachProductSummaries(
+              s.items && s.items.length > 0 ? s.items : cachedSaleItems.filter((i) => i.sale_id === s.id),
+            ),
+          ),
         }));
 
         if (

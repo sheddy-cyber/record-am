@@ -11,6 +11,7 @@ import {
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { isDebtSettlementSale } from '@/lib/records';
 import { fetchRevenueActivities } from '@/lib/revenue';
+import { productsTable } from '@/lib/dataAccess';
 
 const DASHBOARD_REVENUE_VISIBLE_KEY = 'record-am:dashboard:revenue-visible';
 const getRevenueKey = (businessId?: string) =>
@@ -228,7 +229,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
           .eq('branch_id', branchId)
           .neq('status', 'settled'),
         supabase
-          .from('products')
+          .from(productsTable())
           .select('id', { count: 'exact', head: true })
           .eq('business_id', businessId)
           .eq('is_active', true),

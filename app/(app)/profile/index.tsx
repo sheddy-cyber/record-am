@@ -18,6 +18,7 @@ import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 import Toast from 'react-native-toast-message';
+import { dismissScreen } from '@/lib/navigation';
 
 export default function ProfileScreen() {
   const { profile, user, setProfile, initialize } = useAuthStore();
@@ -126,7 +127,7 @@ export default function ProfileScreen() {
         title="My Profile"
         subtitle={user?.email ?? 'Account'}
         theme="dark"
-        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
       <KeyboardAwareScrollView

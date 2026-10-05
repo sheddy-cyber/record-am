@@ -27,29 +27,45 @@ export interface AlertOptions {
 interface AlertState {
   isVisible: boolean;
   options: AlertOptions | null;
+  /**
+   * Increments every time a dialog is shown. Button handlers capture the
+   * session they were opened with and only dismiss that session, so a press
+   * that opens the next dialog does not immediately close it.
+   */
+  session: number;
   showAlert: (
     title: string,
     message?: string | React.ReactNode,
     customOptions?: Partial<AlertOptions>
   ) => void;
-  hideAlert: () => void;
+  hideAlert: (session?: number) => void;
 }
 
 export const useAlertStore = create<AlertState>((set) => ({
   isVisible: false,
   options: null,
+  session: 0,
   showAlert: (title, message, customOptions) => {
-    set({
+    set((state) => ({
       isVisible: true,
+      session: state.session + 1,
       options: {
         title,
         message,
         ...customOptions,
       },
-    });
+    }));
   },
-  hideAlert: () => {
-    set({ isVisible: false, options: null });
+  hideAlert: (session?: number) => {
+    set((state) => {
+      if (session !== undefined && state.session !== session) {
+        return state;
+      }
+      if (!state.isVisible && state.options == null) {
+        return state;
+      }
+      return { isVisible: false, options: null };
+    });
   },
 }));
 

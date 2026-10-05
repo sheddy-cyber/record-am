@@ -21,6 +21,7 @@ import { usePaymentAccountStore } from '@/store/paymentAccountStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { PaymentAccountModal } from '@/components/settings/PaymentAccountModal';
 import { supabase } from '@/lib/supabase';
+import { saleItemsTable } from '@/lib/dataAccess';
 import { recordSaleOffline, updateSaleOffline } from '@/lib/offlineRecords';
 import { checkAndNotifyLowStock } from '@/lib/notifications';
 import { readCachedRows } from '@/lib/offlineStore';
@@ -41,6 +42,7 @@ import {
 } from '@/components/sales';
 import { COLORS, CURRENCY_SYMBOL, FONT } from '@/constants';
 import { CartItem, PaymentMethod, Product, Sale, SaleItem } from '@/types';
+import { dismissScreen } from '@/lib/navigation';
 
 const MAX_VISIBLE_PRODUCTS = 5;
 
@@ -80,7 +82,11 @@ export default function RecordSaleScreen() {
     loadSoldProductQuantities,
   } = useSaleStore();
 
-  const { saleId } = useLocalSearchParams<{ saleId?: string }>();
+  const { saleId, customerName: prefilledCustomerName, customerPhone: prefilledCustomerPhone } = useLocalSearchParams<{
+    saleId?: string;
+    customerName?: string;
+    customerPhone?: string;
+  }>();
   const isEditing = Boolean(saleId);
   const [loadingSale, setLoadingSale] = useState(false);
   const originalQuantitiesByProduct = useRef<Map<string, number>>(new Map());
@@ -104,6 +110,12 @@ export default function RecordSaleScreen() {
   const [saleNotes, setSaleNotes] = useState('');
   const [savingSale, setSavingSale] = useState(false);
 
+  useEffect(() => {
+    if (saleId || !prefilledCustomerName) return;
+    setCustomerName(prefilledCustomerName);
+    setCustomerPhone(prefilledCustomerPhone ?? '');
+  }, [prefilledCustomerName, prefilledCustomerPhone, saleId]);
+
   const {
     accounts: paymentAccounts,
     fetchAccounts: fetchPaymentAccounts,
@@ -112,7 +124,7 @@ export default function RecordSaleScreen() {
 
   const pinnedProductIdSet = useMemo(() => new Set(pinnedProductIds), [pinnedProductIds]);
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const loadProducts = useCallback(async () => {
     if (!currentBusiness || !currentBranch) return;

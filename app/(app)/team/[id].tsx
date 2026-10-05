@@ -4,7 +4,9 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { Button } from '@/components/ui';
+import { Button, PermissionDenied } from '@/components/ui';
+import { hasPermission } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 import { InputField, SelectField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
@@ -31,6 +33,7 @@ export default function EditTeamMemberScreen() {
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const currentUserRole = useAuthStore((s) => s.userRole);
+  const canManageTeam = hasPermission(currentUserRole, 'business-settings.manage');
   const setUserRole = useAuthStore((s) => s.setUserRole);
   const { updateTeamMemberRole, updateTeamMemberProfile, removeTeamMember, transferOwnership } = useBusinessStore();
 
@@ -66,7 +69,7 @@ export default function EditTeamMemberScreen() {
         await updateTeamMemberRole(id, role);
       }
       Toast.show({ type: 'success', text1: 'Staff member updated successfully' });
-      router.back();
+      dismissScreen();
     } catch (err: any) {
       Alert.alert('Error', err.message);
     } finally {
@@ -89,7 +92,7 @@ export default function EditTeamMemberScreen() {
             try {
               await removeTeamMember(id);
               Toast.show({ type: 'success', text1: 'Staff removed successfully' });
-              router.back();
+              dismissScreen();
             } catch (err: any) {
               Alert.alert('Error', err.message);
               setSaving(false);
@@ -123,7 +126,7 @@ export default function EditTeamMemberScreen() {
                 text1: 'Ownership transferred',
                 text2: `${name || 'Staff member'} is now the business owner.`,
               });
-              router.back();
+              dismissScreen();
             } catch (err: any) {
               Alert.alert('Transfer Failed', err.message || 'Could not transfer ownership. Please try again.');
               setSaving(false);
@@ -134,11 +137,26 @@ export default function EditTeamMemberScreen() {
     );
   };
 
+  if (!canManageTeam) {
+    return (
+      <ScreenShell backgroundColor={COLORS.background} statusBarStyle="dark">
+        <ScreenHeader
+          title="Manage Staff"
+          left={<HeaderAction icon="x" onPress={() => dismissScreen()} />}
+        />
+        <PermissionDenied
+          title="Team management is restricted"
+          description="Only owners and managers can edit staff roles and profiles."
+        />
+      </ScreenShell>
+    );
+  }
+
   return (
     <ScreenShell backgroundColor={COLORS.background} statusBarStyle="dark">
       <ScreenHeader
         title={`Manage Staff`}
-        left={<HeaderAction icon="x" onPress={() => router.back()} />}
+        left={<HeaderAction icon="x" onPress={() => dismissScreen()} />}
       />
 
       <ScrollView contentContainerStyle={{ padding: SP.page, gap: 24 }}>

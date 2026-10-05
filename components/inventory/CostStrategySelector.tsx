@@ -12,6 +12,7 @@ export interface CostStrategySelectorProps {
   currentStock: number;
   incomingQty: number;
   currentCostPrice: string;
+  selectedStrategy?: CostStrategy;
   onSelectStrategy: (cost: number, strategy: CostStrategy) => void;
   productUnit?: string;
   isFromPurchase?: boolean;
@@ -28,6 +29,7 @@ export function CostStrategySelector({
   currentStock,
   incomingQty,
   currentCostPrice,
+  selectedStrategy,
   onSelectStrategy,
   productUnit = 'unit',
   isFromPurchase = false,
@@ -44,10 +46,9 @@ export function CostStrategySelector({
       })
     : newCost;
 
-  const parsedCurrent = parseFloat(currentCostPrice) || 0;
-  const isWeightedActive = hasBothBatches && Math.abs(parsedCurrent - weightedCost) < 0.01;
-  const isNewActive = Math.abs(parsedCurrent - newCost) < 0.01;
-  const isOldActive = Math.abs(parsedCurrent - oldCost) < 0.01;
+  const isWeightedActive = selectedStrategy === 'weighted';
+  const isNewActive = selectedStrategy === 'new';
+  const isOldActive = selectedStrategy === 'old';
 
   const isPriceIncrease = newCost > oldCost;
   const priceDiff = Math.abs(newCost - oldCost);

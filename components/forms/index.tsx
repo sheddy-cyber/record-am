@@ -102,6 +102,7 @@ export const InputField: React.FC<InputFieldProps> = ({
           backgroundColor: 'rgba(255,255,255,0.95)',
           borderColor: error ? COLORS.danger : focused ? COLORS.accent : COLORS.border,
           minHeight: 48,
+          overflow: 'hidden',
         }}
       >
         {leftIcon}

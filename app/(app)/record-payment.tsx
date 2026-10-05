@@ -20,6 +20,7 @@ import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/f
 import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, PAYMENT_METHODS, RADIUS } from '@/constants';
 import { CustomerDebt, PaymentMethod } from '@/types';
+import { dismissScreen } from '@/lib/navigation';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -99,7 +100,7 @@ export default function RecordPaymentScreen() {
     }
   };
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const onRefresh = useCallback(async () => {
     if (!currentBusiness || !currentBranch) return;

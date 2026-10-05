@@ -4,7 +4,9 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { Button, Card, SectionHeader } from '@/components/ui';
+import { Button, Card, PermissionDenied, SectionHeader } from '@/components/ui';
+import { hasPermission } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 import { InputField, KeyboardAwareScrollView, SelectField, Toggle } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
@@ -23,7 +25,8 @@ import { PaymentAccountsSection } from '@/components/settings/PaymentAccountsSec
 import Toast from 'react-native-toast-message';
 
 export default function SettingsScreen() {
-  const { currentBusiness, currentBranch, setCurrentBusiness } = useAuthStore();
+  const { currentBusiness, currentBranch, setCurrentBusiness, userRole } = useAuthStore();
+  const canManageSettings = hasPermission(userRole, 'business-settings.manage');
   const { updateBusiness } = useBusinessStore();
   const { isOnline, pendingCount: pendingMutations, isSyncing: syncing } = useOfflineStore();
   const [refreshing, setRefreshing] = useState(false);
@@ -221,13 +224,29 @@ export default function SettingsScreen() {
     }
   };
 
+  if (!canManageSettings) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Business Settings"
+          theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+        />
+        <PermissionDenied
+          title="Business settings are restricted"
+          description="Only owners and managers can change business setup, team access, and payment accounts."
+        />
+      </ScreenShell>
+    );
+  }
+
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title="Business Settings"
         subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(" \u00B7 ")}
         theme="dark"
-        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
       <KeyboardAwareScrollView

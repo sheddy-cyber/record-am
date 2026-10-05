@@ -10,6 +10,7 @@ import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { BrandWordmark, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { Business } from '@/types';
+import { dismissScreen } from '@/lib/navigation';
 
 export default function JoinBusinessScreen() {
   const insets = useSafeAreaInsets();
@@ -92,7 +93,7 @@ export default function JoinBusinessScreen() {
 
           <View style={{ marginTop: 'auto', paddingTop: 24, gap: 10 }}>
             <Button title="Join Business" onPress={handleJoin} loading={loading} size="lg" variant="accent" />
-            <Button title="Cancel" onPress={() => router.back()} variant="ghost" size="lg" />
+            <Button title="Cancel" onPress={() => dismissScreen()} variant="ghost" size="lg" />
           </View>
         </KeyboardAwareScrollView>
       </View>

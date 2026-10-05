@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 
 export * from './RoleGate';
+export * from './PermissionDenied';
 export * from './GlobalDialog';
 export * from './ConfirmationModal';
 export { confirmModal, showAlertDialog, useConfirmModal } from '@/store/alertStore';

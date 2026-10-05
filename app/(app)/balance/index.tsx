@@ -8,9 +8,11 @@ import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDailyReport } from '@/lib/reports';
-import { Badge, Button, Card, EmptyState, LoadingScreen, SectionHeader } from '@/components/ui';
-import { ScreenHeader, ScreenShell } from '@/components/layout';
+import { Badge, Button, Card, EmptyState, LoadingScreen, PermissionDenied, SectionHeader } from '@/components/ui';
+import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
+import { canViewFinancialData } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 
 const formatCurrency = (value: number) => {
   const isNegative = value < 0;
@@ -18,7 +20,8 @@ const formatCurrency = (value: number) => {
 };
 
 export default function DailyBalanceScreen() {
-  const { currentBusiness, currentBranch } = useAuthStore();
+  const { currentBusiness, currentBranch, userRole } = useAuthStore();
+  const canViewFinancials = canViewFinancialData(userRole);
   const {
     summary,
     entries,
@@ -33,10 +36,10 @@ export default function DailyBalanceScreen() {
   const [showPicker, setShowPicker] = useState(false);
 
   const load = useCallback(() => {
-    if (currentBusiness && currentBranch) {
+    if (canViewFinancials && currentBusiness && currentBranch) {
       fetchDailyBalance(currentBusiness.id, currentBranch.id, selectedDate);
     }
-  }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate]);
+  }, [canViewFinancials, currentBranch, currentBusiness, fetchDailyBalance, selectedDate]);
 
   useEffect(() => {
     load();
@@ -44,7 +47,7 @@ export default function DailyBalanceScreen() {
 
   useRealtimeRefresh({
     channelName: `daily-balance-${currentBranch?.id ?? 'unknown'}-${selectedDate}`,
-    enabled: Boolean(currentBusiness && currentBranch),
+    enabled: Boolean(canViewFinancials && currentBusiness && currentBranch),
     watch: [currentBusiness?.id, currentBranch?.id, selectedDate],
     tables: [
       ...(currentBranch ? [{ table: 'sales', filter: `branch_id=eq.${currentBranch.id}` }] : []),
@@ -106,6 +109,22 @@ export default function DailyBalanceScreen() {
     discrepancy === 0 ? '#ECFDF3' : discrepancy > 0 ? '#EEF4FF' : '#FEF3F2';
   const discrepancyBorder =
     discrepancy === 0 ? '#BFD9CA' : discrepancy > 0 ? '#B7CADB' : '#DDAEA6';
+  if (!canViewFinancials) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Daily Balance"
+          theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+        />
+        <PermissionDenied
+          title="Daily balance is restricted"
+          description="Cash reconciliation, profit, and day-close reports are available to owners, managers, and auditors only."
+        />
+      </ScreenShell>
+    );
+  }
+
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <View style={{ flex: 1 }}>

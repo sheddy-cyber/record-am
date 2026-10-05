@@ -8,7 +8,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   TextInput,
-  Platform,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,8 +30,9 @@ import { readCachedExpenses, cacheExpenses } from '@/lib/offlineStore';
 import { Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, EXPENSE_CATEGORIES, FONT, PAYMENT_METHODS, RADIUS, SP } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, EXPENSE_CATEGORIES, FONT, PAYMENT_METHODS, RADIUS } from '@/constants';
 import { Expense, PaymentMethod } from '@/types';
+import { dismissScreen } from '@/lib/navigation';
 
 // Category metadata with styling and icons
 const CATEGORY_META: Record<
@@ -90,6 +92,7 @@ export default function ExpensesScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
 
   // Form Fields
   const [expenseCategory, setExpenseCategory] = useState('rent');
@@ -362,6 +365,11 @@ export default function ExpensesScreen() {
     return selectedPeriod;
   }, [periodOptions, selectedPeriod]);
 
+  const selectedCategoryLabel = useMemo(
+    () => CATEGORY_CHIPS.find((category) => category.key === selectedCategory)?.label ?? 'All categories',
+    [selectedCategory],
+  );
+
   // Check if expense matches the selected time period
   const matchesPeriod = useCallback((expenseDateStr: string, periodKey: string): boolean => {
     if (periodKey === 'all') return true;
@@ -405,14 +413,9 @@ export default function ExpensesScreen() {
     });
   }, [expenses, selectedPeriod, matchesPeriod]);
 
-  // Summary total for selected period
-  const periodTotal = useMemo(() => {
-    return periodExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
-  }, [periodExpenses]);
-
-  // Date-grouped expenses filtered by period, category, and search query
-  const groupedExpenses = useMemo(() => {
-    const filtered = periodExpenses.filter((item) => {
+  // Apply every active control before calculating the visible total or building date groups.
+  const filteredExpenses = useMemo(() => {
+    return periodExpenses.filter((item) => {
       const matchesCat = selectedCategory === 'all' || item.category === selectedCategory;
       const q = deferredSearchQuery.trim().toLowerCase();
       const matchesQuery =
@@ -422,9 +425,17 @@ export default function ExpensesScreen() {
         item.amount.toString().includes(q);
       return matchesCat && matchesQuery;
     });
+  }, [periodExpenses, selectedCategory, deferredSearchQuery]);
 
+  const visibleExpenseTotal = useMemo(
+    () => filteredExpenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0),
+    [filteredExpenses],
+  );
+
+  // Date-grouped expenses for the already filtered selection.
+  const groupedExpenses = useMemo(() => {
     const map = new Map<string, Expense[]>();
-    for (const exp of filtered) {
+    for (const exp of filteredExpenses) {
       const key = exp.expense_date || (exp.created_at ? exp.created_at.slice(0, 10) : 'Unknown');
       if (!map.has(key)) {
         map.set(key, []);
@@ -468,7 +479,19 @@ export default function ExpensesScreen() {
         data: items,
       };
     });
-  }, [periodExpenses, selectedCategory, deferredSearchQuery]);
+  }, [filteredExpenses]);
+
+  const hasExtraFilters = Boolean(searchQuery.trim()) || selectedCategory !== 'all';
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory('all');
+  };
+
+  const resetFilters = () => {
+    clearFilters();
+    setSelectedPeriod('this_month');
+  };
 
   if (loading && expenses.length === 0) {
     return <LoadingScreen message="Loading expenses..." />;
@@ -626,24 +649,23 @@ export default function ExpensesScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title="Expenses"
-        subtitle={`${expenses.length} expense${expenses.length === 1 ? '' : 's'} recorded`}
+        subtitle={`${filteredExpenses.length} shown · ${selectedPeriodLabel}`}
         theme="dark"
-        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={<HeaderAction icon="plus" label="Record" onPress={startNewExpense} />}
       />
 
-      {/* ── Fixed Search & Filters Bar (stays pinned at top) ───────────── */}
+      {/* ── Compact search, selection and total ───────────────────────── */}
       <View
         style={{
           backgroundColor: COLORS.surface,
           paddingHorizontal: 16,
-          paddingTop: 10,
-          paddingBottom: 14,
-          gap: 8,
+          paddingTop: 12,
+          paddingBottom: 10,
+          gap: 10,
           zIndex: 10,
         }}
       >
-        {/* Search Input */}
         <View
           style={{
             borderWidth: 1,
@@ -651,7 +673,7 @@ export default function ExpensesScreen() {
             borderColor: COLORS.border,
             backgroundColor: COLORS.card,
             paddingHorizontal: 12,
-            height: 38,
+            minHeight: 44,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 8,
@@ -685,149 +707,52 @@ export default function ExpensesScreen() {
           ) : null}
         </View>
 
-        {/* Time Period Filter Pills */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-          {periodOptions.map((period) => {
-            const isSelected = selectedPeriod === period.key;
-            return (
-              <TouchableOpacity
-                key={period.key}
-                onPress={() => setSelectedPeriod(period.key)}
-                activeOpacity={0.8}
-                style={{
-                  paddingHorizontal: 11,
-                  paddingVertical: 5,
-                  borderRadius: RADIUS.full,
-                  borderWidth: 1,
-                  borderColor: isSelected ? COLORS.ink : COLORS.border,
-                  backgroundColor: isSelected ? COLORS.ink : COLORS.card,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontFamily: isSelected ? FONT.bold : FONT.medium,
-                    color: isSelected ? COLORS.text.inverse : COLORS.text.primary,
-                  }}
-                >
-                  {period.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Category Filter Chips */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-          {CATEGORY_CHIPS.map((item) => {
-            const isSelected = selectedCategory === item.key;
-            return (
-              <TouchableOpacity
-                key={item.key}
-                onPress={() => setSelectedCategory(item.key)}
-                activeOpacity={0.8}
-                style={{
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                  borderRadius: RADIUS.full,
-                  borderWidth: 1,
-                  borderColor: isSelected ? COLORS.ink : COLORS.border,
-                  backgroundColor: isSelected ? COLORS.ink : COLORS.card,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 11.5,
-                    fontFamily: isSelected ? FONT.bold : FONT.medium,
-                    color: isSelected ? COLORS.text.inverse : COLORS.text.secondary,
-                  }}
-                >
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* ── Single Summary Card for Selected Period ──────────────────── */}
-        <Card
-          style={{
-            marginVertical: 4,
-            paddingVertical: 16,
-            paddingHorizontal: 16,
-            backgroundColor: COLORS.card,
-            borderRadius: RADIUS.lg,
-            borderWidth: 1,
-            borderColor: COLORS.border,
-          }}
-        >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <View style={{ flex: 1, marginRight: 12 }}>
-              <Text
-                style={{
-                  fontFamily: FONT.medium,
-                  fontSize: 11.5,
-                  color: COLORS.text.muted,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.6,
-                }}
-              >
-                Total Spent ({selectedPeriodLabel})
-              </Text>
-              <Text
-                style={{
-                  fontFamily: FONT.bold,
-                  fontSize: 22,
-                  color: periodTotal > 0 ? COLORS.danger : COLORS.text.primary,
-                  marginTop: 6,
-                }}
-              >
-                -{formatCurrency(periodTotal)}
-              </Text>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => setFilterSheetVisible(true)}
+            activeOpacity={0.8}
+            style={{ flex: 1, minHeight: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
+          >
+            <View style={{ width: 27, height: 27, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: `${COLORS.accent}14` }}>
+              <Feather name="calendar" size={14} color={COLORS.accent} />
             </View>
-
-            <View
-              style={{
-                backgroundColor: COLORS.surface2,
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: RADIUS.full,
-                borderWidth: 1,
-                borderColor: COLORS.border,
-              }}
-            >
-              <Text style={{ fontFamily: FONT.bold, fontSize: 12, color: COLORS.text.secondary }}>
-                {periodExpenses.length} {periodExpenses.length === 1 ? 'item' : 'items'}
-              </Text>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={{ fontFamily: FONT.regular, fontSize: 10.5, color: COLORS.text.muted }}>Time period</Text>
+              <Text style={{ marginTop: 1, fontFamily: FONT.medium, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedPeriodLabel}</Text>
             </View>
-          </View>
-        </Card>
+            <Feather name="chevron-down" size={15} color={COLORS.text.muted} />
+          </TouchableOpacity>
 
-        {/* ── Primary Action: Record New Expense Button ───────────────── */}
-        <TouchableOpacity
-          onPress={startNewExpense}
-          activeOpacity={0.8}
-          style={{
-            backgroundColor: COLORS.accent,
-            borderRadius: RADIUS.md,
-            paddingVertical: 11,
-            paddingHorizontal: 16,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.08,
-            shadowRadius: 3,
-            elevation: 2,
-          }}
-        >
-          <Feather name="plus-circle" size={17} color="#FFFFFF" />
-          <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: '#FFFFFF' }}>
-            Record New Expense
+          <TouchableOpacity
+            onPress={() => setFilterSheetVisible(true)}
+            activeOpacity={0.8}
+            style={{ flex: 1, minHeight: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11, borderWidth: 1, borderRadius: RADIUS.md, borderColor: selectedCategory === 'all' ? COLORS.border : COLORS.accent, backgroundColor: COLORS.card }}
+          >
+            <View style={{ width: 27, height: 27, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: selectedCategory === 'all' ? COLORS.surface2 : `${COLORS.accent}14` }}>
+              <Feather name="tag" size={14} color={selectedCategory === 'all' ? COLORS.text.muted : COLORS.accent} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={{ fontFamily: FONT.regular, fontSize: 10.5, color: COLORS.text.muted }}>Category</Text>
+              <Text style={{ marginTop: 1, fontFamily: FONT.medium, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedCategoryLabel}</Text>
+            </View>
+            <Feather name="sliders" size={14} color={COLORS.text.muted} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ minHeight: 30, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 }}>
+          <Text style={{ flex: 1, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
+            {filteredExpenses.length} {filteredExpenses.length === 1 ? 'expense' : 'expenses'} shown
           </Text>
-        </TouchableOpacity>
+          <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: visibleExpenseTotal > 0 ? COLORS.danger : COLORS.text.primary }}>
+            -{formatCurrency(visibleExpenseTotal)}
+          </Text>
+          {hasExtraFilters ? (
+            <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ marginLeft: 10, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Feather name="x-circle" size={14} color={COLORS.text.muted} />
+              <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Clear</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
       </View>
 
       <SectionList
@@ -1069,17 +994,82 @@ export default function ExpensesScreen() {
                     }
                   : {
                       label: 'Clear Filters',
-                      onPress: () => {
-                        setSearchQuery('');
-                        setSelectedCategory('all');
-                        setSelectedPeriod('all');
-                      },
+                      onPress: clearFilters,
                     }
               }
             />
           </View>
         }
       />
+
+      <Modal
+        visible={filterSheetVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFilterSheetVisible(false)}
+      >
+        <Pressable
+          style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,33,28,0.48)' }}
+          onPress={() => setFilterSheetVisible(false)}
+        >
+          <Pressable
+            onPress={(event) => event.stopPropagation()}
+            style={{ maxHeight: '86%', borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: COLORS.surface, paddingTop: 12 }}
+          >
+            <View style={{ width: 38, height: 4, alignSelf: 'center', borderRadius: 4, backgroundColor: COLORS.borderDark }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 14 }}>
+              <View>
+                <Text style={{ fontFamily: FONT.bold, fontSize: 17, color: COLORS.text.primary }}>Filter expenses</Text>
+                <Text style={{ marginTop: 3, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Choose what appears in the list and total.</Text>
+              </View>
+              <TouchableOpacity onPress={() => setFilterSheetVisible(false)} hitSlop={8}>
+                <Feather name="x" size={20} color={COLORS.text.muted} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 14 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>TIME PERIOD</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {periodOptions.map((period) => {
+                  const active = selectedPeriod === period.key;
+                  return (
+                    <TouchableOpacity
+                      key={period.key}
+                      onPress={() => setSelectedPeriod(period.key)}
+                      activeOpacity={0.8}
+                      style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: active ? COLORS.ink : COLORS.border, backgroundColor: active ? COLORS.ink : COLORS.card }}
+                    >
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: active ? COLORS.text.inverse : COLORS.text.secondary }}>{period.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={{ marginTop: 22, marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>CATEGORY</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {CATEGORY_CHIPS.map((category) => {
+                  const active = selectedCategory === category.key;
+                  return (
+                    <TouchableOpacity
+                      key={category.key}
+                      onPress={() => setSelectedCategory(category.key)}
+                      activeOpacity={0.8}
+                      style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: active ? COLORS.accent : COLORS.border, backgroundColor: active ? `${COLORS.accent}14` : COLORS.card }}
+                    >
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: active ? COLORS.accent : COLORS.text.secondary }}>{category.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 18, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+              <Button title="Reset" variant="secondary" size="md" style={{ flex: 0.75 }} onPress={resetFilters} />
+              <Button title="Show expenses" variant="accent" icon="check" size="md" style={{ flex: 1.25 }} onPress={() => setFilterSheetVisible(false)} />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScreenShell>
   );
 }

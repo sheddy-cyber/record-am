@@ -2,133 +2,165 @@ import React, { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
-import { Badge, EmptyState, LoadingScreen } from '@/components/ui';
+import { Badge, EmptyState, PermissionDenied } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
+import { canManagePurchases, hasPermission } from '@/lib/permissions';
 
 const formatCurrency = (value: number | undefined | null) =>
   `${CURRENCY_SYMBOL}${(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
+const formatSummaryCurrency = (value: number) => {
+  const amount = Math.abs(value || 0);
+  if (amount >= 1000000) return `${CURRENCY_SYMBOL}${(amount / 1000000).toFixed(1)}m`;
+  if (amount >= 1000) return `${CURRENCY_SYMBOL}${(amount / 1000).toFixed(1)}k`;
+  return formatCurrency(amount);
+};
+
 export default function SuppliersScreen() {
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const userRole = useAuthStore((s) => s.userRole);
   const suppliers = useSupplierStore((s) => s.suppliers);
   const fetchSuppliers = useSupplierStore((s) => s.fetchSuppliers);
   const setSelectedSupplier = useSupplierStore((s) => s.setSelectedSupplier);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [refreshing, setRefreshing] = useState(false);
+  const [supplierView, setSupplierView] = useState<'all' | 'owing'>('all');
+  const canViewPurchases = hasPermission(userRole, 'purchases.view');
+  const canManageSupplierPurchases = canManagePurchases(userRole);
 
   const onRefresh = useCallback(async () => {
-    if (!currentBusiness?.id) return;
+    if (!currentBusiness?.id || !canViewPurchases) return;
     setRefreshing(true);
     try {
       await fetchSuppliers(currentBusiness.id);
     } catch (_) {}
     setRefreshing(false);
-  }, [currentBusiness?.id, fetchSuppliers]);
+  }, [canViewPurchases, currentBusiness?.id, fetchSuppliers]);
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
-    if (!q) return suppliers;
-    return suppliers.filter(
-      (supplier) =>
+    return suppliers.filter((supplier) => {
+      const matchesSearch =
+        !q ||
         supplier.name.toLowerCase().includes(q) ||
-        (supplier.phone ?? '').includes(q),
-    );
-  }, [suppliers, deferredSearch]);
+        (supplier.phone ?? '').includes(q);
+      const matchesView = supplierView === 'all' || supplier.outstanding_debt > 0;
+      return matchesSearch && matchesView;
+    });
+  }, [suppliers, supplierView, deferredSearch]);
 
+  const shownPurchases = useMemo(
+    () => filtered.reduce((sum, supplier) => sum + supplier.total_purchased, 0),
+    [filtered],
+  );
+  const shownDebt = useMemo(
+    () => filtered.reduce((sum, supplier) => sum + supplier.outstanding_debt, 0),
+    [filtered],
+  );
+  const hasActiveFilter = supplierView !== 'all' || Boolean(search.trim());
+  const clearFilters = () => {
+    setSearch('');
+    setSupplierView('all');
+  };
+
+  if (!canViewPurchases) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader title="Suppliers & Purchases" theme="dark" />
+        <PermissionDenied
+          title="Supplier purchases are restricted"
+          description="Supplier balances and goods costs are available to owners, managers, and auditors only."
+        />
+      </ScreenShell>
+    );
+  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <View style={{ flex: 1 }}>
         <ScreenHeader
           title="Suppliers & Purchases"
-          subtitle={`${suppliers.length} total`}
+          subtitle={`${filtered.length} shown`}
           theme="dark"
-          right={<HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/supplier-create')} />}
+          right={
+            canManageSupplierPurchases ? (
+              <HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/supplier-create')} />
+            ) : undefined
+          }
         />
 
         <View
           style={{
-            backgroundColor: COLORS.card,
-            borderBottomWidth: 1,
-            borderBottomColor: COLORS.border,
-            paddingHorizontal: 20,
-            paddingVertical: 14,
+            backgroundColor: COLORS.surface,
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 10,
+            gap: 10,
           }}
         >
-          <TextInput
-            value={search}
-            onChangeText={setSearch}
-            placeholder="Search by name or phone..."
-            placeholderTextColor={COLORS.text.muted}
-            underlineColorAndroid="transparent"
-            selectionColor={COLORS.accent}
-            cursorColor={COLORS.accent}
-            importantForAutofill="no"
-            style={{
-              fontFamily: FONT.regular,
-              borderWidth: 1,
-              borderRadius: RADIUS.md,
-              borderColor: COLORS.border,
-              backgroundColor: '#FFFFFF',
-              paddingHorizontal: 14,
-              paddingVertical: 12,
-              color: COLORS.text.primary,
-              fontSize: 14,
-            }}
-          />
+          <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, paddingHorizontal: 13 }}>
+            <Feather name="search" size={16} color={COLORS.text.muted} />
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder="Search supplier or phone"
+              placeholderTextColor={COLORS.text.muted}
+              underlineColorAndroid="transparent"
+              selectionColor={COLORS.accent}
+              cursorColor={COLORS.accent}
+              importantForAutofill="no"
+              style={{ flex: 1, fontFamily: FONT.regular, color: COLORS.text.primary, fontSize: 14, paddingVertical: 9 }}
+            />
+            {search ? (
+              <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
+                <Feather name="x" size={16} color={COLORS.text.muted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <TouchableOpacity
+              onPress={() => setSupplierView('all')}
+              activeOpacity={0.8}
+              style={{ minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.full, borderColor: supplierView === 'all' ? COLORS.ink : COLORS.border, backgroundColor: supplierView === 'all' ? COLORS.ink : COLORS.card }}
+            >
+              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: supplierView === 'all' ? COLORS.text.inverse : COLORS.text.secondary }}>All</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setSupplierView('owing')}
+              activeOpacity={0.8}
+              style={{ minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.full, borderColor: supplierView === 'owing' ? COLORS.danger : COLORS.border, backgroundColor: supplierView === 'owing' ? '#FEF3F2' : COLORS.card }}
+            >
+              <Feather name="alert-circle" size={13} color={supplierView === 'owing' ? COLORS.danger : COLORS.text.muted} />
+              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: supplierView === 'owing' ? COLORS.danger : COLORS.text.secondary }}>We owe</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }} />
+            {hasActiveFilter ? (
+              <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                <Feather name="x-circle" size={14} color={COLORS.text.muted} />
+                <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Clear</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 }}>
+            <Text numberOfLines={1} style={{ flex: 1, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
+              {filtered.length} shown · <Text style={{ fontFamily: FONT.medium, color: COLORS.accent }}>{formatSummaryCurrency(shownPurchases)} purchased</Text>
+            </Text>
+            <Text numberOfLines={1} style={{ marginLeft: 8, fontFamily: FONT.bold, fontSize: 13, color: shownDebt > 0 ? COLORS.danger : COLORS.text.muted }}>
+              {shownDebt > 0 ? `Owe ${formatSummaryCurrency(shownDebt)}` : 'All clear'}
+            </Text>
+          </View>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{
-            flexGrow: 0,
-            backgroundColor: '#FFFFFF',
-            borderBottomWidth: 1,
-            borderBottomColor: COLORS.border,
-          }}
-          contentContainerStyle={{
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            gap: 28,
-            alignItems: 'center',
-          }}
-        >
-          <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
-              Total Suppliers
-            </Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
-              {suppliers.length}
-            </Text>
-          </View>
-          <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
-              Total Purchased
-            </Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.accent }} numberOfLines={1}>
-              {formatCurrency(suppliers.reduce((sum, supplier) => sum + supplier.total_purchased, 0))}
-            </Text>
-          </View>
-          <View>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }} numberOfLines={1}>
-              We Owe
-            </Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.danger }} numberOfLines={1}>
-              {formatCurrency(suppliers.reduce((sum, supplier) => sum + supplier.outstanding_debt, 0))}
-            </Text>
-          </View>
-        </ScrollView>
-
-        <View style={{ paddingHorizontal: 16, marginTop: 10 }}>
+        <View style={{ paddingHorizontal: 16, paddingBottom: 2 }}>
           <ReconcileWarningBanner onReconciled={() => { if (currentBusiness) fetchSuppliers(currentBusiness.id); }} />
         </View>
 
@@ -146,9 +178,9 @@ export default function SuppliersScreen() {
           >
             <EmptyState
               icon="truck"
-              title="No suppliers yet"
-              description="Add suppliers to track goods bought from them and what you owe them."
-              action={{ label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') }}
+              title={suppliers.length === 0 ? 'No suppliers yet' : 'No matching suppliers'}
+              description={suppliers.length === 0 ? 'Add suppliers to track goods bought from them and what you owe them.' : 'Try another search or return to all suppliers.'}
+              action={suppliers.length === 0 ? { label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') } : { label: 'Clear Filters', onPress: clearFilters }}
             />
           </ScrollView>
         ) : (

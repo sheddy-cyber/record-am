@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandMark, BrandWordmark, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS } from '@/constants';
+import { dismissScreen } from '@/lib/navigation';
 
 export default function AboutScreen() {
   const insets = useSafeAreaInsets();
@@ -29,7 +30,7 @@ export default function AboutScreen() {
       <ScreenHeader
         title={`About ${BRAND.name}`}
         theme="dark"
-        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
       <ScrollView

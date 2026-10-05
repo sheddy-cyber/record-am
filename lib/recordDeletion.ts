@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { enqueueMutations } from '@/lib/offlineStore';
 import { StockMovementType } from '@/types';
 
 const STOCK_REMOVAL_TYPES: StockMovementType[] = ['stock_out', 'damage', 'wastage'];
@@ -54,13 +55,38 @@ export async function deleteSupplierDebtRecord(debtId: string) {
   throwIfError(error);
 }
 
-export async function deleteProductRecord(productId: string) {
-  const { error } = await supabase
-    .from('products')
-    .update({ is_active: false, updated_at: new Date().toISOString() })
-    .eq('id', productId);
-
-  throwIfError(error);
+export async function deleteProductRecord(productId: string, businessId?: string) {
+  try {
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', productId);
+    throwIfError(error);
+  } catch (err: any) {
+    // If hard delete fails (likely due to foreign key constraints like sale_items), fallback to soft delete
+    try {
+      const { error: softError } = await supabase
+        .from('products')
+        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .eq('id', productId);
+      throwIfError(softError);
+    } catch (softErr) {
+      // If both fail, try to enqueue for offline sync
+      if (businessId) {
+        await enqueueMutations([
+          {
+            operation: 'update',
+            table: 'products',
+            payload: { is_active: false, updated_at: new Date().toISOString() },
+            match: { id: productId },
+            description: 'Soft delete product (offline fallback)',
+          },
+        ]);
+      } else {
+        throw softErr;
+      }
+    }
+  }
   try {
     const { useNotificationStore } = await import('@/store/notificationStore');
     await useNotificationStore.getState().markLowStockAsRead(productId);

@@ -21,6 +21,7 @@ import {
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { Card, IconBox, EmptyState } from '@/components/ui';
 import { COLORS, FONT, RADIUS, SP } from '@/constants';
+import { dismissScreen } from '@/lib/navigation';
 
 const TYPE_CONFIG: Record<
   NotificationType,
@@ -146,7 +147,7 @@ export default function NotificationsScreen() {
       <ScreenHeader
         title="Notifications"
         theme="dark"
-        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={
           notifications.length > 0 ? (
             <TouchableOpacity

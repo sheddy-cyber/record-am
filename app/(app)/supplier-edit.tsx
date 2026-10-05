@@ -5,16 +5,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
-import { Button, EmptyState, LoadingScreen } from '@/components/ui';
+import { Button, EmptyState, LoadingScreen, PermissionDenied } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS } from '@/constants';
+import { canManagePurchases } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 
 export default function SupplierEditScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ supplierId?: string | string[] }>();
   const supplierId = Array.isArray(params.supplierId) ? params.supplierId[0] : params.supplierId;
-  const { currentBusiness } = useAuthStore();
+  const { currentBusiness, userRole } = useAuthStore();
+  const canManageGoods = canManagePurchases(userRole);
   const [refreshing, setRefreshing] = useState(false);
   const {
     suppliers,
@@ -33,16 +36,16 @@ export default function SupplierEditScreen() {
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const onRefresh = useCallback(async () => {
-    if (!currentBusiness) return;
+    if (!currentBusiness || !canManageGoods) return;
     setRefreshing(true);
     try {
       await fetchSuppliers(currentBusiness.id);
     } catch (_) {}
     setRefreshing(false);
-  }, [currentBusiness, fetchSuppliers]);
+  }, [canManageGoods, currentBusiness, fetchSuppliers]);
 
   useEffect(() => {
     // Suppliers are hydrated globally by bootloader
@@ -65,7 +68,7 @@ export default function SupplierEditScreen() {
   }, [hydratedSupplierId, setSelectedSupplier, supplier]);
 
   const handleEdit = async () => {
-    if (!supplier) return;
+    if (!supplier || !canManageGoods) return;
     if (!name.trim()) {
       Alert.alert('Error', 'Supplier name is required.');
       return;
@@ -82,6 +85,22 @@ export default function SupplierEditScreen() {
     Toast.show({ type: 'success', text1: 'Supplier updated' });
     closeScreen();
   };
+
+  if (!canManageGoods) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Edit Supplier"
+          theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+        />
+        <PermissionDenied
+          title="Supplier management is restricted"
+          description="This account cannot edit supplier profiles or purchase records."
+        />
+      </ScreenShell>
+    );
+  }
 
 
   if (!supplier) {

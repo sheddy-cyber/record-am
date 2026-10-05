@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Text, View, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
+import { dismissScreen } from '@/lib/navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { useNotificationStore } from '@/store/notificationStore';
-import { Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
+import { Button, Card, EmptyState, LoadingScreen, PermissionDenied } from '@/components/ui';
+import { canViewFinancialData } from '@/lib/permissions';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
@@ -20,7 +22,8 @@ const formatCurrency = (value: number) => {
 
 export default function CloseDayScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch, user } = useAuthStore();
+  const { currentBusiness, currentBranch, user, userRole } = useAuthStore();
+  const canViewFinancials = canViewFinancialData(userRole);
   const [refreshing, setRefreshing] = useState(false);
   const {
     summary,
@@ -35,7 +38,7 @@ export default function CloseDayScreen() {
   const [actualCash, setActualCash] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const onRefresh = useCallback(async () => {
     if (!currentBusiness || !currentBranch) return;
@@ -47,10 +50,10 @@ export default function CloseDayScreen() {
   }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate]);
 
   useEffect(() => {
-    if (!summary && currentBusiness && currentBranch) {
+    if (canViewFinancials && !summary && currentBusiness && currentBranch) {
       fetchDailyBalance(currentBusiness.id, currentBranch.id, selectedDate);
     }
-  }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate, summary]);
+  }, [canViewFinancials, currentBranch, currentBusiness, fetchDailyBalance, selectedDate, summary]);
 
   useEffect(() => {
     if (!summary) return;
@@ -100,6 +103,22 @@ export default function CloseDayScreen() {
     closeScreen();
   };
 
+
+  if (!canViewFinancials) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Close and Balance Day"
+          theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+        />
+        <PermissionDenied
+          title="Day closing is restricted"
+          description="Only roles with financial access can view cash reconciliation and close the business day."
+        />
+      </ScreenShell>
+    );
+  }
 
   if (!summary) {
     return (

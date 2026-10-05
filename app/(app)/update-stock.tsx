@@ -28,6 +28,7 @@ import { ProductFormFields } from '@/components/inventory/ProductFormFields';
 import { CostStrategySelector } from '@/components/inventory/CostStrategySelector';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL, ACCENTS } from '@/constants';
+import { dismissScreen } from '@/lib/navigation';
 
 const formatCount = (value: number) =>
   Number.isInteger(value)
@@ -51,6 +52,7 @@ export default function UpdateStockScreen() {
     pendingQueue?: string | string[];
     stockAdjustment?: string | string[];
     mismatchId?: string | string[];
+    restock?: string | string[];
   }>();
   const productId = Array.isArray(params.productId) ? params.productId[0] : params.productId;
   const rawPurchasedQty = Array.isArray(params.purchasedQty) ? params.purchasedQty[0] : params.purchasedQty;
@@ -65,8 +67,10 @@ export default function UpdateStockScreen() {
   const syncFlow = Array.isArray(params.syncFlow) ? params.syncFlow[0] : params.syncFlow;
   const pendingQueue = Array.isArray(params.pendingQueue) ? params.pendingQueue[0] : params.pendingQueue;
   const mismatchId = Array.isArray(params.mismatchId) ? params.mismatchId[0] : params.mismatchId;
+  const rawRestock = Array.isArray(params.restock) ? params.restock[0] : params.restock;
   const isSyncFlowActive = syncFlow === '1';
   const isManualReconcile = Boolean(mismatchId);
+  const isRestock = rawRestock === '1';
   const fromPurchase = stockAdjustment !== null || purchasedQty > 0;
 
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
@@ -94,10 +98,11 @@ export default function UpdateStockScreen() {
   const [isService, setIsService] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prefilledStockQty, setPrefilledStockQty] = useState<number | null>(null);
+  const [selectedCostStrategy, setSelectedCostStrategy] = useState<'weighted' | 'new' | 'old' | null>(null);
 
   const hasSavedRef = useRef(false);
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const handleCancelOrBack = useCallback(async () => {
     if (!hasSavedRef.current && (isSyncFlowActive || purchaseId) && currentBranch && currentBusiness) {
@@ -283,7 +288,7 @@ export default function UpdateStockScreen() {
     const newStockQty = fromPurchase
       ? roundAmount(currentStock + effectiveStockAdjustment)
       : currentStock;
-    setStockQuantity(formatCount(newStockQty));
+    setStockQuantity(isRestock ? '' : formatCount(newStockQty));
     if (fromPurchase) {
       setPrefilledStockQty(newStockQty);
     } else {
@@ -292,7 +297,7 @@ export default function UpdateStockScreen() {
 
     setReorderLevel(formatCount(Number(product.reorder_level ?? 5)));
     setIsService(product.is_service);
-  }, [currentStock, effectiveStockAdjustment, fromPurchase, product, purchasedQty, purchasedUnitCost]);
+  }, [currentStock, effectiveStockAdjustment, fromPurchase, isRestock, product, purchasedQty, purchasedUnitCost]);
 
   const handleCostPriceChange = useCallback((val: string) => {
     setCostPrice(val);
@@ -305,10 +310,14 @@ export default function UpdateStockScreen() {
   const parsedCost = parseFloat(costPrice) || 0;
   const parsedSelling = parseFloat(sellingPrice) || 0;
   const parsedStockQty = parseFloat(stockQuantity) || 0;
-  const manualAddedQty = Math.max(0, roundAmount(parsedStockQty - currentStock));
+  const manualAddedQty = isRestock
+    ? Math.max(0, roundAmount(parsedStockQty))
+    : Math.max(0, roundAmount(parsedStockQty - currentStock));
 
   const effectiveNewCost = useMemo(() => {
     if (fromPurchase) {
+      // When coming from purchase, the new cost is the purchased unit cost
+      // This is used for reconciliation calculations
       return purchasedUnitCost > 0 ? purchasedUnitCost : 0;
     }
     if (manualNewCost !== null && manualNewCost > 0) {
@@ -321,6 +330,20 @@ export default function UpdateStockScreen() {
   }, [fromPurchase, purchasedUnitCost, manualNewCost, parsedCost, oldCost]);
 
   const effectiveIncomingQty = fromPurchase ? incomingQty : manualAddedQty;
+
+  // Initialize selected strategy to weighted average when cost strategy selector appears
+  useEffect(() => {
+    const isStockQuantityIncreased = effectiveIncomingQty > 0 && currentStock > 0;
+    const hasCostFluctuation =
+      isStockQuantityIncreased &&
+      oldCost > 0 &&
+      effectiveNewCost > 0 &&
+      Math.abs(effectiveNewCost - oldCost) >= 0.01;
+
+    if (hasCostFluctuation && selectedCostStrategy === null) {
+      setSelectedCostStrategy('weighted');
+    }
+  }, [effectiveIncomingQty, currentStock, oldCost, effectiveNewCost, selectedCostStrategy]);
 
   const costPriceOptionsNode = useMemo(() => {
     if (isService) return null;
@@ -342,8 +365,15 @@ export default function UpdateStockScreen() {
         currentStock={currentStock}
         incomingQty={effectiveIncomingQty}
         currentCostPrice={costPrice}
-        onSelectStrategy={(chosenCost) => {
+        selectedStrategy={selectedCostStrategy || undefined}
+        onSelectStrategy={(chosenCost, strategy) => {
+          setSelectedCostStrategy(strategy);
           setCostPrice(formatCount(chosenCost));
+          if (strategy === 'new' || strategy === 'old') {
+            setManualNewCost(chosenCost);
+          } else {
+            setManualNewCost(null);
+          }
         }}
         productUnit={productUnit}
         isFromPurchase={fromPurchase}
@@ -407,6 +437,10 @@ export default function UpdateStockScreen() {
 
   const handleSaveProduct = async () => {
     if (!product || !currentBusiness) return;
+    if (isRestock && product.is_service) {
+      Alert.alert('Service item', 'Services do not have stock to restock.');
+      return;
+    }
     if (!productName.trim()) {
       Alert.alert('Product name required', 'Enter a product or service name.');
       return;
@@ -450,8 +484,16 @@ export default function UpdateStockScreen() {
     }
 
     const parsedStockQuantity = stockQuantity.trim() ? parseFloat(stockQuantity) : 0;
-    if (!isService && (!Number.isFinite(parsedStockQuantity) || parsedStockQuantity < 0)) {
-      Alert.alert('Invalid quantity', 'Enter a valid stock quantity.');
+    if (
+      !isService &&
+      (!Number.isFinite(parsedStockQuantity) ||
+        parsedStockQuantity < 0 ||
+        (isRestock && (!stockQuantity.trim() || parsedStockQuantity <= 0)))
+    ) {
+      Alert.alert(
+        'Invalid quantity',
+        isRestock ? 'Enter a restock quantity greater than zero.' : 'Enter a valid stock quantity.',
+      );
       return;
     }
 
@@ -464,15 +506,23 @@ export default function UpdateStockScreen() {
     const executeSave = async (hasMismatch: boolean) => {
       setSaving(true);
       try {
-        const nextQuantity = isService ? 0 : roundAmount(parsedStockQuantity);
+        const nextQuantity = isService
+          ? 0
+          : isRestock
+            ? roundAmount(currentStock + parsedStockQuantity)
+            : roundAmount(parsedStockQuantity);
         const previousQuantity = roundAmount(currentStock);
-        const quantityDelta = roundAmount(nextQuantity - previousQuantity);
+        const quantityDelta = isRestock
+          ? roundAmount(parsedStockQuantity)
+          : roundAmount(nextQuantity - previousQuantity);
 
         const movementQuantity = Math.abs(quantityDelta);
         const movementType = quantityDelta > 0 ? 'stock_in' : 'stock_out';
         const movementNote =
           isService && previousQuantity > 0
             ? 'Converted to service item from product update.'
+            : isRestock
+              ? 'Restocked from inventory.'
             : quantityDelta > 0
               ? 'Quantity increased from product update.'
               : 'Quantity reduced from product update.';
@@ -514,7 +564,7 @@ export default function UpdateStockScreen() {
 
         Toast.show({
           type: 'success',
-          text1: 'Product updated',
+          text1: isRestock ? 'Stock restocked' : 'Product updated',
           text2: isService
             ? `${cleanProductName} was saved as a service item.`
             : `${cleanProductName} now has ${formatCount(nextQuantity)} ${cleanProductUnit} in stock. Sync queued.`,
@@ -602,6 +652,16 @@ export default function UpdateStockScreen() {
       isQuantityMismatch || isCostMismatch
     );
 
+    const isQuantityOnlyRestock =
+      isRestock &&
+      Math.abs(parsedCostPrice - oldCost) < 0.01 &&
+      Math.abs(parsedSellingPrice - Number(product.selling_price ?? 0)) < 0.01;
+
+    if (isQuantityOnlyRestock && !hasMismatch) {
+      void executeSave(false);
+      return;
+    }
+
     const checkLossAndExecute = (mismatch: boolean) => {
       if (!isService && parsedCostPrice > 0 && parsedCostPrice >= parsedSellingPrice) {
         const isLoss = parsedCostPrice > parsedSellingPrice;
@@ -665,7 +725,7 @@ export default function UpdateStockScreen() {
     return (
       <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
         <ScreenHeader
-          title="Update Stock"
+          title={isRestock ? 'Restock Item' : 'Update Stock'}
           theme="dark"
           left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
         />
@@ -682,8 +742,12 @@ export default function UpdateStockScreen() {
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
-        title="Update Stock"
-        subtitle="Edit the product details and current branch quantity."
+        title={isRestock ? 'Restock Item' : 'Update Stock'}
+        subtitle={
+          isRestock
+            ? 'Enter the incoming quantity and we will add it to the current stock.'
+            : 'Edit the product details and current branch quantity.'
+        }
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
       />
@@ -714,9 +778,18 @@ export default function UpdateStockScreen() {
             onReorderLevelChange={setReorderLevel}
             stockQuantity={stockQuantity}
             onStockQuantityChange={setStockQuantity}
-            stockQuantityLabel={`Stock Quantity (${productUnit.trim() || 'unit'})`}
+            stockQuantityFirst={isRestock}
+            stockQuantityLabel={
+              isRestock
+                ? `Quantity to Restock (${productUnit.trim() || 'unit'})`
+                : `Stock Quantity (${productUnit.trim() || 'unit'})`
+            }
             stockQuantityHint={
-              prefilledStockQty !== null && parseFloat(stockQuantity) !== prefilledStockQty
+              isRestock
+                ? parsedStockQty > 0
+                  ? `Current stock: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}. New total: ${formatCount(roundAmount(currentStock + parsedStockQty))} ${productUnit.trim() || 'unit'}.`
+                  : `Current stock: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}. Enter the number of units received.`
+                : prefilledStockQty !== null && parseFloat(stockQuantity) !== prefilledStockQty
                 ? isManualReconcile
                   ? `Changed from reconciliation value (${formatCount(prefilledStockQty)}).`
                   : `⚠ Changed from prefilled value (${formatCount(prefilledStockQty)}). Was ${formatCount(currentStock)} + ${formatCount(purchasedQty)} purchased.`
@@ -730,7 +803,7 @@ export default function UpdateStockScreen() {
             onIsServiceChange={setIsService}
           />
           <Button
-            title={saving ? 'Saving...' : 'Save Changes'}
+            title={saving ? 'Saving...' : isRestock ? 'Restock Item' : 'Save Changes'}
             onPress={handleSaveProduct}
             loading={saving}
             size="lg"

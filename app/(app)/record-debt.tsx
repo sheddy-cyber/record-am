@@ -12,6 +12,7 @@ import { Button } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
+import { dismissScreen } from '@/lib/navigation';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -29,7 +30,7 @@ export default function RecordDebtScreen() {
   const [debtNotes, setDebtNotes] = useState('');
   const [savingDebt, setSavingDebt] = useState(false);
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);

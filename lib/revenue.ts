@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { isDebtSettlementSale } from '@/lib/records';
 import { RevenueActivity, Sale } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import { attachProductSummaries, saleItemsTable } from '@/lib/dataAccess';
 import {
   readCachedRevenueActivities,
   upsertCachedRevenueActivities,
@@ -53,10 +54,16 @@ export async function fetchRevenueActivities(
   limit = 60,
 ): Promise<RevenueActivity[]> {
   try {
+    const itemsSource = saleItemsTable();
+    const includeCosts = itemsSource === 'sale_items';
     const [salesResponse, repaymentsResponse] = await Promise.all([
       supabase
         .from('sales')
-        .select('*, customer:customers(name, phone), items:sale_items(quantity, unit_price, discount_amount, total_price, product:products(name))')
+        .select(
+          includeCosts
+            ? '*, customer:customers(name, phone), items:sale_items(quantity, unit_price, discount_amount, total_price, product:products(name))'
+            : `*, customer:customers(name, phone), items:staff_sale_items(quantity, unit_price, discount_amount, total_price)`,
+        )
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .order('created_at', { ascending: false })
@@ -80,10 +87,9 @@ export async function fetchRevenueActivities(
             business_id,
             branch_id,
             sale:sales(
-              items:sale_items(
+              items:${itemsSource}(
                 quantity,
-                total_price,
-                product:products(name)
+                total_price
               )
             )
           )
@@ -102,7 +108,10 @@ export async function fetchRevenueActivities(
       throw repaymentsResponse.error;
     }
 
-    const rawSales = (salesResponse.data as SaleRow[]) ?? [];
+    const rawSales = ((salesResponse.data as SaleRow[]) ?? []).map((sale) => ({
+      ...sale,
+      items: attachProductSummaries(sale.items ?? []) as SaleRow['items'],
+    }));
     const rawRepayments = (repaymentsResponse.data as DebtRepaymentRow[]) ?? [];
 
     const userIds = Array.from(

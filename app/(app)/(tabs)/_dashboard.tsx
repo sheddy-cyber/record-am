@@ -5,6 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
+import { canViewFinancialData } from '@/lib/permissions';
 import { useOfflineStore } from '@/store/offlineStore';
 import { useTabStore } from '@/store/tabStore';
 import { useBusinessStore } from '@/store/businessStore';
@@ -35,6 +36,8 @@ function DashboardScreen() {
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const businessName = useAuthStore((s) => s.currentBusiness?.name) ?? 'My Business';
   const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const userRole = useAuthStore((s) => s.userRole);
+  const canViewCosts = canViewFinancialData(userRole);
   const profileName = useAuthStore((s) => s.profile?.full_name);
   const getStockAlerts = useBusinessStore((s) => s.getStockAlerts);
 
@@ -103,15 +106,15 @@ function DashboardScreen() {
   useRealtimeRefresh({
     channelName: `dashboard-${branchId ?? 'unknown'}`,
     enabled: Boolean(businessId && branchId),
-    watch: [businessId, branchId],
+    watch: [businessId, branchId, canViewCosts],
     tables: [
       ...(branchId ? [{ table: 'sales', filter: `branch_id=eq.${branchId}` }] : []),
       ...(branchId ? [{ table: 'expenses', filter: `branch_id=eq.${branchId}` }] : []),
       ...(branchId ? [{ table: 'customer_debts', filter: `branch_id=eq.${branchId}` }] : []),
       ...(branchId ? [{ table: 'inventory', filter: `branch_id=eq.${branchId}` }] : []),
-      ...(branchId ? [{ table: 'stock_movements', filter: `branch_id=eq.${branchId}` }] : []),
+      ...(canViewCosts && branchId ? [{ table: 'stock_movements', filter: `branch_id=eq.${branchId}` }] : []),
       { table: 'debt_repayments' },
-      ...(businessId ? [{ table: 'products', filter: `business_id=eq.${businessId}` }] : []),
+      ...(canViewCosts && businessId ? [{ table: 'products', filter: `business_id=eq.${businessId}` }] : []),
       ...(businessId ? [{ table: 'customers', filter: `business_id=eq.${businessId}` }] : []),
     ],
     debounceMs: 500,

@@ -1,0 +1,25 @@
+{
+  "cli": {
+    "version": ">= 7.0.0"
+  },
+  "build": {
+    "production": {
+      "android": {
+        "buildType": "apk",
+        "architecture": "armeabi-v7a",
+        "autoIncrement": true,
+        "keystorePath": "android/app/release.keystore",
+        "keystorePassword": "recordam123",
+        "keyAlias": "recordam",
+        "keyPassword": "recordam123"
+      }
+    },
+    "preview": {
+      "android": {
+        "buildType": "apk",
+        "architecture": "armeabi-v7a",
+        "autoIncrement": true
+      }
+    }
+  }
+}

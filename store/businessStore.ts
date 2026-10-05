@@ -19,25 +19,36 @@ const stripProductForWrite = (product: Product) => {
   return payload;
 };
 
-const fetchTrackedProducts = async (businessId: string) => {
+/**
+ * Cost price is commercial data. Never retain it in a cashier-visible store or
+ * offline cache: UI hiding alone would leave it readable from Zustand/SQLite.
+ */
+const maskProductCosts = (products: Product[]): Product[] =>
+  products.map((product) => ({ ...product, cost_price: 0 }));
+
+const fetchTrackedProducts = async (businessId: string, includeCosts = true) => {
   try {
+    const productSource = includeCosts ? 'products' : 'staff_products';
     const { data, error } = await supabase
-      .from('products')
+      .from(productSource)
       .select(`
         *,
         inventory(quantity, branch_id)
       `)
       .eq('business_id', businessId)
-      .eq('is_service', false);
+      .eq('is_service', false)
+      .eq('is_active', true);
 
     if (error) throw error;
 
-    const allProducts = (data ?? []) as Product[];
+    const allProducts = (includeCosts ? (data ?? []) : maskProductCosts((data ?? []) as Product[])) as Product[];
     const activeProducts = allProducts.filter(p => p.is_active);
-    await cacheProducts(businessId, activeProducts); // Use cacheProducts instead of upsert to clean out deleted ones
+    await cacheProducts(businessId, activeProducts);
     return activeProducts;
   } catch {
-    const cachedProducts = await readCachedProducts(businessId);
+    const cachedProducts = includeCosts
+      ? await readCachedProducts(businessId)
+      : maskProductCosts(await readCachedProducts(businessId));
     return cachedProducts.filter((product) => product.is_active && !product.is_service);
   }
 };
@@ -53,9 +64,9 @@ interface BusinessState {
   // Actions
   fetchBusinesses: (userId: string) => Promise<void>;
   fetchBranches: (businessId: string) => Promise<void>;
-  hydrateCache: (businessId: string) => Promise<void>;
+  hydrateCache: (businessId: string, includeCosts?: boolean) => Promise<void>;
   fetchCategories: (businessId: string) => Promise<void>;
-  fetchProducts: (businessId: string) => Promise<void>;
+  fetchProducts: (businessId: string, includeCosts?: boolean) => Promise<void>;
   createBusiness: (data: Partial<Business>, userId: string) => Promise<Business | null>;
   fetchTeamMembers: (businessId: string) => Promise<(BusinessMember & { user_profiles: UserProfile })[]>;
   updateTeamMemberRole: (memberId: string, role: UserRole) => Promise<void>;
@@ -65,9 +76,10 @@ interface BusinessState {
   updateBusiness: (id: string, data: Partial<Business>) => Promise<void>;
   createCategory: (data: Partial<Category>) => Promise<Category | null>;
   createProduct: (data: Partial<Product>) => Promise<Product | null>;
+  deleteProduct: (id: string) => Promise<void>;
   updateProduct: (id: string, data: Partial<Product>) => Promise<void>;
-  getLowStockProducts: (businessId: string, branchId: string) => Promise<Product[]>;
-  getStockAlerts: (businessId: string, branchId: string) => Promise<StockAlertSummary>;
+  getLowStockProducts: (businessId: string, branchId: string, includeCosts?: boolean) => Promise<Product[]>;
+  getStockAlerts: (businessId: string, branchId: string, includeCosts?: boolean) => Promise<StockAlertSummary>;
   reset: () => void;
 }
 
@@ -131,20 +143,27 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     }
   },
 
-  hydrateCache: async (businessId) => {
+  hydrateCache: async (businessId, includeCosts = true) => {
     try {
-      const cachedProducts = await readCachedProducts(businessId);
+      const cachedProducts = includeCosts
+        ? await readCachedProducts(businessId)
+        : maskProductCosts(await readCachedProducts(businessId));
       if (cachedProducts.length > 0) {
         if (hasArrayChanged(get().products, cachedProducts)) {
           set({ products: cachedProducts });
         }
       }
+      if (!includeCosts) {
+        await cacheProducts(businessId, cachedProducts);
+      }
     } catch {}
   },
 
-  fetchProducts: async (businessId) => {
+  fetchProducts: async (businessId, includeCosts = true) => {
     try {
-      const cachedProducts = await readCachedProducts(businessId);
+      const cachedProducts = includeCosts
+        ? await readCachedProducts(businessId)
+        : maskProductCosts(await readCachedProducts(businessId));
       if (cachedProducts.length > 0) {
         if (hasArrayChanged(get().products, cachedProducts)) {
           set({ products: cachedProducts });
@@ -156,23 +175,50 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     if (currentProducts.length === 0) set({ isLoading: true });
 
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select(`
-          *,
-          category:categories(*),
-          inventory(*)
-        `)
+      const productQuery = includeCosts
+        ? supabase
+            .from('products')
+            .select(`
+              *,
+              category:categories(*),
+              inventory(*)
+            `)
+            .eq('is_active', true)
+        : supabase.from('staff_products').select('*').eq('is_active', true);
+      const { data, error } = await productQuery
         .eq('business_id', businessId)
         .order('name');
 
       if (error) throw error;
-      const serverProducts = (data ?? []) as Product[];
+      let serverProducts = (data ?? []) as Product[];
+
+      if (!includeCosts && serverProducts.length > 0) {
+        const [{ data: inventory, error: inventoryError }, { data: categories, error: categoriesError }] = await Promise.all([
+          supabase.from('inventory').select('*').in('product_id', serverProducts.map((product) => product.id)),
+          supabase.from('categories').select('*').eq('business_id', businessId),
+        ]);
+        if (inventoryError) throw inventoryError;
+        if (categoriesError) throw categoriesError;
+
+        const inventoryByProduct = new Map<string, Product['inventory']>();
+        for (const item of inventory ?? []) {
+          const productInventory = inventoryByProduct.get(item.product_id) ?? [];
+          productInventory.push(item);
+          inventoryByProduct.set(item.product_id, productInventory);
+        }
+        const categoryById = new Map((categories ?? []).map((category) => [category.id, category]));
+        serverProducts = serverProducts.map((product) => ({
+          ...product,
+          cost_price: 0,
+          inventory: inventoryByProduct.get(product.id) ?? [],
+          category: product.category_id ? categoryById.get(product.category_id) : undefined,
+        }));
+      }
 
       // Auto-heal: If any physical products have missing/zero cost_price, check if purchase_items has their unit_cost
-      const zeroCostProductIds = serverProducts
+      const zeroCostProductIds = includeCosts ? serverProducts
         .filter((p) => !p.is_service && (!p.cost_price || Number(p.cost_price) === 0))
-        .map((p) => p.id);
+        .map((p) => p.id) : [];
 
       if (zeroCostProductIds.length > 0) {
         try {
@@ -209,19 +255,23 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         }
       }
 
-      const cachedProducts = await readCachedProducts(businessId);
+      const cachedProducts = includeCosts
+        ? await readCachedProducts(businessId)
+        : maskProductCosts(await readCachedProducts(businessId));
       const serverProductIds = new Set(serverProducts.map((product) => product.id));
       const localOnlyProducts = cachedProducts.filter((product) => !serverProductIds.has(product.id));
       const allMerged = [...serverProducts, ...localOnlyProducts].sort((a, b) => a.name.localeCompare(b.name));
       
-      const activeProducts = allMerged.filter(p => p.is_active);
+      const activeProducts = (includeCosts ? allMerged : maskProductCosts(allMerged)).filter(p => p.is_active);
       
       if (hasArrayChanged(get().products, activeProducts)) {
         set({ products: activeProducts });
       }
       await cacheProducts(businessId, activeProducts);
     } catch (err: any) {
-      const cachedProducts = await readCachedProducts(businessId);
+      const cachedProducts = includeCosts
+        ? await readCachedProducts(businessId)
+        : maskProductCosts(await readCachedProducts(businessId));
       if (cachedProducts.length > 0) {
         if (hasArrayChanged(get().products, cachedProducts)) {
           set({ products: cachedProducts, error: null });
@@ -469,6 +519,12 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     }
   },
 
+  deleteProduct: async (id) => {
+    set((state) => ({
+      products: state.products.filter((p) => p.id !== id),
+    }));
+  },
+
   updateProduct: async (id, data) => {
     try {
       const timestamp = nowIso();
@@ -495,9 +551,9 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     }
   },
 
-  getLowStockProducts: async (businessId, branchId) => {
+  getLowStockProducts: async (businessId, branchId, includeCosts = false) => {
     try {
-      const products = await fetchTrackedProducts(businessId);
+      const products = await fetchTrackedProducts(businessId, includeCosts);
 
       return products.filter((product) => {
         const stock = getBranchStock(product, branchId);
@@ -508,9 +564,9 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     }
   },
 
-  getStockAlerts: async (businessId, branchId) => {
+  getStockAlerts: async (businessId, branchId, includeCosts = false) => {
     try {
-      const products = await fetchTrackedProducts(businessId);
+      const products = await fetchTrackedProducts(businessId, includeCosts);
       const lowStockProducts: Product[] = [];
       const outOfStockProducts: Product[] = [];
 

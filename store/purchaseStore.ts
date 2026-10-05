@@ -103,6 +103,25 @@ export const calculatePurchaseTotals = (items: PurchaseCartItem[], discountAmoun
   };
 };
 
+async function fetchLatestPurchaseCostForProduct(productId: string, businessId: string): Promise<number | null> {
+  try {
+    const { data, error } = await supabase
+      .from('purchase_items')
+      .select('unit_cost')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+
+    return Number(data[0].unit_cost) || null;
+  } catch {
+    return null;
+  }
+}
+
 export const createPurchaseCartItemFromProduct = (
   product: Product,
   overrides?: Partial<Omit<PurchaseCartItem, 'product' | 'productDraft' | 'key'>>,

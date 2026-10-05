@@ -20,6 +20,7 @@ import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDebtStore } from '@/store/debtStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { supabase } from '@/lib/supabase';
+import { saleItemsTable } from '@/lib/dataAccess';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
 import { decrementPersistedDashboardSales, removeCachedRow } from '@/lib/offlineStore';
@@ -29,7 +30,7 @@ import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { ReceiptPreviewModal, SaleActivityCard } from '@/components/sales';
 import { COLORS, CURRENCY_SYMBOL, FONT, SP } from '@/constants';
-import { RevenueActivity, Sale } from '@/types';
+import { Product, RevenueActivity, Sale } from '@/types';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -101,21 +102,40 @@ function SalesScreen() {
   const generateSaleReceipt = async (saleId: string) => {
     setGeneratingReceiptId(saleId);
     try {
+      const itemsSource = saleItemsTable();
+      const includeCosts = itemsSource === 'sale_items';
       const { data: sale, error } = await supabase
         .from('sales')
-        .select(`
-          *,
-          customer:customers(*),
-          items:sale_items(
-            *,
-            product:products(*)
-          )
-        `)
+        .select(
+          includeCosts
+            ? `*, customer:customers(*), items:sale_items(*, product:products(*))`
+            : `*, customer:customers(*), items:staff_sale_items(*)`,
+        )
         .eq('id', saleId)
         .single();
 
       if (error) throw error;
-      setPreviewSale(sale as Sale);
+      let enrichedSale = sale as Sale;
+      if (!includeCosts && enrichedSale.items?.length) {
+        const productIds = enrichedSale.items
+          .map((item) => item.product_id)
+          .filter((id): id is string => Boolean(id));
+        const { data: productRows } = await supabase
+          .from('staff_products')
+          .select('id, name, unit, selling_price, sku, barcode, is_service')
+          .in('id', productIds);
+        const byId = new Map((productRows ?? []).map((row) => [row.id, row]));
+        enrichedSale = {
+          ...enrichedSale,
+          items: enrichedSale.items.map((item) => ({
+            ...item,
+            product: item.product_id
+              ? (byId.get(item.product_id) as Product | undefined)
+              : undefined,
+          })),
+        };
+      }
+      setPreviewSale(enrichedSale);
     } catch (err) {
       Alert.alert('Unable to generate receipt', 'The sale receipt could not be prepared right now.');
       console.error(err);
@@ -161,11 +181,30 @@ function SalesScreen() {
         originalSale = sale;
 
         if (sale) {
+          const itemsSource = saleItemsTable();
           const { data: items } = await supabase
-            .from('sale_items')
-            .select('*, product:products(name)')
+            .from(itemsSource)
+            .select('*')
             .eq('sale_id', debt.sale_id);
           saleItems = items ?? [];
+          if (itemsSource === 'staff_sale_items' && saleItems.length > 0) {
+            const productIds = saleItems.map((item) => item.product_id).filter(Boolean);
+            const { data: productRows } = await supabase
+              .from('staff_products')
+              .select('id, name')
+              .in('id', productIds);
+            const byId = new Map((productRows ?? []).map((row) => [row.id, row]));
+            saleItems = saleItems.map((item) => ({
+              ...item,
+              product: item.product_id ? byId.get(item.product_id) : undefined,
+            }));
+          } else if (itemsSource === 'sale_items') {
+            const { data: itemsWithProducts } = await supabase
+              .from('sale_items')
+              .select('*, product:products(name)')
+              .eq('sale_id', debt.sale_id);
+            saleItems = itemsWithProducts ?? [];
+          }
         }
       }
 

@@ -10,6 +10,7 @@ import { useAlertStore } from '@/store/alertStore';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatAuthError, getAuthCallbackUrl, isValidEmail, normaliseEmail } from '@/lib/auth';
+import { dismissScreen } from '@/lib/navigation';
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState('');
@@ -51,7 +52,7 @@ export default function ForgotPasswordScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="dark">
       <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: COLORS.surface }}>
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton} accessibilityLabel="Back to sign in">
+          <TouchableOpacity onPress={() => dismissScreen()} style={styles.backButton} accessibilityLabel="Back to sign in">
             <Feather name="arrow-left" size={24} color={COLORS.text.primary} />
           </TouchableOpacity>
           <BrandWordmark />

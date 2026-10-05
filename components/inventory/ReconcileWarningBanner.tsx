@@ -57,19 +57,22 @@ function getPurchasePrefillUnitCost(mismatch: Mismatch): number {
 }
 
 import { useAuthStore } from '@/store/authStore';
+import { canManagePurchases } from '@/lib/permissions';
 
 export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerProps) {
   const currentBusinessId = useAuthStore((s) => s.currentBusiness?.id);
+  const userRole = useAuthStore((s) => s.userRole);
+  const canManageGoods = canManagePurchases(userRole);
   const [mismatches, setMismatches] = useState<Mismatch[]>([]);
 
   const loadMismatches = useCallback(async () => {
-    if (!currentBusinessId) {
+    if (!canManageGoods || !currentBusinessId) {
       setMismatches([]);
       return;
     }
     const list = await getMismatches(currentBusinessId);
     setMismatches(list);
-  }, [currentBusinessId]);
+  }, [canManageGoods, currentBusinessId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -181,7 +184,7 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
     );
   };
 
-  if (mismatches.length === 0) return null;
+  if (!canManageGoods || mismatches.length === 0) return null;
 
   return (
     <View

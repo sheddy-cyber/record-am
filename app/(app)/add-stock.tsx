@@ -14,6 +14,7 @@ import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS } from '@/constants';
+import { dismissScreen } from '@/lib/navigation';
 
 const formatCount = (value: number) =>
   Number.isInteger(value)
@@ -53,7 +54,7 @@ export default function AddStockScreen() {
   const [isService, setIsService] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const load = useCallback(async () => {
     if (!currentBusiness) return;

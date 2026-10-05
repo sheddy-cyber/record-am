@@ -27,6 +27,7 @@ type ProductFormFieldsProps = {
   onStockQuantityChange: (value: string) => void;
   stockQuantityLabel: string;
   stockQuantityHint: string;
+  stockQuantityFirst?: boolean;
   isService: boolean;
   onIsServiceChange: (value: boolean) => void;
 };
@@ -49,6 +50,7 @@ export function ProductFormFields({
   onStockQuantityChange,
   stockQuantityLabel,
   stockQuantityHint,
+  stockQuantityFirst = false,
   isService,
   onIsServiceChange,
 }: ProductFormFieldsProps) {
@@ -56,9 +58,20 @@ export function ProductFormFields({
   const selectedUnit = hasPresetUnit ? productUnit : CUSTOM_UNIT_VALUE;
   const cleanUnit = productUnit.trim() || 'unit';
   const effectiveCostPriceLabel = costPriceLabel ?? `Cost Price per ${cleanUnit}`;
+  const stockQuantityField = !isService ? (
+    <InputField
+      label={stockQuantityLabel}
+      value={stockQuantity}
+      onChangeText={onStockQuantityChange}
+      placeholder="0"
+      keyboardType="numeric"
+      hint={stockQuantityHint}
+    />
+  ) : null;
 
   return (
     <>
+      {stockQuantityFirst ? stockQuantityField : null}
       <InputField
         label="Product or Service Name"
         value={productName}
@@ -85,16 +98,7 @@ export function ProductFormFields({
           required
         />
       ) : null}
-      {!isService ? (
-        <InputField
-          label={stockQuantityLabel}
-          value={stockQuantity}
-          onChangeText={onStockQuantityChange}
-          placeholder="0"
-          keyboardType="numeric"
-          hint={stockQuantityHint}
-        />
-      ) : null}
+      {!stockQuantityFirst ? stockQuantityField : null}
       <RoleGate allowedRoles={['owner', 'manager']}>
         <InputField
           label={effectiveCostPriceLabel}

@@ -13,13 +13,14 @@ import { useAuthStore } from '@/store/authStore';
 import { DateRange, useAnalyticsStore } from '@/store/analyticsStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { BarChart, ChartLegend, DonutChart, LineChart, MetricCard } from '@/components/charts';
-import { RoleGate } from '@/components/ui';
-import { Card, SectionHeader } from '@/components/ui';
-import { ScreenHeader, ScreenShell } from '@/components/layout';
+import { Card, PermissionDenied, RoleGate, SectionHeader } from '@/components/ui';
+import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from "@/constants";
 import { Product } from '@/types';
 import { format, subMonths } from 'date-fns';
 import { useBusinessStore } from '@/store/businessStore';
+import { hasPermission } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 
 const STATIC_RANGES: { key: DateRange; label: string }[] = [
   { key: '7days', label: '7 Days' },
@@ -98,18 +99,13 @@ export default function AnalyticsScreen() {
     fetchAnalytics,
   } = useAnalyticsStore();
 
-  // Redirect staff away — analytics is owner-only
-  useEffect(() => {
-    if (userRole && userRole !== 'owner') {
-      router.replace('/(app)/(tabs)');
-    }
-  }, [userRole]);
+  const canViewAnalytics = hasPermission(userRole, 'analytics.view');
 
   const load = useCallback(() => {
-    if (currentBusiness && currentBranch) {
+    if (canViewAnalytics && currentBusiness && currentBranch) {
       fetchAnalytics(currentBusiness.id, currentBranch.id);
     }
-  }, [currentBusiness, currentBranch, fetchAnalytics]);
+  }, [canViewAnalytics, currentBusiness, currentBranch, fetchAnalytics]);
 
   useEffect(() => {
     load();
@@ -117,7 +113,7 @@ export default function AnalyticsScreen() {
 
   useRealtimeRefresh({
     channelName: `analytics-${currentBranch?.id ?? 'unknown'}`,
-    enabled: Boolean(currentBusiness && currentBranch),
+    enabled: Boolean(canViewAnalytics && currentBusiness && currentBranch),
     watch: [currentBusiness?.id, currentBranch?.id, dateRange],
     tables: [
       ...(currentBranch ? [{ table: 'sales', filter: `branch_id=eq.${currentBranch.id}` }] : []),
@@ -156,6 +152,22 @@ export default function AnalyticsScreen() {
   const expenseRatioPct = revenue > 0 ? (totalExpenses / revenue) * 100 : 0;
   const discountRatioPct = (revenue + totalDiscounts) > 0 ? (totalDiscounts / (revenue + totalDiscounts)) * 100 : 0;
   const isProfitable = netProfit >= 0;
+
+  if (!canViewAnalytics) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Analytics"
+          theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+        />
+        <PermissionDenied
+          title="Analytics is restricted"
+          description="Sales trends, profit, and business insights are available to owners only."
+        />
+      </ScreenShell>
+    );
+  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">

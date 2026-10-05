@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Text, TouchableOpacity, View, RefreshControl, BackHandler } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
@@ -19,15 +19,17 @@ import {
   usePurchaseStore,
   roundAmount,
 } from '@/store/purchaseStore';
-import { Button, EmptyState, LoadingScreen } from '@/components/ui';
-import { InputField, KeyboardAwareScrollView, KeyboardAwareTextInput, SelectField } from '@/components/forms';
-import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { supabase } from '@/lib/supabase';
+import { Button, Card, EmptyState, PermissionDenied, SectionHeader } from '@/components/ui';
+import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
+import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, PRODUCT_UNITS } from '@/constants';
 import { PurchasePrefillPayload, parsePurchasePrefillPayload } from '@/lib/purchasePrefill';
-import { supabase } from '@/lib/supabase';
 import { addMismatch, removeMismatch } from '@/lib/mismatchService';
 import { createLocalId } from '@/lib/offlineStore';
 import { Product, Purchase } from '@/types';
+import { canManagePurchases } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -82,7 +84,27 @@ async function fetchLatestSupplierForProduct(productId: string, businessId: stri
   };
 }
 
+async function fetchLatestPurchaseCostForProduct(productId: string, businessId: string): Promise<number | null> {
+  try {
+    const { data, error } = await supabase
+      .from('purchase_items')
+      .select('unit_cost')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+
+    return Number(data[0].unit_cost) || null;
+  } catch {
+    return null;
+  }
+}
+
 export default function RecordPurchaseScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{
     supplierId?: string | string[];
     purchaseId?: string | string[];
@@ -107,6 +129,8 @@ export default function RecordPurchaseScreen() {
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
   const currentBranch = useAuthStore((s) => s.currentBranch);
   const user = useAuthStore((s) => s.user);
+  const userRole = useAuthStore((s) => s.userRole);
+  const canManageGoods = canManagePurchases(userRole);
 
   const products = useBusinessStore((s) => s.products);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
@@ -116,7 +140,7 @@ export default function RecordPurchaseScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const onRefresh = useCallback(async () => {
-    if (!currentBusiness) return;
+    if (!currentBusiness || !canManageGoods) return;
     setRefreshing(true);
     try {
       await Promise.all([
@@ -125,9 +149,8 @@ export default function RecordPurchaseScreen() {
       ]);
     } catch (_) {}
     setRefreshing(false);
-  }, [currentBusiness, fetchProducts, fetchSuppliers]);
+  }, [canManageGoods, currentBusiness, fetchProducts, fetchSuppliers]);
 
-  const isLoading = usePurchaseStore((s) => s.isLoading);
   const isSaving = usePurchaseStore((s) => s.isSaving);
   const fetchPurchaseById = usePurchaseStore((s) => s.fetchPurchaseById);
   const recordPurchase = usePurchaseStore((s) => s.recordPurchase);
@@ -143,15 +166,17 @@ export default function RecordPurchaseScreen() {
   const [purchaseDate, setPurchaseDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [notes, setNotes] = useState('');
   const [showNewItemForm, setShowNewItemForm] = useState(false);
+  const [showAllProducts, setShowAllProducts] = useState(false);
   const [newItemName, setNewItemName] = useState('');
   const [newItemUnit, setNewItemUnit] = useState('piece');
   const [ready, setReady] = useState(false);
   const [purchaseMissing, setPurchaseMissing] = useState(false);
   const [prefillOriginals, setPrefillOriginals] = useState<Record<string, { quantity: number; unit_cost: number }>>({});
+  const [lastPurchaseCosts, setLastPurchaseCosts] = useState<Record<string, number>>({});
 
   const hasSavedRef = useRef(false);
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const handleCancelOrBack = useCallback(async () => {
     if (!hasSavedRef.current && isSyncFlowActive && originalProductId && currentBranch && currentBusiness) {
@@ -210,19 +235,24 @@ export default function RecordPurchaseScreen() {
     setNotes(purchase.notes ?? '');
   };
 
-  const initializeFromPrefill = (payload: PurchasePrefillPayload | null, availableProducts: Product[]) => {
+  const initializeFromPrefill = async (payload: PurchasePrefillPayload | null, availableProducts: Product[]) => {
     if (!payload) return;
 
-    const nextCart = (payload.items ?? [])
-      .map((item) => {
+    const nextCart = await Promise.all(
+      (payload.items ?? []).map(async (item) => {
         const linkedProduct = item.productId
           ? availableProducts.find((entry) => entry.id === item.productId)
           : availableProducts.find((entry) => normalizeName(entry.name) === normalizeName(item.productName ?? ''));
 
         if (linkedProduct) {
+          const latestCost = currentBusiness
+            ? await fetchLatestPurchaseCostForProduct(linkedProduct.id, currentBusiness.id)
+            : null;
+          const defaultCost = item.unitCost ?? latestCost ?? 0;
+
           return createPurchaseCartItemFromProduct(linkedProduct, {
             quantity: Number(item.quantity ?? 1),
-            unit_cost: Number(item.unitCost ?? linkedProduct.cost_price ?? 0),
+            unit_cost: defaultCost,
           });
         }
 
@@ -240,13 +270,15 @@ export default function RecordPurchaseScreen() {
           },
         );
       })
-      .filter((item): item is PurchaseCartItem => Boolean(item));
+    );
 
-    if (nextCart.length > 0) {
-      setCart(nextCart);
+    const filteredCart = nextCart.filter((item): item is PurchaseCartItem => Boolean(item));
+
+    if (filteredCart.length > 0) {
+      setCart(filteredCart);
 
       const originals: Record<string, { quantity: number; unit_cost: number }> = {};
-      for (const cartItem of nextCart) {
+      for (const cartItem of filteredCart) {
         originals[cartItem.key] = { quantity: cartItem.quantity, unit_cost: cartItem.unit_cost };
       }
       setPrefillOriginals(originals);
@@ -281,7 +313,7 @@ export default function RecordPurchaseScreen() {
     let active = true;
 
     const load = async () => {
-      if (!currentBusiness || !currentBranch) {
+      if (!canManageGoods || !currentBusiness || !currentBranch) {
         if (active) setReady(true);
         return;
       }
@@ -305,7 +337,7 @@ export default function RecordPurchaseScreen() {
             initializeFromPurchase(purchase);
           }
         } else {
-          initializeFromPrefill(prefill, latestProducts);
+          await initializeFromPrefill(prefill, latestProducts);
 
           if (lockedSupplierId) {
             const supplier = latestSuppliers.find((entry) => entry.id === lockedSupplierId);
@@ -340,6 +372,7 @@ export default function RecordPurchaseScreen() {
       active = false;
     };
   }, [
+    canManageGoods,
     currentBranch,
     currentBusiness,
     fetchProducts,
@@ -361,7 +394,59 @@ export default function RecordPurchaseScreen() {
     [productSearch, products],
   );
 
-  const addToCart = (product: Product) => {
+  const visibleProducts = useMemo(() => {
+    if (showAllProducts || productSearch.trim()) return filteredProducts;
+    return filteredProducts.slice(0, 6);
+  }, [filteredProducts, productSearch, showAllProducts]);
+
+
+  const hasMoreProducts =
+    !showAllProducts &&
+    !productSearch.trim() &&
+    filteredProducts.length > visibleProducts.length;
+
+  // Tracks which product IDs have already been fetched to avoid re-fetching.
+  const fetchedCostIdsRef = useRef<Set<string>>(new Set());
+
+  // Fetch the last actual purchase cost for each visible product so the
+  // catalogue cards show real market prices instead of the weighted average.
+  useEffect(() => {
+    if (!currentBusiness) return;
+    const businessId = currentBusiness.id;
+    const uncached = visibleProducts.filter((p) => !fetchedCostIdsRef.current.has(p.id));
+    if (uncached.length === 0) return;
+
+    // Mark as in-flight immediately so concurrent renders don't double-fetch
+    for (const p of uncached) fetchedCostIdsRef.current.add(p.id);
+
+    let cancelled = false;
+    Promise.all(
+      uncached.map(async (p) => {
+        const cost = await fetchLatestPurchaseCostForProduct(p.id, businessId);
+        return { id: p.id, cost: cost ?? null };
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      setLastPurchaseCosts((prev) => {
+        const next = { ...prev };
+        for (const { id, cost } of results) {
+          // null means no prior purchase — store 0 so we don't re-fetch
+          next[id] = cost ?? 0;
+        }
+        return next;
+      });
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleProducts, currentBusiness]);
+
+  const addToCart = async (product: Product) => {
+    const latestCost = currentBusiness
+      ? await fetchLatestPurchaseCostForProduct(product.id, currentBusiness.id)
+      : null;
+    const defaultCost = latestCost ?? 0;
+
     setCart((previousCart) => {
       const existingIndex = previousCart.findIndex((item) => item.product?.id === product.id);
       if (existingIndex >= 0) {
@@ -376,7 +461,7 @@ export default function RecordPurchaseScreen() {
         );
       }
 
-      return [...previousCart, createPurchaseCartItemFromProduct(product)];
+      return [...previousCart, createPurchaseCartItemFromProduct(product, { unit_cost: defaultCost })];
     });
   };
 
@@ -446,6 +531,21 @@ export default function RecordPurchaseScreen() {
 
   const removeFromCart = (itemKey: string) => {
     setCart((previousCart) => previousCart.filter((item) => item.key !== itemKey));
+  };
+
+  const stepCartItemQuantity = (itemKey: string, change: number) => {
+    setCart((previousCart) =>
+      previousCart.map((item) => {
+        if (item.key !== itemKey) return item;
+        const quantity = Math.max(1, roundAmount(item.quantity + change));
+        return {
+          ...item,
+          quantity,
+          input_quantity: formatNumberInput(quantity),
+          total_cost: Number((quantity * item.unit_cost).toFixed(2)),
+        };
+      }),
+    );
   };
 
   const subtotal = calculatePurchaseSubtotal(cart);
@@ -683,427 +783,985 @@ export default function RecordPurchaseScreen() {
     );
   }
 
+  if (!canManageGoods) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Goods Purchases"
+          theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+        />
+        <PermissionDenied
+          title="Goods purchases are restricted"
+          description="This account cannot view or record supplier purchases and cost prices."
+        />
+      </ScreenShell>
+    );
+  }
+
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title={isEditing ? 'Edit Goods Purchase' : 'Record Goods Bought'}
         subtitle={
           isEditing
-            ? 'Update supplier goods, discount, and payment details.'
-            : 'Track goods bought from suppliers. This does not update stock quantity.'
+            ? 'Review the supplier, goods, and payment before saving.'
+            : 'Save a supplier purchase. Your stock quantity will not change.'
         }
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
       />
 
-      <View style={{ flex: 1 }}>
-        <View
-          style={{
-            padding: 12,
-            gap: 10,
-            backgroundColor: '#FFFFFF',
-            borderBottomWidth: 1,
-            borderBottomColor: COLORS.border,
-          }}
-        >
-          <KeyboardAwareTextInput
-            value={productSearch}
-            onChangeText={setProductSearch}
-            placeholder="Search products to add..."
-            placeholderTextColor={COLORS.text.muted}
-            style={{
-              fontFamily: FONT.regular,
-              backgroundColor: COLORS.surface,
-              borderWidth: 1,
-              borderRadius: RADIUS.md,
-              borderColor: COLORS.border,
-              paddingHorizontal: 14,
-              paddingVertical: 10,
-              fontSize: 14,
-              color: COLORS.text.primary,
-            }}
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 20, paddingBottom: insets.bottom + 36 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={COLORS.accent}
+            colors={[COLORS.accent]}
           />
-
-          <Button
-            title={showNewItemForm ? 'Hide New Item' : 'Add New Item'}
-            icon={showNewItemForm ? 'minus' : 'plus'}
-            onPress={() => {
-              setShowNewItemForm((value) => !value);
-              setNewItemName((current) => current || productSearch.trim());
-            }}
-            variant="secondary"
-            size="sm"
-          />
-
-          {showNewItemForm ? (
-            <View
-              style={{
-                padding: 12,
-                borderWidth: 1,
-                borderRadius: RADIUS.md,
-                borderColor: COLORS.border,
-                backgroundColor: '#FFFAEB',
-              }}
-            >
-              <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.secondary, marginBottom: 10 }}>
-                Create an item that is not yet in stock. It will be saved with zero stock and attached to this purchase.
-              </Text>
-              <InputField
-                label="Item Name"
-                value={newItemName}
-                onChangeText={setNewItemName}
-                placeholder="e.g. Large Rice Bag"
-                containerStyle={{ marginBottom: 8 }}
-              />
-              <SelectField
-                label="Unit of Measurement"
-                value={selectedNewItemUnit}
-                options={UNIT_OPTIONS}
-                onChange={(value) => {
-                  setNewItemUnit(value === CUSTOM_UNIT_VALUE ? '' : value);
-                }}
-                containerStyle={{ marginBottom: 8 }}
-              />
-              {selectedNewItemUnit === CUSTOM_UNIT_VALUE ? (
-                <InputField
-                  label="Custom Unit"
-                  value={newItemUnit}
-                  onChangeText={setNewItemUnit}
-                  placeholder="e.g. crate, bundle, plate"
-                  required
-                  containerStyle={{ marginBottom: 8 }}
-                />
-              ) : null}
-              <Button
-                title="Add Item To Purchase"
-                onPress={addNewItemToCart}
-                variant="success"
-                size="sm"
-              />
+        }
+      >
+        <View style={styles.flowCard}>
+          <View style={styles.flowIntro}>
+            <View style={styles.flowIcon}>
+              <Feather name="shopping-bag" size={18} color={COLORS.accent} />
             </View>
-          ) : null}
-        </View>
-
-        <View style={{ flex: 1, flexDirection: 'row' }}>
-          <FlashList
-            style={{ flex: 1, borderRightWidth: 1, borderRightColor: COLORS.border }}
-            data={filteredProducts}
-            keyExtractor={(product) => product.id}
-            contentContainerStyle={{ padding: 8, gap: 6 }}
-            
-            ListEmptyComponent={
-              <EmptyState
-                icon="package"
-                title="No matching products"
-                description="Use Add New Item if this product has not been created yet."
-              />
-            }
-            renderItem={({ item }) => {
-              const inCart = cart.some((cartItem) => cartItem.product?.id === item.id);
-              return (
-                <TouchableOpacity
-                  onPress={() => addToCart(item)}
-                  activeOpacity={0.82}
-                  style={{
-                    backgroundColor: inCart ? '#ECFDF3' : '#FFFFFF',
-                    padding: 10,
-                    borderWidth: 1,
-                    borderRadius: RADIUS.md,
-                    borderColor: inCart ? COLORS.success : COLORS.border,
-                  }}
-                >
-                  <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }} numberOfLines={2}>
-                    {item.name}
-                  </Text>
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
-                    Cost: {formatCurrency(item.cost_price || 0)}
-                  </Text>
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
-                    Unit: {item.unit}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }}
-          />
-
-          <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
-            <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
-              <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                Purchase Items ({cart.length})
-              </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.flowTitle}>Purchase workspace</Text>
+              <Text style={styles.flowCopy}>Capture the supplier, goods, and what you paid in one clear record.</Text>
             </View>
-
-            {cart.length === 0 ? (
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-                <View
-                  style={{
-                    width: 56,
-                    height: 56,
-                    borderWidth: 1,
-                    borderRadius: RADIUS.md,
-                    borderColor: COLORS.border,
-                    backgroundColor: COLORS.surface2,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    marginBottom: 12,
-                  }}
-                >
-                  <Feather name="package" size={24} color={COLORS.text.muted} />
-                </View>
-                <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted, textAlign: 'center' }}>
-                  Tap products or add a new item to begin
-                </Text>
+            {cart.length > 0 ? (
+              <View style={styles.flowTotal}>
+                <Text style={styles.flowTotalLabel}>TOTAL</Text>
+                <Text style={styles.flowTotalValue}>{formatCurrency(totals.totalAmount)}</Text>
               </View>
-            ) : (
-              <KeyboardAwareScrollView
-                style={{ flex: 1 }}
-                refreshControl={
-                  <RefreshControl
-                    refreshing={refreshing}
-                    onRefresh={onRefresh}
-                    tintColor={COLORS.accent}
-                    colors={[COLORS.accent]}
-                  />
-                }
-              >
-                {cart.map((item) => (
-                  <View key={item.key} style={{ padding: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <View style={{ flex: 1, marginRight: 10 }}>
-                        <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.primary }} numberOfLines={1}>
-                          {getItemName(item)}
-                        </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
-                          {getItemUnit(item)}
-                          {item.productDraft ? ' - New item' : ''}
-                        </Text>
-                      </View>
-                      <TouchableOpacity onPress={() => removeFromCart(item.key)} activeOpacity={0.8}>
-                        <Feather name="x" size={16} color={COLORS.danger} />
-                      </TouchableOpacity>
-                    </View>
-                    <View style={{ flexDirection: 'row', gap: 6 }}>
-                      <KeyboardAwareTextInput
-                        value={item.input_quantity !== undefined ? item.input_quantity : String(item.quantity)}
-                        onChangeText={(value) => updateCartItem(item.key, 'quantity', value)}
-                        keyboardType="numeric"
-                        style={{
-                          fontFamily: FONT.regular,
-                          flex: 1,
-                          borderWidth: 1,
-                          borderRadius: RADIUS.md,
-                          borderColor: COLORS.border,
-                          paddingHorizontal: 8,
-                          paddingVertical: 6,
-                          fontSize: 12,
-                          color: COLORS.text.primary,
-                        }}
-                        placeholder="Qty"
-                        placeholderTextColor={COLORS.text.muted}
-                      />
-                      <KeyboardAwareTextInput
-                        value={item.input_unit_cost !== undefined ? item.input_unit_cost : String(item.unit_cost)}
-                        onChangeText={(value) => updateCartItem(item.key, 'unit_cost', value)}
-                        keyboardType="numeric"
-                        isAmount={true}
-                        style={{
-                          fontFamily: FONT.regular,
-                          flex: 1,
-                          borderWidth: 1,
-                          borderRadius: RADIUS.md,
-                          borderColor: COLORS.border,
-                          paddingHorizontal: 8,
-                          paddingVertical: 6,
-                          fontSize: 12,
-                          color: COLORS.text.primary,
-                        }}
-                        placeholder="Cost"
-                        placeholderTextColor={COLORS.text.muted}
-                      />
-                    </View>
-                    <Text style={{ fontSize: 11, color: COLORS.success, fontFamily: FONT.medium, marginTop: 4 }}>
-                      Total: {formatCurrency(item.total_cost)}
+            ) : null}
+          </View>
+          <View style={styles.flowSteps}>
+            {['Supplier', 'Goods', 'Payment'].map((step, index) => (
+              <View key={step} style={styles.flowStep}>
+                <View style={[styles.flowStepNumber, (index === 0 || cart.length > 0) && styles.flowStepNumberActive]}>
+                  {index === 0 && supplierName.trim() ? (
+                    <Feather name="check" size={12} color="#FFFFFF" />
+                  ) : (
+                    <Text style={[styles.flowStepNumberText, (index === 0 || cart.length > 0) && styles.flowStepNumberTextActive]}>
+                      {index + 1}
                     </Text>
-                    {prefillOriginals[item.key] && (
-                      (item.quantity !== prefillOriginals[item.key].quantity || item.unit_cost !== prefillOriginals[item.key].unit_cost) ? (
-                        <Text style={{ fontSize: 10, color: COLORS.warning, fontFamily: FONT.medium, marginTop: 4 }}>
-                          ⚠ Values changed from stock entry (Qty: {prefillOriginals[item.key].quantity}, Cost: {formatCurrency(prefillOriginals[item.key].unit_cost)})
-                        </Text>
-                      ) : null
-                    )}
-                  </View>
-                ))}
-              </KeyboardAwareScrollView>
-            )}
+                  )}
+                </View>
+                <Text style={styles.flowStepLabel}>{step}</Text>
+              </View>
+            ))}
           </View>
         </View>
 
-        {cart.length > 0 ? (
-          <KeyboardAwareScrollView
-            style={{
-              maxHeight: 410,
-              backgroundColor: '#FFFFFF',
-              borderTopWidth: 1,
-              borderTopColor: COLORS.border,
-            }}
-          >
-            <View style={{ padding: 16, gap: 10 }}>
-              {lockedSupplierId ? (
-                <View
-                  style={{
-                    backgroundColor: '#F9FAFB',
-                    borderWidth: 1,
-                    borderRadius: RADIUS.md,
-                    borderColor: COLORS.border,
-                    padding: 12,
-                  }}
-                >
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginBottom: 4 }}>
-                    Supplier
-                  </Text>
-                  <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                    {supplierName || 'Loading supplier...'}
-                  </Text>
+        <View style={styles.section}>
+          <SectionHeader title="Supplier & date" />
+          <Card style={{ gap: 14 }}>
+            {lockedSupplierId ? (
+              <FlatSection style={styles.lockedSupplier}>
+                <View style={styles.lockedSupplierIcon}>
+                  <Feather name="truck" size={17} color={COLORS.navy} />
                 </View>
-              ) : (
-                <>
-                  <SelectField
-                    label="Supplier"
-                    value={supplierId}
-                    options={[
-                      { value: '', label: 'Type supplier name below' },
-                      ...suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name })),
-                    ]}
-                    onChange={handleSupplierSelect}
-                    containerStyle={{ marginBottom: 4 }}
-                  />
-
-                  <InputField
-                    label="Supplier Name"
-                    value={supplierName}
-                    onChangeText={setSupplierName}
-                    placeholder="e.g. Dangote Foods Ltd"
-                    hint="Required when supplier is not already saved."
-                    required
-                    containerStyle={{ marginBottom: 4 }}
-                  />
-                </>
-              )}
-
-              <View
-                style={{
-                  backgroundColor: '#F9FAFB',
-                  borderWidth: 1,
-                  borderColor: COLORS.border,
-                  borderRadius: RADIUS.md,
-                  padding: 12,
-                  gap: 6,
-                }}
-              >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                  <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>
-                    Subtotal
-                  </Text>
-                  <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                    {formatCurrency(subtotal)}
-                  </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.lockedSupplierLabel}>SUPPLIER</Text>
+                  <Text style={styles.lockedSupplierName}>{supplierName || 'Loading supplier...'}</Text>
                 </View>
-                {totals.discountAmount > 0 ? (
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>
-                      Discount
-                    </Text>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.danger }}>
-                      -{formatCurrency(totals.discountAmount)}
-                    </Text>
-                  </View>
-                ) : null}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-                  <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                    Total
-                  </Text>
-                  <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.success }}>
-                    {formatCurrency(totals.totalAmount)}
-                  </Text>
-                </View>
-              </View>
+              </FlatSection>
+            ) : (
+              <>
+                <SelectField
+                  label="Choose saved supplier"
+                  value={supplierId}
+                  options={[
+                    { value: '', label: 'Enter a supplier name below' },
+                    ...suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name })),
+                  ]}
+                  onChange={handleSupplierSelect}
+                  containerStyle={{ marginBottom: 0 }}
+                />
+                <InputField
+                  label="Supplier name"
+                  value={supplierName}
+                  onChangeText={setSupplierName}
+                  placeholder="e.g. Dangote Foods Ltd"
+                  hint="A new supplier will be saved to your supplier records."
+                  required
+                  leftIcon={<Feather name="truck" size={16} color={COLORS.text.muted} />}
+                  containerStyle={{ marginBottom: 0 }}
+                />
+              </>
+            )}
 
+            <View>
               <InputField
-                label="Discount"
-                value={discountAmount}
-                onChangeText={setDiscountAmount}
-                placeholder="0"
-                keyboardType="numeric"
-                prefix={CURRENCY_SYMBOL}
-                isAmount={true}
-                containerStyle={{ marginBottom: 4 }}
-              />
-
-              <InputField
-                label="Amount Paid"
-                value={amountPaid}
-                onChangeText={(value) => {
-                  setAmountPaid(value);
-                  setAmountPaidDirty(value.trim() !== '');
-                }}
-                placeholder={formatNumberInput(totals.totalAmount)}
-                keyboardType="numeric"
-                prefix={CURRENCY_SYMBOL}
-                isAmount={true}
-                hint={!amountPaidDirty ? 'Defaults to the total cost until you change it.' : undefined}
-                containerStyle={{ marginBottom: 4 }}
-              />
-
-              {totals.amountOwed > 0 ? (
-                <View
-                  style={{
-                    backgroundColor: '#FEF3F2',
-                    borderWidth: 1,
-                    borderRadius: 14,
-                    borderColor: '#DDAEA6',
-                    padding: 10,
-                  }}
-                >
-                  <Text style={{ color: COLORS.danger, fontFamily: FONT.medium, fontSize: 13 }}>
-                    Supplier balance: {formatCurrency(totals.amountOwed)}. You can also add a discount to reconcile this difference.
-                  </Text>
-                </View>
-              ) : null}
-
-              <InputField
-                label="Purchase Date"
+                label="Purchase date"
                 value={purchaseDate}
                 onChangeText={setPurchaseDate}
                 placeholder="YYYY-MM-DD"
-                containerStyle={{ marginBottom: 4 }}
+                leftIcon={<Feather name="calendar" size={16} color={COLORS.text.muted} />}
+                containerStyle={{ marginBottom: 0 }}
               />
+              <TouchableOpacity
+                onPress={() => setPurchaseDate(format(new Date(), 'yyyy-MM-dd'))}
+                activeOpacity={0.75}
+                style={styles.todayAction}
+              >
+                <Feather name="calendar" size={13} color={COLORS.accent} />
+                <Text style={styles.todayActionText}>Use today</Text>
+              </TouchableOpacity>
+            </View>
+          </Card>
+        </View>
+
+        <View style={styles.section}>
+          <SectionHeader title="Add goods" />
+          <Card style={{ gap: 14 }}>
+            <View style={styles.productIntro}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.productIntroTitle}>Find from your catalogue</Text>
+                <Text style={styles.productIntroCopy}>Tap an item to add it. Tap again to increase its quantity.</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowNewItemForm((value) => !value);
+                  setNewItemName((current) => current || productSearch.trim());
+                }}
+                activeOpacity={0.75}
+                style={[styles.newItemToggle, showNewItemForm && styles.newItemToggleActive]}
+              >
+                <Feather name={showNewItemForm ? 'x' : 'plus'} size={16} color={showNewItemForm ? '#FFFFFF' : COLORS.accent} />
+                <Text style={[styles.newItemToggleText, showNewItemForm && styles.newItemToggleTextActive]}>
+                  {showNewItemForm ? 'Close' : 'New item'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <InputField
+              label="Search products"
+              value={productSearch}
+              onChangeText={(value) => {
+                setProductSearch(value);
+                setShowAllProducts(false);
+              }}
+              placeholder="Search by product name"
+              leftIcon={<Feather name="search" size={16} color={COLORS.text.muted} />}
+              rightElement={
+                productSearch ? (
+                  <TouchableOpacity onPress={() => setProductSearch('')} activeOpacity={0.7} hitSlop={8}>
+                    <Feather name="x-circle" size={17} color={COLORS.text.muted} />
+                  </TouchableOpacity>
+                ) : undefined
+              }
+              containerStyle={{ marginBottom: 0 }}
+            />
+
+            {showNewItemForm ? (
+              <View style={styles.newItemForm}>
+                <View style={styles.newItemFormHeading}>
+                  <View style={styles.newItemFormIcon}>
+                    <Feather name="plus" size={15} color={COLORS.warning} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.newItemFormTitle}>Add a new catalogue item</Text>
+                    <Text style={styles.newItemFormCopy}>It will be created with zero stock and linked to this purchase.</Text>
+                  </View>
+                </View>
+                <InputField
+                  label="Item name"
+                  value={newItemName}
+                  onChangeText={setNewItemName}
+                  placeholder="e.g. Large Rice Bag"
+                  containerStyle={{ marginBottom: 0 }}
+                />
+                <SelectField
+                  label="Unit of measurement"
+                  value={selectedNewItemUnit}
+                  options={UNIT_OPTIONS}
+                  onChange={(value) => setNewItemUnit(value === CUSTOM_UNIT_VALUE ? '' : value)}
+                  containerStyle={{ marginBottom: 0 }}
+                />
+                {selectedNewItemUnit === CUSTOM_UNIT_VALUE ? (
+                  <InputField
+                    label="Custom unit"
+                    value={newItemUnit}
+                    onChangeText={setNewItemUnit}
+                    placeholder="e.g. crate, bundle, plate"
+                    required
+                    containerStyle={{ marginBottom: 0 }}
+                  />
+                ) : null}
+                <Button title="Add to purchase" onPress={addNewItemToCart} variant="accent" size="sm" icon="plus" />
+              </View>
+            ) : null}
+
+            {visibleProducts.length > 0 ? (
+              <View style={styles.productList}>
+                {visibleProducts.map((product) => {
+                  const cartItem = cart.find((item) => item.product?.id === product.id);
+                  const inCart = Boolean(cartItem);
+                  return (
+                    <TouchableOpacity
+                      key={product.id}
+                      onPress={() => addToCart(product)}
+                      activeOpacity={0.8}
+                      style={[styles.productRow, inCart && styles.productRowActive]}
+                    >
+                      <View style={[styles.productIcon, inCart && styles.productIconActive]}>
+                        <Feather name={inCart ? 'check' : 'package'} size={17} color={inCart ? COLORS.success : COLORS.navy} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
+                        <Text style={styles.productMeta}>
+                          {formatCurrency(
+                            product.id in lastPurchaseCosts
+                              ? lastPurchaseCosts[product.id]
+                              : Number(product.cost_price || 0)
+                          )}{' '}
+                          per {product.unit}
+                        </Text>
+                      </View>
+                      <View style={[styles.productAdd, inCart && styles.productAddActive]}>
+                        {inCart ? (
+                          <Text style={styles.productAddActiveText}>{formatNumberInput(cartItem?.quantity ?? 0)}</Text>
+                        ) : (
+                          <Feather name="plus" size={17} color={COLORS.accent} />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : (
+              <FlatSection style={styles.noProducts}>
+                <Feather name="search" size={18} color={COLORS.text.muted} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.noProductsTitle}>No matching products</Text>
+                  <Text style={styles.noProductsCopy}>Create a new item above if it is not yet in your catalogue.</Text>
+                </View>
+              </FlatSection>
+            )}
+
+            {hasMoreProducts ? (
+              <Button
+                title={`Show all ${filteredProducts.length} products`}
+                onPress={() => setShowAllProducts(true)}
+                variant="ghost"
+                size="sm"
+              />
+            ) : null}
+          </Card>
+        </View>
+
+        <View style={styles.section}>
+          <SectionHeader title={`Purchase items${cart.length ? ` (${cart.length})` : ''}`} />
+          {cart.length === 0 ? (
+            <FlatSection style={styles.emptyCart}>
+              <View style={styles.emptyCartIcon}>
+                <Feather name="shopping-bag" size={21} color={COLORS.text.muted} />
+              </View>
+              <Text style={styles.emptyCartTitle}>Your purchase is empty</Text>
+              <Text style={styles.emptyCartCopy}>Add goods above to set quantities and supplier costs.</Text>
+            </FlatSection>
+          ) : (
+            <View style={styles.cartList}>
+              {cart.map((item) => (
+                <Card key={item.key} style={{ gap: 14 }}>
+                  <View style={styles.cartItemHeader}>
+                    <View style={[styles.productIcon, item.productDraft && styles.newProductIcon]}>
+                      <Feather name={item.productDraft ? 'star' : 'package'} size={17} color={item.productDraft ? COLORS.warning : COLORS.navy} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.cartItemName} numberOfLines={1}>{getItemName(item)}</Text>
+                      <Text style={styles.cartItemMeta}>
+                        {getItemUnit(item)}{item.productDraft ? ' · New catalogue item' : ''}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => removeFromCart(item.key)}
+                      activeOpacity={0.75}
+                      hitSlop={8}
+                      style={styles.removeItemAction}
+                      accessibilityLabel={`Remove ${getItemName(item)}`}
+                    >
+                      <Feather name="trash-2" size={16} color={COLORS.danger} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.cartItemFields}>
+                    <View style={{ flex: 1 }}>
+                      <InputField
+                        label={`Quantity (${getItemUnit(item)})`}
+                        value={item.input_quantity !== undefined ? item.input_quantity : formatNumberInput(item.quantity)}
+                        onChangeText={(value) => updateCartItem(item.key, 'quantity', value)}
+                        keyboardType="numeric"
+                        placeholder="0"
+                        rightElement={
+                          <View style={styles.quantityStepper}>
+                            <TouchableOpacity onPress={() => stepCartItemQuantity(item.key, -1)} hitSlop={6} style={styles.stepperButton}>
+                              <Feather name="minus" size={13} color={COLORS.text.secondary} />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => stepCartItemQuantity(item.key, 1)} hitSlop={6} style={styles.stepperButton}>
+                              <Feather name="plus" size={13} color={COLORS.text.secondary} />
+                            </TouchableOpacity>
+                          </View>
+                        }
+                        containerStyle={{ marginBottom: 0 }}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <InputField
+                        label="Cost per unit"
+                        value={item.input_unit_cost !== undefined ? item.input_unit_cost : formatNumberInput(item.unit_cost)}
+                        onChangeText={(value) => updateCartItem(item.key, 'unit_cost', value)}
+                        keyboardType="numeric"
+                        placeholder="0"
+                        prefix={CURRENCY_SYMBOL}
+                        isAmount={true}
+                        containerStyle={{ marginBottom: 0 }}
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.itemTotalRow}>
+                    <Text style={styles.itemTotalLabel}>
+                      {formatNumberInput(item.quantity)} × {formatCurrency(item.unit_cost)}
+                    </Text>
+                    <Text style={styles.itemTotalValue}>{formatCurrency(item.total_cost)}</Text>
+                  </View>
+
+                  {prefillOriginals[item.key] &&
+                  (item.quantity !== prefillOriginals[item.key].quantity || item.unit_cost !== prefillOriginals[item.key].unit_cost) ? (
+                    <View style={styles.prefillWarning}>
+                      <Feather name="alert-triangle" size={14} color={COLORS.warning} />
+                      <Text style={styles.prefillWarningText}>
+                        Changed from stock entry: {prefillOriginals[item.key].quantity} at {formatCurrency(prefillOriginals[item.key].unit_cost)}.
+                      </Text>
+                    </View>
+                  ) : null}
+                </Card>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {cart.length > 0 ? (
+          <View style={styles.section}>
+            <SectionHeader title="Payment & confirmation" />
+            <Card style={{ gap: 16 }}>
+              <View style={styles.totalCard}>
+                <View style={styles.totalLine}>
+                  <Text style={styles.totalLabel}>Subtotal</Text>
+                  <Text style={styles.totalValue}>{formatCurrency(subtotal)}</Text>
+                </View>
+                <View style={styles.totalLine}>
+                  <Text style={styles.totalLabel}>Discount</Text>
+                  <Text style={totals.discountAmount > 0 ? styles.totalDiscount : styles.totalNoDiscount}>
+                    {totals.discountAmount > 0 ? `−${formatCurrency(totals.discountAmount)}` : '—'}
+                  </Text>
+                </View>
+                <View style={styles.totalDivider} />
+                <View style={styles.totalLine}>
+                  <Text style={styles.totalHeading}>Purchase total</Text>
+                  <Text style={styles.totalAmount}>{formatCurrency(totals.totalAmount)}</Text>
+                </View>
+              </View>
+
+              <View style={styles.paymentFields}>
+                <View style={{ flex: 1 }}>
+                  <InputField
+                    label="Discount"
+                    value={discountAmount}
+                    onChangeText={setDiscountAmount}
+                    placeholder="0"
+                    keyboardType="numeric"
+                    prefix={CURRENCY_SYMBOL}
+                    isAmount={true}
+                    containerStyle={{ marginBottom: 0 }}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <InputField
+                    label="Amount paid"
+                    value={amountPaid}
+                    onChangeText={(value) => {
+                      setAmountPaid(value);
+                      setAmountPaidDirty(value.trim() !== '');
+                    }}
+                    placeholder={formatNumberInput(totals.totalAmount)}
+                    keyboardType="numeric"
+                    prefix={CURRENCY_SYMBOL}
+                    isAmount={true}
+                    containerStyle={{ marginBottom: 0 }}
+                  />
+                </View>
+              </View>
+
+              {!amountPaidDirty ? (
+                <Text style={styles.paymentHint}>Amount paid defaults to the purchase total until you change it.</Text>
+              ) : null}
+
+              {totals.amountOwed > 0 ? (
+                <View style={styles.balanceNotice}>
+                  <View style={styles.balanceNoticeIcon}>
+                    <Feather name="clock" size={15} color={COLORS.warning} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.balanceNoticeTitle}>Supplier balance: {formatCurrency(totals.amountOwed)}</Text>
+                    <Text style={styles.balanceNoticeCopy}>This will be recorded as money you still owe this supplier.</Text>
+                  </View>
+                </View>
+              ) : null}
 
               <InputField
                 label="Notes"
                 value={notes}
                 onChangeText={setNotes}
-                placeholder="Optional note about the goods bought..."
+                placeholder="Optional note about the goods bought"
+                leftIcon={
+                  <View style={styles.notesIcon}>
+                    <Feather name="file-text" size={16} color={COLORS.text.muted} />
+                  </View>
+                }
                 multiline
-                containerStyle={{ marginBottom: 4 }}
+                numberOfLines={2}
+                style={styles.notesInput}
+                containerStyle={{ marginBottom: 0 }}
               />
+
+              <View style={styles.recordingNote}>
+                <Feather name="info" size={15} color={COLORS.navy} />
+                <Text style={styles.recordingNoteText}>This saves the supplier purchase only; it does not add these goods to stock.</Text>
+              </View>
 
               <Button
                 title={
                   isSaving
-                    ? isEditing ? 'Saving...' : 'Recording...'
+                    ? isEditing ? 'Saving purchase...' : 'Recording goods...'
                     : isEditing
-                      ? `Save Purchase - ${formatCurrency(totals.totalAmount)}`
-                      : `Record Goods - ${formatCurrency(totals.totalAmount)}`
+                      ? `Save purchase · ${formatCurrency(totals.totalAmount)}`
+                      : `Record goods · ${formatCurrency(totals.totalAmount)}`
                 }
                 onPress={handleSave}
                 loading={isSaving}
-                variant="success"
+                variant="accent"
                 size="lg"
+                icon="check-circle"
               />
-            </View>
-          </KeyboardAwareScrollView>
+            </Card>
+          </View>
         ) : null}
-      </View>
+      </KeyboardAwareScrollView>
     </ScreenShell>
   );
 }
+
+const styles = {
+  flowCard: {
+    backgroundColor: COLORS.card,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    marginBottom: 24,
+    overflow: 'hidden' as const,
+  },
+  flowIntro: {
+    alignItems: 'center' as const,
+    flexDirection: 'row' as const,
+    gap: 10,
+    padding: 14,
+  },
+  flowIcon: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.accentLight,
+    borderRadius: RADIUS.md,
+    height: 38,
+    justifyContent: 'center' as const,
+    width: 38,
+  },
+  flowTitle: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.bold,
+    fontSize: 14,
+  },
+  flowCopy: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  flowTotal: {
+    alignItems: 'flex-end' as const,
+  },
+  flowTotalLabel: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.bold,
+    fontSize: 9,
+    letterSpacing: 0.7,
+  },
+  flowTotalValue: {
+    color: COLORS.accentMuted,
+    fontFamily: FONT.bold,
+    fontSize: 14,
+    marginTop: 2,
+  },
+  flowSteps: {
+    backgroundColor: COLORS.surface2,
+    borderTopColor: COLORS.border,
+    borderTopWidth: 1,
+    flexDirection: 'row' as const,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  flowStep: {
+    alignItems: 'center' as const,
+    flex: 1,
+    flexDirection: 'row' as const,
+    gap: 6,
+    justifyContent: 'center' as const,
+  },
+  flowStepNumber: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.card,
+    borderColor: COLORS.borderDark,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    height: 20,
+    justifyContent: 'center' as const,
+    width: 20,
+  },
+  flowStepNumberActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  flowStepNumberText: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.bold,
+    fontSize: 10,
+  },
+  flowStepNumberTextActive: {
+    color: '#FFFFFF',
+  },
+  flowStepLabel: {
+    color: COLORS.text.secondary,
+    fontFamily: FONT.medium,
+    fontSize: 11,
+  },
+  section: {
+    marginBottom: 24,
+  },
+  lockedSupplier: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.infoLight,
+    borderColor: COLORS.borderDark,
+    flexDirection: 'row' as const,
+    gap: 10,
+    padding: 12,
+  },
+  lockedSupplierIcon: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.sm,
+    height: 34,
+    justifyContent: 'center' as const,
+    width: 34,
+  },
+  lockedSupplierLabel: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.bold,
+    fontSize: 9,
+    letterSpacing: 0.7,
+  },
+  lockedSupplierName: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.bold,
+    fontSize: 14,
+    marginTop: 2,
+  },
+  todayAction: {
+    alignItems: 'center' as const,
+    alignSelf: 'flex-start' as const,
+    flexDirection: 'row' as const,
+    gap: 5,
+    marginTop: 7,
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+  },
+  todayActionText: {
+    color: COLORS.accentMuted,
+    fontFamily: FONT.medium,
+    fontSize: 12,
+  },
+  productIntro: {
+    alignItems: 'flex-start' as const,
+    flexDirection: 'row' as const,
+    gap: 12,
+  },
+  productIntroTitle: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.bold,
+    fontSize: 14,
+  },
+  productIntroCopy: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  newItemToggle: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.accentLight,
+    borderColor: '#ffd4bc',
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+    flexDirection: 'row' as const,
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+  },
+  newItemToggleActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  newItemToggleText: {
+    color: COLORS.accentMuted,
+    fontFamily: FONT.medium,
+    fontSize: 12,
+  },
+  newItemToggleTextActive: {
+    color: '#FFFFFF',
+  },
+  newItemForm: {
+    backgroundColor: COLORS.warningLight,
+    borderColor: '#f7dfc8',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    gap: 12,
+    padding: 12,
+  },
+  newItemFormHeading: {
+    alignItems: 'flex-start' as const,
+    flexDirection: 'row' as const,
+    gap: 9,
+  },
+  newItemFormIcon: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.sm,
+    height: 30,
+    justifyContent: 'center' as const,
+    width: 30,
+  },
+  newItemFormTitle: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.bold,
+    fontSize: 13,
+  },
+  newItemFormCopy: {
+    color: COLORS.text.secondary,
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  productList: {
+    gap: 8,
+  },
+  productRow: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.card,
+    borderColor: COLORS.border,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    flexDirection: 'row' as const,
+    gap: 10,
+    padding: 10,
+  },
+  productRowActive: {
+    backgroundColor: COLORS.successLight,
+    borderColor: '#a9dfbf',
+  },
+  productIcon: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.infoLight,
+    borderRadius: RADIUS.sm,
+    height: 36,
+    justifyContent: 'center' as const,
+    width: 36,
+  },
+  productIconActive: {
+    backgroundColor: COLORS.card,
+  },
+  newProductIcon: {
+    backgroundColor: COLORS.warningLight,
+  },
+  productName: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.medium,
+    fontSize: 14,
+  },
+  productMeta: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    marginTop: 3,
+  },
+  productAdd: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.accentLight,
+    borderRadius: RADIUS.full,
+    height: 32,
+    justifyContent: 'center' as const,
+    width: 32,
+  },
+  productAddActive: {
+    backgroundColor: COLORS.success,
+    minWidth: 32,
+    paddingHorizontal: 7,
+    width: undefined,
+  },
+  productAddActiveText: {
+    color: '#FFFFFF',
+    fontFamily: FONT.bold,
+    fontSize: 12,
+  },
+  noProducts: {
+    alignItems: 'center' as const,
+    flexDirection: 'row' as const,
+    gap: 10,
+    padding: 14,
+  },
+  noProductsTitle: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.medium,
+    fontSize: 13,
+  },
+  noProductsCopy: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  emptyCart: {
+    alignItems: 'center' as const,
+    padding: 22,
+  },
+  emptyCartIcon: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.surface2,
+    borderRadius: RADIUS.full,
+    height: 44,
+    justifyContent: 'center' as const,
+    marginBottom: 10,
+    width: 44,
+  },
+  emptyCartTitle: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.medium,
+    fontSize: 14,
+  },
+  emptyCartCopy: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center' as const,
+  },
+  cartList: {
+    gap: 10,
+  },
+  cartItemHeader: {
+    alignItems: 'center' as const,
+    flexDirection: 'row' as const,
+    gap: 10,
+  },
+  cartItemName: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.bold,
+    fontSize: 15,
+  },
+  cartItemMeta: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    marginTop: 3,
+  },
+  removeItemAction: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.dangerLight,
+    borderRadius: RADIUS.full,
+    height: 32,
+    justifyContent: 'center' as const,
+    width: 32,
+  },
+  cartItemFields: {
+    flexDirection: 'row' as const,
+    gap: 10,
+  },
+  quantityStepper: {
+    flexDirection: 'row' as const,
+    gap: 1,
+    marginRight: -6,
+  },
+  stepperButton: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.surface2,
+    borderRadius: RADIUS.xs,
+    height: 28,
+    justifyContent: 'center' as const,
+    width: 24,
+  },
+  itemTotalRow: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.surface,
+    borderRadius: RADIUS.sm,
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+  },
+  itemTotalLabel: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 11,
+  },
+  itemTotalValue: {
+    color: COLORS.text.primary,
+    fontFamily: FONT.bold,
+    fontSize: 14,
+  },
+  prefillWarning: {
+    alignItems: 'flex-start' as const,
+    backgroundColor: COLORS.warningLight,
+    borderRadius: RADIUS.sm,
+    flexDirection: 'row' as const,
+    gap: 7,
+    padding: 9,
+  },
+  prefillWarningText: {
+    color: COLORS.warning,
+    flex: 1,
+    fontFamily: FONT.medium,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  totalCard: {
+    backgroundColor: COLORS.ink,
+    borderRadius: RADIUS.lg,
+    gap: 8,
+    padding: 15,
+  },
+  totalLine: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+  },
+  totalLabel: {
+    color: 'rgba(255,255,255,0.68)',
+    fontFamily: FONT.regular,
+    fontSize: 13,
+  },
+  totalValue: {
+    color: '#FFFFFF',
+    fontFamily: FONT.medium,
+    fontSize: 13,
+  },
+  totalDiscount: {
+    color: '#f7c59f',
+    fontFamily: FONT.medium,
+    fontSize: 13,
+  },
+  totalNoDiscount: {
+    color: 'rgba(255,255,255,0.45)',
+    fontFamily: FONT.medium,
+    fontSize: 13,
+  },
+  totalDivider: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    height: 1,
+    marginVertical: 2,
+  },
+  totalHeading: {
+    color: '#FFFFFF',
+    fontFamily: FONT.bold,
+    fontSize: 16,
+  },
+  totalAmount: {
+    color: '#FFFFFF',
+    fontFamily: FONT.bold,
+    fontSize: 20,
+  },
+  paymentFields: {
+    flexDirection: 'row' as const,
+    gap: 10,
+  },
+  paymentHint: {
+    color: COLORS.text.muted,
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    marginTop: -8,
+  },
+  balanceNotice: {
+    alignItems: 'flex-start' as const,
+    backgroundColor: COLORS.warningLight,
+    borderColor: '#f7dfc8',
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    flexDirection: 'row' as const,
+    gap: 9,
+    padding: 11,
+  },
+  balanceNoticeIcon: {
+    alignItems: 'center' as const,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.full,
+    height: 28,
+    justifyContent: 'center' as const,
+    width: 28,
+  },
+  balanceNoticeTitle: {
+    color: COLORS.warning,
+    fontFamily: FONT.bold,
+    fontSize: 13,
+  },
+  balanceNoticeCopy: {
+    color: COLORS.text.secondary,
+    fontFamily: FONT.regular,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+  },
+  recordingNote: {
+    alignItems: 'flex-start' as const,
+    backgroundColor: COLORS.infoLight,
+    borderRadius: RADIUS.md,
+    flexDirection: 'row' as const,
+    gap: 8,
+    padding: 11,
+  },
+  recordingNoteText: {
+    color: COLORS.text.secondary,
+    flex: 1,
+    fontFamily: FONT.regular,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  notesInput: {
+    backgroundColor: 'transparent',
+    height: 58,
+    minHeight: 58,
+    paddingBottom: 8,
+    paddingTop: 8,
+    textAlignVertical: 'top' as const,
+  },
+  notesIcon: {
+    alignSelf: 'flex-start' as const,
+    marginTop: 12,
+  },
+};

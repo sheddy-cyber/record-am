@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { saleItemsTable } from '@/lib/dataAccess';
 
 interface SaleState {
   pinnedProductIds: string[];
@@ -52,7 +53,7 @@ export const useSaleStore = create<SaleState>((set, get) => ({
     if (get().hasLoadedSold) return;
     try {
       const { data, error } = await supabase
-        .from('sale_items')
+        .from(saleItemsTable())
         .select(`
           product_id,
           quantity,

@@ -6,9 +6,11 @@ import { Feather } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useAnalyticsStore, TopProduct } from '@/store/analyticsStore';
+import { hasPermission } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 import { ScreenShell, ScreenHeader, HeaderAction } from '@/components/layout';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL } from '@/constants';
-import { Button, EmptyState } from '@/components/ui';
+import { Button, EmptyState, PermissionDenied } from '@/components/ui';
 import { ProductAnalysisPrintData, printProductAnalysis, shareProductAnalysisPDF } from '@/lib/reports';
 
 const fmtCount = (n: number) => n.toLocaleString();
@@ -24,7 +26,8 @@ type SortOrder = 'desc' | 'asc';
 
 export default function AnalyticsProductsScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch } = useAuthStore();
+  const { currentBusiness, currentBranch, userRole } = useAuthStore();
+  const canViewAnalytics = hasPermission(userRole, 'analytics.view');
   const { allProducts } = useAnalyticsStore();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
@@ -193,11 +196,26 @@ export default function AnalyticsProductsScreen() {
     );
   };
 
+  if (!canViewAnalytics) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Product Analytics"
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+        />
+        <PermissionDenied
+          title="Analytics is restricted"
+          description="Product performance and profit data are available to owners only."
+        />
+      </ScreenShell>
+    );
+  }
+
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader 
         title="Product Analytics" 
-        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={
           <HeaderAction 
             icon="printer" 

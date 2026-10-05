@@ -8,6 +8,7 @@ import { Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
 import { BrandMark, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
+import { canViewFinancialData, hasPermission } from '@/lib/permissions';
 
 type MenuSection = {
   title: string;
@@ -31,6 +32,9 @@ function MoreScreen() {
   const branchName = useAuthStore((s) => s.currentBranch?.name);
   const userRole = useAuthStore((s) => s.userRole);
   const signOut = useAuthStore((s) => s.signOut);
+  const canViewPurchases = hasPermission(userRole, 'purchases.view');
+  const canViewStockHistory = hasPermission(userRole, 'stock-history.view');
+  const canViewFinancials = canViewFinancialData(userRole);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -44,7 +48,7 @@ function MoreScreen() {
     {
       title: 'Reports & Insights',
       items: [
-        ...(userRole === 'owner' ? [{
+        ...(hasPermission(userRole, 'analytics.view') ? [{
           icon: 'bar-chart-2' as keyof typeof Feather.glyphMap,
           label: 'Analytics',
           subtitle: 'Sales trends, profit, and top products',
@@ -52,14 +56,14 @@ function MoreScreen() {
           iconBg: COLORS.infoLight,
           iconColor: COLORS.info,
         }] : []),
-        {
-          icon: 'sliders',
+        ...(canViewFinancials ? [{
+          icon: 'sliders' as keyof typeof Feather.glyphMap,
           label: 'Daily Balance',
           subtitle: 'Cash reconciliation and day close',
           onPress: () => router.push('/(app)/balance'),
           iconBg: COLORS.successLight,
           iconColor: COLORS.success,
-        },
+        }] : []),
       ],
     },
     {
@@ -73,14 +77,14 @@ function MoreScreen() {
           iconBg: COLORS.warningLight,
           iconColor: COLORS.warning,
         },
-        {
-          icon: 'list',
+        ...(canViewStockHistory ? [{
+          icon: 'list' as keyof typeof Feather.glyphMap,
           label: 'Stock History',
           subtitle: 'Inventory movement audit trail',
           onPress: () => router.push('/(app)/stock-history'),
           iconBg: COLORS.surface2,
           iconColor: COLORS.text.secondary,
-        },
+        }] : []),
       ],
     },
     {
@@ -94,14 +98,14 @@ function MoreScreen() {
           iconBg: COLORS.infoLight,
           iconColor: COLORS.info,
         },
-        {
-          icon: 'package',
+        ...(canViewPurchases ? [{
+          icon: 'package' as keyof typeof Feather.glyphMap,
           label: 'Suppliers & Purchases',
           subtitle: 'Contacts, goods bought, and balances',
           onPress: () => router.push('/(app)/suppliers'),
           iconBg: COLORS.warningLight,
           iconColor: COLORS.warning,
-        },
+        }] : []),
       ],
     },
     {
@@ -115,7 +119,7 @@ function MoreScreen() {
           iconBg: COLORS.surface2,
           iconColor: COLORS.text.secondary,
         },
-        ...(userRole === 'owner' || userRole === 'manager' ? [{
+        ...(hasPermission(userRole, 'business-settings.manage') ? [{
           icon: 'users' as any,
           label: 'Team & Staff',
           subtitle: 'Manage your staff and roles',
@@ -222,7 +226,7 @@ function MoreScreen() {
           </View>
         </View>
 
-        {sections.map((section) => (
+        {sections.filter((section) => section.items.length > 0).map((section) => (
           <View key={section.title}>
             <SectionHeader title={section.title} />
             <Card style={{ padding: 0 }}>

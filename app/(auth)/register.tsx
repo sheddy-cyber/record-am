@@ -13,6 +13,7 @@ import { BrandMark, ScreenShell } from '@/components/layout';
 import { AuthBackButton, AuthProgress, PasswordStrength, useStepTransition } from '@/components/auth';
 import { BRAND, COLORS, FONT, RADIUS, TYPE } from '@/constants';
 import { formatAuthError, getAuthCallbackUrl, getPasswordError, isValidEmail, normaliseEmail } from '@/lib/auth';
+import { dismissScreen } from '@/lib/navigation';
 
 const STEPS = ['Name', 'Contact', 'Password'];
 const LAST_STEP_INDEX = STEPS.length - 1;
@@ -76,7 +77,7 @@ export default function RegisterScreen() {
   const handleBack = () => {
     setErrors({});
     if (activeStep === 0) {
-      router.back();
+      dismissScreen();
       return;
     }
     setStep((current) => Math.max(current - 1, 0));

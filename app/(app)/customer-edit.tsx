@@ -9,6 +9,7 @@ import { Button, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS } from '@/constants';
+import { dismissScreen } from '@/lib/navigation';
 
 export default function CustomerEditScreen() {
   const insets = useSafeAreaInsets();
@@ -33,7 +34,7 @@ export default function CustomerEditScreen() {
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const onRefresh = useCallback(async () => {
     if (!currentBusiness) return;

@@ -18,7 +18,9 @@ import * as Clipboard from 'expo-clipboard';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { LoadingScreen, Button } from '@/components/ui';
+import { LoadingScreen, Button, PermissionDenied } from '@/components/ui';
+import { hasPermission } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { BusinessMember, UserProfile } from '@/types';
@@ -77,6 +79,7 @@ export default function TeamScreen() {
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
   const currentBranch = useAuthStore((s) => s.currentBranch);
   const currentUserRole = useAuthStore((s) => s.userRole);
+  const canManageTeam = hasPermission(currentUserRole, 'business-settings.manage');
   const { fetchTeamMembers } = useBusinessStore();
 
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -175,6 +178,21 @@ export default function TeamScreen() {
     }
   };
 
+  if (!canManageTeam) {
+    return (
+      <ScreenShell backgroundColor={COLORS.background} statusBarStyle="dark">
+        <ScreenHeader
+          title="Team & Staff"
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+        />
+        <PermissionDenied
+          title="Team management is restricted"
+          description="Only owners and managers can invite staff or change roles."
+        />
+      </ScreenShell>
+    );
+  }
+
   if (loading && members.length === 0) {
     return <LoadingScreen message="Loading team directory..." />;
   }
@@ -187,7 +205,7 @@ export default function TeamScreen() {
     <ScreenShell backgroundColor={COLORS.background} statusBarStyle="dark">
       <ScreenHeader
         title="Team & Staff"
-        left={<HeaderAction icon="arrow-left" onPress={() => router.back()} />}
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
       <ScrollView

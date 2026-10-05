@@ -5,14 +5,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
-import { Button } from '@/components/ui';
+import { Button, PermissionDenied } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS } from '@/constants';
+import { canManagePurchases } from '@/lib/permissions';
+import { dismissScreen } from '@/lib/navigation';
 
 export default function SupplierCreateScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness } = useAuthStore();
+  const { currentBusiness, userRole } = useAuthStore();
+  const canManageGoods = canManagePurchases(userRole);
   const { createSupplier, isSaving } = useSupplierStore();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -22,7 +25,7 @@ export default function SupplierCreateScreen() {
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
 
-  const closeScreen = () => router.back();
+  const closeScreen = () => dismissScreen();
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -35,7 +38,7 @@ export default function SupplierCreateScreen() {
   }, []);
 
   const handleAdd = async () => {
-    if (!currentBusiness) return;
+    if (!currentBusiness || !canManageGoods) return;
     if (!name.trim()) {
       Alert.alert('Error', 'Supplier name is required.');
       return;
@@ -63,6 +66,22 @@ export default function SupplierCreateScreen() {
 
     closeScreen();
   };
+
+  if (!canManageGoods) {
+    return (
+      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+        <ScreenHeader
+          title="Add Supplier"
+          theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+        />
+        <PermissionDenied
+          title="Supplier management is restricted"
+          description="This account cannot create supplier profiles or record supplier purchases."
+        />
+      </ScreenShell>
+    );
+  }
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
