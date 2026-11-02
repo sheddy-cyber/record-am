@@ -238,7 +238,10 @@ export default function MarketListScreen() {
   const handleAddToCatalog = (item: CustomerRequest) => {
     router.push({
       pathname: '/(app)/add-stock',
-      params: { prefillName: item.item_name },
+      params: {
+        prefillName: item.item_name,
+        prefillQuantity: item.quantity_needed ?? '',
+      },
     });
   };
 
@@ -541,7 +544,7 @@ export default function MarketListScreen() {
             <ScrollView
               style={styles.modalScrollView}
               contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator={true}
+              showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled={true}
               bounces={false}

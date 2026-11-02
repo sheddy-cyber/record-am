@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, RefreshControl } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -25,8 +25,57 @@ const formatCount = (value: number) =>
 const normalizeProductName = (value: string) =>
   value.trim().replace(/\s+/g, ' ').toLowerCase();
 
+const parsePrefillQuantity = (raw?: string): { quantity: string; unit?: string } => {
+  if (!raw || !raw.trim()) return { quantity: '' };
+  const trimmed = raw.trim();
+
+  // Try to extract a leading or standalone numeric value: e.g. "2 packs", "10", "1.5 kg"
+  const numberMatch = trimmed.match(/^(\d+(\.\d+)?)/) || trimmed.match(/(\d+(\.\d+)?)/);
+  const quantity = numberMatch ? numberMatch[1] : '';
+
+  const lower = trimmed.toLowerCase();
+  let unit: string | undefined;
+
+  const unitMap: Record<string, string> = {
+    piece: 'piece', pieces: 'piece', pcs: 'piece', pc: 'piece', item: 'piece', items: 'piece',
+    pack: 'pack', packs: 'pack', pk: 'pack', pks: 'pack', packet: 'pack', packets: 'pack',
+    carton: 'carton', cartons: 'carton', ctn: 'carton', ctns: 'carton', box: 'carton', boxes: 'carton',
+    bag: 'bag', bags: 'bag',
+    dozen: 'dozen', dozens: 'dozen',
+    kg: 'kg', kgs: 'kg', kilo: 'kg', kilos: 'kg', kilogram: 'kg', kilograms: 'kg',
+    g: 'g', gram: 'g', grams: 'g',
+    litre: 'litre', litres: 'litre', liter: 'litre', liters: 'litre', l: 'litre',
+    ml: 'ml', mls: 'ml',
+    bottle: 'bottle', bottles: 'bottle', btl: 'bottle', btls: 'bottle',
+    tin: 'tin', tins: 'tin', can: 'tin', cans: 'tin',
+    roll: 'roll', rolls: 'roll',
+    yard: 'yard', yards: 'yard', yds: 'yard',
+    metre: 'metre', metres: 'metre', meter: 'metre', meters: 'metre', m: 'metre',
+    pair: 'pair', pairs: 'pair',
+  };
+
+  const words = lower.replace(/[^a-z0-9]/g, ' ').split(/\s+/);
+  for (const word of words) {
+    if (unitMap[word]) {
+      unit = unitMap[word];
+      break;
+    }
+  }
+
+  return { quantity, unit };
+};
+
 export default function AddStockScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    prefillName?: string | string[];
+    prefillQuantity?: string | string[];
+  }>();
+
+  const rawPrefillName = Array.isArray(params.prefillName) ? params.prefillName[0] : params.prefillName;
+  const rawPrefillQty = Array.isArray(params.prefillQuantity) ? params.prefillQuantity[0] : params.prefillQuantity;
+  const initialPrefill = parsePrefillQuantity(rawPrefillQty);
+
   const { currentBusiness, currentBranch } = useAuthStore();
   const {
     products,
@@ -46,16 +95,29 @@ export default function AddStockScreen() {
     } catch (_) {}
     setRefreshing(false);
   }, [currentBusiness, fetchProducts]);
-  const [productName, setProductName] = useState('');
-  const [productUnit, setProductUnit] = useState('piece');
+
+  const [productName, setProductName] = useState(rawPrefillName ?? '');
+  const [productUnit, setProductUnit] = useState(initialPrefill.unit ?? 'piece');
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<Category | undefined>(undefined);
   const [costPrice, setCostPrice] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
-  const [openingQuantity, setOpeningQuantity] = useState('');
+  const [openingQuantity, setOpeningQuantity] = useState(initialPrefill.quantity ?? '');
   const [reorderLevel, setReorderLevel] = useState('5');
   const [isService, setIsService] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Sync route parameters if they change or screen is re-navigated
+  useEffect(() => {
+    if (rawPrefillName && !productName) {
+      setProductName(rawPrefillName);
+    }
+    if (rawPrefillQty && !openingQuantity) {
+      const parsed = parsePrefillQuantity(rawPrefillQty);
+      if (parsed.quantity) setOpeningQuantity(parsed.quantity);
+      if (parsed.unit) setProductUnit(parsed.unit);
+    }
+  }, [rawPrefillName, rawPrefillQty]);
 
   const closeScreen = () => dismissScreen();
 
@@ -173,8 +235,24 @@ export default function AddStockScreen() {
     );
     if (duplicateProduct) {
       Alert.alert(
-        'Duplicate product',
-        `${duplicateProduct.name} already exists in stock. Update its stock quantity instead.`,
+        'Duplicate Product',
+        `"${duplicateProduct.name}" already exists in stock. Would you like to update its stock quantity instead?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Update Stock',
+            onPress: () => {
+              router.replace({
+                pathname: '/(app)/update-stock',
+                params: {
+                  productId: duplicateProduct.id,
+                  stockAdjustment: openingQuantity.trim() ? openingQuantity.trim() : undefined,
+                  restock: '1',
+                },
+              });
+            },
+          },
+        ]
       );
       return;
     }
