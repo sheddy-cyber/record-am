@@ -1,9 +1,8 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Card } from '@/components/ui';
 import { InputField } from '@/components/forms';
-import { FlatSection } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { getDefaultBundleSize, getSaleUnitOptions } from '@/lib/records';
 import { CartItem } from '@/types';
@@ -50,99 +49,148 @@ export const SaleCartItemCard: React.FC<SaleCartItemCardProps> = ({
 
   return (
     <Card style={{ gap: 14 }}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+          <Text style={{ fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
             {item.product.name}
           </Text>
-          <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>
-            {formatCurrency(item.unit_price)} per {item.sale_unit}
+          <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.navy, marginTop: 2 }}>
+            {formatCurrency(item.unit_price)} <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>/{item.sale_unit}</Text>
           </Text>
         </View>
-        <TouchableOpacity onPress={onRemove} activeOpacity={0.8}>
-          <Feather name="x" size={18} color={COLORS.text.muted} />
+        <TouchableOpacity
+          onPress={onRemove}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+          style={{
+            width: 32,
+            height: 32,
+            borderRadius: RADIUS.full,
+            backgroundColor: COLORS.surface2,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Feather name="trash-2" size={15} color={COLORS.danger} />
         </TouchableOpacity>
       </View>
 
-      <View style={{ gap: 8 }}>
-        <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.secondary }}>
-          Sell As
-        </Text>
-        <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-          {unitOptions.map((option) => (
+      {unitOptions.length > 1 && (
+        <View style={{ gap: 6 }}>
+          <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: COLORS.text.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            Sell As
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+            {unitOptions.map((option) => {
+              const active = item.sale_unit === option.value;
+              return (
+                <TouchableOpacity
+                  key={option.value}
+                  onPress={() => onSaleUnitChange(option.value)}
+                  activeOpacity={0.7}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderRadius: RADIUS.full,
+                    borderColor: active ? COLORS.navy : COLORS.border,
+                    backgroundColor: active ? COLORS.navy : COLORS.card,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: FONT.medium,
+                      color: active ? '#ffffff' : COLORS.text.primary,
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      )}
+
+      <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-end' }}>
+        <View style={{ flex: 1.2 }}>
+          <Text
+            style={{
+              fontSize: 12,
+              fontFamily: FONT.medium,
+              color: COLORS.text.secondary,
+              marginBottom: 6,
+            }}
+          >
+            Quantity
+          </Text>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: COLORS.surface,
+              borderRadius: RADIUS.md,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: COLORS.border,
+              height: 48,
+              paddingHorizontal: 4,
+            }}
+          >
             <TouchableOpacity
-              key={option.value}
-              onPress={() => onSaleUnitChange(option.value)}
-              activeOpacity={0.8}
+              onPress={() => onStepQuantity(-1)}
+              disabled={isMin}
+              activeOpacity={0.7}
               style={{
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                borderWidth: 1,
+                width: 38,
+                height: 38,
                 borderRadius: RADIUS.sm,
-                borderColor: item.sale_unit === option.value ? COLORS.ink : COLORS.border,
-                backgroundColor: item.sale_unit === option.value ? COLORS.surface2 : COLORS.card,
+                backgroundColor: isMin ? 'transparent' : COLORS.card,
+                borderWidth: isMin ? 0 : StyleSheet.hairlineWidth,
+                borderColor: COLORS.border,
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
-              <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                {option.label}
-              </Text>
+              <Feather name="minus" size={16} color={isMin ? COLORS.text.muted : COLORS.text.primary} />
             </TouchableOpacity>
-          ))}
-        </View>
-      </View>
 
-      <View style={{ flexDirection: 'row', gap: 12 }}>
-        <View style={{ flex: 1 }}>
-          <InputField
-            label="Quantity"
-            value={quantityInput}
-            onChangeText={onQuantityChange}
-            onBlur={onQuantityBlur}
-            keyboardType="numeric"
-            placeholder="0"
-            rightElement={
-              <View
-                style={{
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  height: 38,
-                  marginRight: -6,
-                }}
-              >
-                <TouchableOpacity
-                  onPress={() => onStepQuantity(1)}
-                  activeOpacity={0.6}
-                  hitSlop={{ top: 8, bottom: 2, left: 12, right: 12 }}
-                  style={{
-                    paddingVertical: 2,
-                    paddingHorizontal: 6,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Feather name="chevron-up" size={16} color={COLORS.text.primary} />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => onStepQuantity(-1)}
-                  activeOpacity={0.6}
-                  disabled={isMin}
-                  hitSlop={{ top: 2, bottom: 8, left: 12, right: 12 }}
-                  style={{
-                    paddingVertical: 2,
-                    paddingHorizontal: 6,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    opacity: isMin ? 0.3 : 1,
-                  }}
-                >
-                  <Feather name="chevron-down" size={16} color={COLORS.text.primary} />
-                </TouchableOpacity>
-              </View>
-            }
-            containerStyle={{ marginBottom: 0 }}
-          />
+            <TextInput
+              value={quantityInput}
+              onChangeText={onQuantityChange}
+              onBlur={onQuantityBlur}
+              keyboardType="numeric"
+              placeholder="0"
+              placeholderTextColor={COLORS.text.muted}
+              style={{
+                flex: 1,
+                textAlign: 'center',
+                fontFamily: FONT.semiBold,
+                fontSize: 16,
+                color: COLORS.text.primary,
+                paddingHorizontal: 4,
+              }}
+            />
+
+            <TouchableOpacity
+              onPress={() => onStepQuantity(1)}
+              activeOpacity={0.7}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: RADIUS.sm,
+                backgroundColor: COLORS.card,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: COLORS.border,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Feather name="plus" size={16} color={COLORS.text.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
+
         <View style={{ flex: 1 }}>
           <InputField
             label="Discount"
@@ -173,14 +221,24 @@ export const SaleCartItemCard: React.FC<SaleCartItemCardProps> = ({
             </View>
           ) : (
             <View style={{ flex: 1 }}>
-              <FlatSection style={{ padding: 12, minHeight: 82, justifyContent: 'center' }}>
-                <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+              <View
+                style={{
+                  padding: 12,
+                  minHeight: 74,
+                  justifyContent: 'center',
+                  backgroundColor: COLORS.surface,
+                  borderRadius: RADIUS.md,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: COLORS.border,
+                }}
+              >
+                <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.text.muted }}>
                   Stock conversion
                 </Text>
-                <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 4 }}>
-                  {formatCount(item.bundle_size ?? getDefaultBundleSize(item.product) ?? 1)} {item.sale_unit} per {item.product.unit}
+                <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary, marginTop: 4 }}>
+                  {formatCount(item.bundle_size ?? getDefaultBundleSize(item.product) ?? 1)} {item.sale_unit} / {item.product.unit}
                 </Text>
-              </FlatSection>
+              </View>
             </View>
           )}
           <View style={{ flex: 1 }}>
@@ -198,11 +256,20 @@ export const SaleCartItemCard: React.FC<SaleCartItemCardProps> = ({
         </View>
       ) : null}
 
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingTop: 10,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: COLORS.borderSubtle,
+        }}
+      >
         <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-          Uses {formatCount(item.stock_quantity)} {item.product.unit} from stock
+          Deducts {formatCount(item.stock_quantity)} {item.product.unit} from stock
         </Text>
-        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+        <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.accent }}>
           {formatCurrency(item.total_price)}
         </Text>
       </View>

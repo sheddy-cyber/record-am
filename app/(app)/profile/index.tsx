@@ -8,6 +8,7 @@ import {
   Platform,
   TouchableOpacity,
   RefreshControl,
+  StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -21,12 +22,26 @@ import Toast from 'react-native-toast-message';
 import { dismissScreen } from '@/lib/navigation';
 
 export default function ProfileScreen() {
-  const { profile, user, setProfile, initialize } = useAuthStore();
+  const { profile, user, setProfile, initialize, userRole } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [phone, setPhone] = useState(profile?.phone ?? '');
   const [saving, setSaving] = useState(false);
+
+  // Synchronize input fields when profile refreshes
+  React.useEffect(() => {
+    if (profile?.full_name) {
+      setFullName(profile.full_name);
+    }
+    if (profile?.phone) {
+      setPhone(profile.phone);
+    }
+  }, [profile?.full_name, profile?.phone]);
+
+  const isOwnerOrManager = userRole === 'owner' || userRole === 'manager';
+  const isNameAlreadySet = Boolean(profile?.full_name?.trim());
+  const isNameLocked = !isOwnerOrManager && isNameAlreadySet;
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -70,21 +85,33 @@ export default function ProfileScreen() {
 
   const handleSaveProfile = async () => {
     if (!user) return;
-    if (!fullName.trim()) {
+
+    const trimmedName = fullName.trim();
+    if (!trimmedName && !isNameLocked) {
       Alert.alert('Error', 'Name is required');
+      return;
+    }
+
+    if (isNameLocked && trimmedName !== profile?.full_name?.trim()) {
+      Alert.alert(
+        'Name Cannot Be Changed',
+        'Staff members cannot change their name once set. Please contact your business owner or manager to update your name in Team settings.'
+      );
       return;
     }
 
     setSaving(true);
     try {
+      const targetName = isNameLocked ? (profile?.full_name?.trim() || trimmedName) : trimmedName;
+
       const { error } = await supabase
         .from('user_profiles')
-        .update({ full_name: fullName.trim(), phone: phone.trim() || null })
+        .update({ full_name: targetName, phone: phone.trim() || null })
         .eq('id', user.id);
 
       if (error) throw error;
 
-      setProfile({ ...profile!, full_name: fullName.trim(), phone: phone.trim() });
+      setProfile({ ...profile!, full_name: targetName, phone: phone.trim() });
       Toast.show({ type: 'success', text1: 'Profile updated' });
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -146,17 +173,17 @@ export default function ProfileScreen() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
               <View
                 style={{
-                  width: 64,
-                  height: 64,
-                  borderWidth: 1,
-                  borderRadius: RADIUS.md,
+                  width: 56,
+                  height: 56,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderRadius: RADIUS.full,
                   borderColor: COLORS.border,
-                  backgroundColor: COLORS.surface2,
+                  backgroundColor: COLORS.navyLight,
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Text style={{ fontSize: 24, fontFamily: FONT.bold, color: COLORS.ink }}>
+                <Text style={{ fontSize: 22, fontFamily: FONT.bold, color: COLORS.navy }}>
                   {(profile?.full_name ?? user?.email ?? 'U').charAt(0).toUpperCase()}
                 </Text>
               </View>
@@ -171,11 +198,76 @@ export default function ProfileScreen() {
             <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, marginBottom: 16 }}>
               Personal Information
             </Text>
-            <InputField label="Full Name" value={fullName} onChangeText={setFullName} placeholder="Your full name" required />
+            <InputField
+              label="Full Name"
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Your full name"
+              required={!isNameLocked}
+              editable={!isNameLocked}
+              leftIcon={
+                <Feather
+                  name={isNameLocked ? 'lock' : 'user'}
+                  size={16}
+                  color={isNameLocked ? COLORS.text.muted : COLORS.navy}
+                />
+              }
+              rightElement={
+                isNameLocked ? (
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      backgroundColor: 'rgba(0, 78, 137, 0.08)',
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: RADIUS.xs,
+                    }}
+                  >
+                    <Feather name="shield" size={11} color={COLORS.navy} />
+                    <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: COLORS.navy }}>
+                      LOCKED
+                    </Text>
+                  </View>
+                ) : undefined
+              }
+              containerStyle={isNameLocked ? { marginBottom: 8 } : undefined}
+            />
+
+            {isNameLocked ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  gap: 8,
+                  marginBottom: SP.card,
+                  backgroundColor: COLORS.surface2,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  borderRadius: RADIUS.sm,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: COLORS.border,
+                }}
+              >
+                <Feather name="info" size={14} color={COLORS.text.muted} style={{ marginTop: 2 }} />
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontFamily: FONT.regular,
+                    color: COLORS.text.secondary,
+                    flex: 1,
+                    lineHeight: 17,
+                  }}
+                >
+                  Your name is set and locked for business audit trails. Only your business owner or manager can change it.
+                </Text>
+              </View>
+            ) : null}
+
             <InputField label="Phone Number" value={phone} onChangeText={setPhone} placeholder="08012345678" keyboardType="phone-pad" />
             <Button title="Save Profile" onPress={handleSaveProfile} loading={saving} size="md" variant="accent" />
           </Card>
-
 
           <Card>
             <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, marginBottom: 16 }}>
@@ -206,7 +298,7 @@ export default function ProfileScreen() {
             />
           </Card>
 
-          <Card style={{ backgroundColor: '#F9FAFB' }}>
+          <Card>
             <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.muted, marginBottom: 12 }}>Account Info</Text>
             {[
               { label: 'Email', value: user?.email ?? '-' },
@@ -222,9 +314,9 @@ export default function ProfileScreen() {
                 style={{
                   flexDirection: 'row',
                   justifyContent: 'space-between',
-                  paddingVertical: 6,
-                  borderBottomWidth: 1,
-                  borderBottomColor: COLORS.border,
+                  paddingVertical: 8,
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  borderBottomColor: COLORS.borderSubtle,
                   gap: 16,
                 }}
               >
@@ -236,8 +328,8 @@ export default function ProfileScreen() {
             ))}
           </Card>
 
-          <Card style={{ marginTop: 24, marginBottom: 40 }}>
-            <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger, marginBottom: 16 }}>
+          <Card style={{ marginTop: 12, marginBottom: 40, borderColor: COLORS.dangerLight, backgroundColor: '#fffbfb' }}>
+            <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger, marginBottom: 8 }}>
               Danger Zone
             </Text>
             <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary, marginBottom: 16, lineHeight: 18 }}>

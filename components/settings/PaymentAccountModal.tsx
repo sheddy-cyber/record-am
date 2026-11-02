@@ -7,6 +7,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  StyleSheet,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button } from '@/components/ui';
@@ -149,7 +150,7 @@ export const PaymentAccountModal: React.FC<PaymentAccountModalProps> = ({
                       gap: 10,
                       padding: 10,
                       borderRadius: RADIUS.md,
-                      borderWidth: 1.5,
+                      borderWidth: isSelected ? 1 : StyleSheet.hairlineWidth,
                       borderColor: isSelected ? COLORS.accent : COLORS.border,
                       backgroundColor: isSelected ? COLORS.accentLight : COLORS.surface,
                     }}
@@ -167,7 +168,7 @@ export const PaymentAccountModal: React.FC<PaymentAccountModalProps> = ({
                       <Feather
                         name={opt.icon}
                         size={15}
-                        color={isSelected ? COLORS.card : COLORS.text.muted}
+                        color={isSelected ? '#000000' : COLORS.text.muted}
                       />
                     </View>
                     <View style={{ flex: 1 }}>

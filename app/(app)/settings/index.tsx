@@ -354,11 +354,11 @@ export default function SettingsScreen() {
                       paddingVertical: 6,
                       paddingHorizontal: 10,
                       borderRadius: RADIUS.sm,
-                      backgroundColor: 'rgba(255, 107, 53, 0.08)',
+                      backgroundColor: COLORS.accentLight,
                     }}
                   >
-                    <Feather name="bell" size={13} color={COLORS.accent} />
-                    <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accent }}>
+                    <Feather name="bell" size={13} color={COLORS.accentDark} />
+                    <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accentDark }}>
                       Send Test Reminder
                     </Text>
                   </TouchableOpacity>

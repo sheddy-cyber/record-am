@@ -15,6 +15,7 @@ import { ProductFormFields } from '@/components/inventory/ProductFormFields';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS } from '@/constants';
 import { dismissScreen } from '@/lib/navigation';
+import { Category } from '@/types';
 
 const formatCount = (value: number) =>
   Number.isInteger(value)
@@ -47,6 +48,8 @@ export default function AddStockScreen() {
   }, [currentBusiness, fetchProducts]);
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<Category | undefined>(undefined);
   const [costPrice, setCostPrice] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
   const [openingQuantity, setOpeningQuantity] = useState('');
@@ -70,6 +73,8 @@ export default function AddStockScreen() {
   const resetProductForm = () => {
     setProductName('');
     setProductUnit('piece');
+    setCategoryId(null);
+    setSelectedCategory(undefined);
     setCostPrice('');
     setSellingPrice('');
     setOpeningQuantity('');
@@ -193,6 +198,8 @@ export default function AddStockScreen() {
       try {
         const product = await createProduct({
           business_id: currentBusiness.id,
+          category_id: categoryId || undefined,
+          category: selectedCategory,
           name: cleanProductName,
           unit: cleanProductUnit,
           cost_price: parsedCostPrice,
@@ -294,6 +301,11 @@ export default function AddStockScreen() {
             onProductNameChange={setProductName}
             productUnit={productUnit}
             onProductUnitChange={setProductUnit}
+            categoryId={categoryId}
+            onCategoryIdChange={(id, cat) => {
+              setCategoryId(id);
+              setSelectedCategory(cat);
+            }}
             costPrice={costPrice}
             onCostPriceChange={setCostPrice}
             sellingPrice={sellingPrice}

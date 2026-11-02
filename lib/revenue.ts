@@ -1,9 +1,11 @@
 import { supabase } from '@/lib/supabase';
 import { isDebtSettlementSale } from '@/lib/records';
-import { RevenueActivity, Sale } from '@/types';
+import { PaymentStatus, RevenueActivity, Sale } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import { useBusinessStore } from '@/store/businessStore';
 import { attachProductSummaries, saleItemsTable } from '@/lib/dataAccess';
 import {
+  readCachedProducts,
   readCachedRevenueActivities,
   upsertCachedRevenueActivities,
 } from '@/lib/offlineStore';
@@ -14,7 +16,10 @@ type SaleRow = Sale & {
     phone?: string;
   } | null;
   items?: {
+    product_id?: string;
     quantity: number;
+    unit_price?: number;
+    discount_amount?: number;
     total_price: number;
     product?: { name: string } | null;
   }[];
@@ -31,6 +36,7 @@ type DebtJoin = {
   branch_id: string;
   sale?: {
     items?: {
+      product_id?: string;
       quantity: number;
       total_price: number;
       product?: { name: string } | null;
@@ -56,13 +62,13 @@ export async function fetchRevenueActivities(
   try {
     const itemsSource = saleItemsTable();
     const includeCosts = itemsSource === 'sale_items';
-    const [salesResponse, repaymentsResponse] = await Promise.all([
+    const [salesResponse, repaymentsResponse, activeDebtsResponse] = await Promise.all([
       supabase
         .from('sales')
         .select(
           includeCosts
-            ? '*, customer:customers(name, phone), items:sale_items(quantity, unit_price, discount_amount, total_price, product:products(name))'
-            : `*, customer:customers(name, phone), items:staff_sale_items(quantity, unit_price, discount_amount, total_price)`,
+            ? '*, customer:customers(name, phone), items:sale_items(product_id, quantity, unit_price, discount_amount, total_price, product:products(name))'
+            : '*, customer:customers(name, phone), items:staff_sale_items(product_id, quantity, unit_price, discount_amount, total_price)',
         )
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
@@ -88,6 +94,7 @@ export async function fetchRevenueActivities(
             branch_id,
             sale:sales(
               items:${itemsSource}(
+                product_id,
                 quantity,
                 total_price
               )
@@ -98,6 +105,13 @@ export async function fetchRevenueActivities(
         .eq('debt.branch_id', branchId)
         .order('created_at', { ascending: false })
         .limit(limit),
+      supabase
+        .from('customer_debts')
+        .select('sale_id')
+        .eq('business_id', businessId)
+        .eq('branch_id', branchId)
+        .neq('status', 'settled')
+        .not('sale_id', 'is', null),
     ]);
 
     if (salesResponse.error) {
@@ -108,17 +122,107 @@ export async function fetchRevenueActivities(
       throw repaymentsResponse.error;
     }
 
-    const rawSales = ((salesResponse.data as SaleRow[]) ?? []).map((sale) => ({
-      ...sale,
-      items: attachProductSummaries(sale.items ?? []) as SaleRow['items'],
-    }));
-    const rawRepayments = (repaymentsResponse.data as DebtRepaymentRow[]) ?? [];
+    const rawSalesList = (salesResponse.data as any[]) ?? [];
+    const rawRepaymentsList = (repaymentsResponse.data as DebtRepaymentRow[]) ?? [];
+
+    // ── Build Product Name Map (resolves products for staff accounts & unjoined items) ──
+    const productNameMap = new Map<string, string>();
+    const missingProductIds = new Set<string>();
+
+    // 1. Pre-seed with products in memory (if available)
+    const storeProducts = useBusinessStore.getState().products;
+    for (const p of storeProducts) {
+      if (p.id && p.name) {
+        productNameMap.set(p.id, p.name);
+      }
+    }
+
+    // 2. Identify all sales line items needing product names
+    for (const sale of rawSalesList) {
+      for (const item of sale.items ?? []) {
+        if (item.product?.name) {
+          if (item.product_id) productNameMap.set(item.product_id, item.product.name);
+        } else if (item.product_id) {
+          if (!productNameMap.has(item.product_id)) {
+            missingProductIds.add(item.product_id);
+          }
+        }
+      }
+    }
+
+    // 3. Identify repayment debt sales items needing product names
+    for (const rep of rawRepaymentsList) {
+      const debt = Array.isArray(rep.debt) ? rep.debt[0] : rep.debt;
+      for (const item of debt?.sale?.items ?? []) {
+        if (item.product?.name) {
+          if (item.product_id) productNameMap.set(item.product_id, item.product.name);
+        } else if (item.product_id) {
+          if (!productNameMap.has(item.product_id)) {
+            missingProductIds.add(item.product_id);
+          }
+        }
+      }
+    }
+
+    // 4. Query staff_products (accessible by both cashiers and managers/owners) for missing IDs
+    if (missingProductIds.size > 0) {
+      try {
+        const productSource = includeCosts ? 'products' : 'staff_products';
+        const { data: fetchedProducts } = await supabase
+          .from(productSource)
+          .select('id, name')
+          .in('id', Array.from(missingProductIds));
+
+        if (fetchedProducts) {
+          for (const p of fetchedProducts) {
+            if (p.id && p.name) {
+              productNameMap.set(p.id, p.name);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load products for revenue activities:', err);
+      }
+    }
+
+    // 5. Fallback to cached products if any ID is still missing
+    const stillMissing = Array.from(missingProductIds).filter((id) => !productNameMap.has(id));
+    if (stillMissing.length > 0) {
+      try {
+        const cachedProducts = await readCachedProducts(businessId);
+        for (const p of cachedProducts) {
+          if (p.id && p.name && !productNameMap.has(p.id)) {
+            productNameMap.set(p.id, p.name);
+          }
+        }
+      } catch {}
+    }
+
+    // ── Enrich sales items with accurate product names ──
+    const rawSales = rawSalesList.map((sale) => {
+      const enrichedItems = (sale.items ?? []).map((item: any) => {
+        const resolvedName =
+          item.product?.name ||
+          (item.product_id ? productNameMap.get(item.product_id) : undefined) ||
+          item.product_name ||
+          'Item';
+        return {
+          ...item,
+          product: { name: resolvedName },
+          product_name: resolvedName,
+        };
+      });
+      return {
+        ...sale,
+        items: enrichedItems,
+      };
+    });
 
     const userIds = Array.from(
       new Set(
         [
           ...rawSales.map((s) => s.sold_by),
-          ...rawRepayments.map((r) => r.recorded_by),
+          ...rawRepaymentsList.map((r) => r.recorded_by),
         ].filter((id): id is string => typeof id === 'string' && id.length > 0)
       )
     );
@@ -148,6 +252,12 @@ export async function fetchRevenueActivities(
       useAuthStore.getState().profile?.full_name ||
       useAuthStore.getState().user?.user_metadata?.full_name;
 
+    const activeDebtSaleIds = new Set(
+      ((activeDebtsResponse?.data as { sale_id: string }[]) ?? [])
+        .map((d) => d.sale_id)
+        .filter(Boolean)
+    );
+
     const saleActivities: RevenueActivity[] = rawSales
       .filter((sale) => !isDebtSettlementSale(sale.notes))
       .map((sale) => {
@@ -157,6 +267,28 @@ export async function fetchRevenueActivities(
           sale.sold_by_name ??
           undefined;
 
+        const isForgiven =
+          sale.payment_status === 'forgiven' ||
+          sale.notes?.includes('[Debt Forgiven]') ||
+          sale.notes?.includes('[record-am-forgiven]') ||
+          (sale.amount_owed > 0 && !activeDebtSaleIds.has(sale.id));
+
+        const effectiveAmountOwed = isForgiven ? 0 : sale.amount_owed;
+        const effectivePaymentStatus: PaymentStatus = isForgiven ? 'forgiven' : sale.payment_status;
+
+        const items = (sale.items ?? []).map((item: any) => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          discount_amount: item.discount_amount,
+          total_price: item.total_price ?? 0,
+          product_name: item.product_name || item.product?.name || 'Item',
+        }));
+
+        const itemsSummary = items
+          .map((item: any) => `${item.quantity}x ${item.product_name}`)
+          .join(', ');
+
         return {
           id: sale.id,
           kind: 'sale',
@@ -165,32 +297,27 @@ export async function fetchRevenueActivities(
           reference: sale.sale_number,
           total_amount: sale.total_amount,
           amount_paid: sale.amount_paid,
-          amount_owed: sale.amount_owed,
-          payment_status: sale.payment_status,
+          amount_owed: effectiveAmountOwed,
+          payment_status: effectivePaymentStatus,
           payment_method: sale.payment_method,
           cash_amount: sale.cash_amount,
           transfer_amount: sale.transfer_amount,
           subtotal: Number(sale.subtotal ?? 0),
           discount_amount: Number(sale.discount_amount ?? 0),
-          notes: sale.notes,
+          notes: isForgiven && !sale.notes?.includes('[Debt Forgiven]') && !sale.notes?.includes('[record-am-forgiven]')
+            ? (sale.notes ? `${sale.notes} [Debt Forgiven]` : '[Debt Forgiven]')
+            : sale.notes,
           sold_by_name: soldByName,
-          items_summary: (sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')) &&
-            ((sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')?.length ?? 0) > 40
-              ? (sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')?.substring(0, 40) + '...')
-              : sale.items?.map((item) => `${item.quantity}x ${item.product?.name ?? 'Item'}`).join(', ')),
+          items_summary: itemsSummary
+            ? (itemsSummary.length > 40 ? itemsSummary.substring(0, 40) + '...' : itemsSummary)
+            : undefined,
           created_at: sale.created_at,
           sale_id: sale.id,
-          items: sale.items?.map((item) => ({
-            quantity: item.quantity,
-            unit_price: (item as any).unit_price,
-            discount_amount: (item as any).discount_amount,
-            total_price: item.total_price ?? 0,
-            product_name: item.product?.name ?? 'Unknown Item'
-          })),
+          items,
         };
       });
 
-    const repaymentActivities: RevenueActivity[] = rawRepayments
+    const repaymentActivities: RevenueActivity[] = rawRepaymentsList
       .map((repayment) => ({
         ...repayment,
         debtRecord: Array.isArray(repayment.debt) ? repayment.debt[0] : repayment.debt,
@@ -201,6 +328,20 @@ export async function fetchRevenueActivities(
           (repayment.recorded_by ? profileMap.get(repayment.recorded_by) : undefined) ??
           (repayment.recorded_by && repayment.recorded_by === currentUserId ? currentUserName : undefined) ??
           undefined;
+
+        const repaymentItems = (repayment.debtRecord?.sale?.items ?? []).map((item: any) => {
+          const resolvedName =
+            item.product?.name ||
+            (item.product_id ? productNameMap.get(item.product_id) : undefined) ||
+            item.product_name ||
+            'Item';
+          return {
+            product_id: item.product_id,
+            quantity: item.quantity,
+            total_price: item.total_price ?? 0,
+            product_name: resolvedName,
+          };
+        });
 
         return {
           id: repayment.id,
@@ -218,11 +359,7 @@ export async function fetchRevenueActivities(
           created_at: repayment.created_at,
           sale_id: repayment.debtRecord?.sale_id ?? undefined,
           debt_id: repayment.debtRecord?.id,
-          items: repayment.debtRecord?.sale?.items?.map((item) => ({
-            quantity: item.quantity,
-            total_price: item.total_price ?? 0,
-            product_name: item.product?.name ?? 'Unknown Item'
-          })),
+          items: repaymentItems,
         };
       });
 
@@ -236,7 +373,29 @@ export async function fetchRevenueActivities(
     const serverActivityKeys = new Set(serverActivities.map((activity) => `${activity.kind}-${activity.id}`));
     const allActivities = [
       ...serverActivities,
-      ...cachedActivities.filter((activity) => !serverActivityKeys.has(`${activity.kind}-${activity.id}`)),
+      ...cachedActivities
+        .filter((activity) => !serverActivityKeys.has(`${activity.kind}-${activity.id}`))
+        .map((activity) => {
+          // Heal any previously cached items that had "Unknown Item" or missing names
+          if (!activity.items?.length) return activity;
+          const healedItems = activity.items.map((it: any) => {
+            if ((!it.product_name || it.product_name === 'Unknown Item' || it.product_name === 'Unknown') && it.product_id) {
+              const matchedName = productNameMap.get(it.product_id);
+              if (matchedName) {
+                return { ...it, product_name: matchedName };
+              }
+            }
+            return it;
+          });
+          const healedSummary = healedItems
+            .map((it: any) => `${it.quantity}x ${it.product_name || 'Item'}`)
+            .join(', ');
+          return {
+            ...activity,
+            items: healedItems,
+            items_summary: healedSummary ? (healedSummary.length > 40 ? healedSummary.substring(0, 40) + '...' : healedSummary) : activity.items_summary,
+          };
+        }),
     ]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 

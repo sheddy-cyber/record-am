@@ -1,10 +1,10 @@
 import React, { useState, useCallback } from 'react';
-import { ScrollView, Text, View, TouchableOpacity, Linking, Alert, RefreshControl } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, Linking, Alert, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
-import { Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
+import { Badge, Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
 import { BrandMark, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
@@ -34,6 +34,7 @@ function MoreScreen() {
   const signOut = useAuthStore((s) => s.signOut);
   const canViewPurchases = hasPermission(userRole, 'purchases.view');
   const canViewStockHistory = hasPermission(userRole, 'stock-history.view');
+  const canManageInventory = hasPermission(userRole, 'inventory.manage');
   const canViewFinancials = canViewFinancialData(userRole);
 
   const onRefresh = useCallback(async () => {
@@ -53,16 +54,16 @@ function MoreScreen() {
           label: 'Analytics',
           subtitle: 'Sales trends, profit, and top products',
           onPress: () => router.push('/(app)/analytics'),
-          iconBg: COLORS.infoLight,
-          iconColor: COLORS.info,
+          iconBg: '#0284C7',
+          iconColor: '#FFFFFF',
         }] : []),
         ...(canViewFinancials ? [{
           icon: 'sliders' as keyof typeof Feather.glyphMap,
           label: 'Daily Balance',
           subtitle: 'Cash reconciliation and day close',
           onPress: () => router.push('/(app)/balance'),
-          iconBg: COLORS.successLight,
-          iconColor: COLORS.success,
+          iconBg: '#15803D',
+          iconColor: '#FFFFFF',
         }] : []),
       ],
     },
@@ -74,16 +75,32 @@ function MoreScreen() {
           label: 'Expenses',
           subtitle: 'Track, record and manage operational costs',
           onPress: () => router.push('/(app)/record-expense'),
-          iconBg: COLORS.warningLight,
-          iconColor: COLORS.warning,
+          iconBg: '#D97706',
+          iconColor: '#FFFFFF',
         },
+        {
+          icon: 'shopping-cart' as keyof typeof Feather.glyphMap,
+          label: 'Market List & Requests',
+          subtitle: 'Items requested by customers to buy at market',
+          onPress: () => router.push('/(app)/market-list'),
+          iconBg: '#059669',
+          iconColor: '#FFFFFF',
+        },
+        ...(canManageInventory ? [{
+          icon: 'alert-octagon' as keyof typeof Feather.glyphMap,
+          label: 'Damaged Goods',
+          subtitle: 'Log broken or spoilt stock and write off loss',
+          onPress: () => router.push('/(app)/record-damage'),
+          iconBg: '#DC2626',
+          iconColor: '#FFFFFF',
+        }] : []),
         ...(canViewStockHistory ? [{
           icon: 'list' as keyof typeof Feather.glyphMap,
           label: 'Stock History',
           subtitle: 'Inventory movement audit trail',
           onPress: () => router.push('/(app)/stock-history'),
-          iconBg: COLORS.surface2,
-          iconColor: COLORS.text.secondary,
+          iconBg: '#4F46E5',
+          iconColor: '#FFFFFF',
         }] : []),
       ],
     },
@@ -95,16 +112,16 @@ function MoreScreen() {
           label: 'Customers',
           subtitle: 'Profiles, history, and debts',
           onPress: () => router.push('/(app)/customers'),
-          iconBg: COLORS.infoLight,
-          iconColor: COLORS.info,
+          iconBg: '#004E89',
+          iconColor: '#FFFFFF',
         },
         ...(canViewPurchases ? [{
           icon: 'package' as keyof typeof Feather.glyphMap,
           label: 'Suppliers & Purchases',
           subtitle: 'Contacts, goods bought, and balances',
           onPress: () => router.push('/(app)/suppliers'),
-          iconBg: COLORS.warningLight,
-          iconColor: COLORS.warning,
+          iconBg: '#0D9488',
+          iconColor: '#FFFFFF',
         }] : []),
       ],
     },
@@ -116,32 +133,32 @@ function MoreScreen() {
           label: 'My Profile',
           subtitle: profileName ?? 'Edit your details',
           onPress: () => router.push('/(app)/profile'),
-          iconBg: COLORS.surface2,
-          iconColor: COLORS.text.secondary,
+          iconBg: '#2563EB',
+          iconColor: '#FFFFFF',
         },
         ...(hasPermission(userRole, 'business-settings.manage') ? [{
           icon: 'users' as any,
           label: 'Team & Staff',
           subtitle: 'Manage your staff and roles',
           onPress: () => router.push('/(app)/team' as any),
-          iconBg: COLORS.infoLight,
-          iconColor: COLORS.info,
+          iconBg: '#7C3AED',
+          iconColor: '#FFFFFF',
         },
         {
           icon: 'settings' as any,
           label: 'Business Settings',
           subtitle: businessName ?? 'Manage your setup',
           onPress: () => router.push('/(app)/settings' as any),
-          iconBg: COLORS.surface2,
-          iconColor: COLORS.text.secondary,
+          iconBg: '#334155',
+          iconColor: '#FFFFFF',
         }] : []),
         {
           icon: 'info',
           label: 'About Record Am',
           subtitle: 'Brand story and app information',
           onPress: () => router.push('/(app)/about'),
-          iconBg: COLORS.surface2,
-          iconColor: COLORS.text.secondary,
+          iconBg: COLORS.accent,
+          iconColor: '#002744',
         },
         {
           icon: 'log-out',
@@ -168,8 +185,8 @@ function MoreScreen() {
               ]
             );
           },
-          iconBg: COLORS.dangerLight,
-          iconColor: COLORS.danger,
+          iconBg: '#DC2626',
+          iconColor: '#FFFFFF',
         },
       ],
     },
@@ -193,7 +210,7 @@ function MoreScreen() {
               justifyContent: 'center',
             }}
           >
-            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: '#FFFFFF' }}>
+            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: '#000000' }}>
               {(profileName ?? 'U').charAt(0).toUpperCase()}
             </Text>
           </View>
@@ -212,24 +229,25 @@ function MoreScreen() {
           />
         }
       >
-        <View style={{ flexDirection: 'row', gap: 14, alignItems: 'center', paddingHorizontal: 4, paddingVertical: 2 }}>
-          <BrandMark size={58} />
+        <Card style={{ flexDirection: 'row', gap: 14, alignItems: 'center', padding: 16 }}>
+          <BrandMark size={52} badge badgeBg={COLORS.surface2} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
               {businessName}
             </Text>
-            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>
-              {branchName}
-              {' · '}
-              {businessCurrency}
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+              <Badge label={userRole?.toUpperCase() ?? 'OWNER'} variant="accent" />
+              <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                {branchName} · {businessCurrency}
+              </Text>
+            </View>
           </View>
-        </View>
+        </Card>
 
         {sections.filter((section) => section.items.length > 0).map((section) => (
           <View key={section.title}>
             <SectionHeader title={section.title} />
-            <Card style={{ padding: 0 }}>
+            <Card style={{ padding: 0, overflow: 'hidden' }}>
               {section.items.map((item, index) => (
                 <View key={item.label}>
                   <ListRow
@@ -239,7 +257,7 @@ function MoreScreen() {
                     left={<IconBox icon={item.icon} bg={item.iconBg} color={item.iconColor} />}
                   />
                   {index < section.items.length - 1 ? (
-                    <View style={{ height: 1, backgroundColor: COLORS.border, marginLeft: 70 }} />
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginLeft: 66 }} />
                   ) : null}
                 </View>
               ))}
@@ -252,7 +270,7 @@ function MoreScreen() {
             v{APP_VERSION} · Created by{' '}
           </Text>
           <TouchableOpacity onPress={() => Linking.openURL('https://krisshedrach.dev')}>
-            <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: COLORS.accent }}>
+            <Text style={{ fontFamily: FONT.semiBold, fontSize: 12, color: COLORS.ink }}>
               Kris Shedrach
             </Text>
           </TouchableOpacity>

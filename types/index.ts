@@ -17,7 +17,7 @@ export type BusinessType =
 
 export type UserRole = 'owner' | 'manager' | 'cashier' | 'auditor';
 
-export type PaymentMethod = 'cash' | 'transfer' | 'pos' | 'mobile_money' | 'mixed';
+export type PaymentMethod = 'cash' | 'transfer' | 'pos' | 'mobile_money' | 'mixed' | 'other';
 
 export type PaymentAccountChannel = 'transfer' | 'pos' | 'both';
 
@@ -32,7 +32,7 @@ export interface PaymentAccount {
   updated_at: string;
 }
 
-export type PaymentStatus = 'paid' | 'partial' | 'credit';
+export type PaymentStatus = 'paid' | 'partial' | 'credit' | 'forgiven';
 
 export type StockMovementType =
   | 'stock_in'
@@ -391,6 +391,7 @@ export interface RevenueActivity {
   sale_id?: string;
   debt_id?: string;
   items?: {
+    product_id?: string;
     quantity: number;
     unit_price?: number;
     discount_amount?: number;
@@ -411,6 +412,7 @@ export interface DashboardStats {
   out_of_stock_count: number;
   outstanding_debts: number;
   total_customers: number;
+  today_sales_count?: number;
 }
 
 export interface StockAlertSummary {
@@ -422,4 +424,27 @@ export interface SalesTrend {
   date: string;
   total: number;
   profit: number;
+}
+
+// ============================================================
+// CUSTOMER REQUESTS / MARKET LIST
+// ============================================================
+export type CustomerRequestStatus = 'pending' | 'bought' | 'cancelled';
+
+export interface CustomerRequest {
+  id: string;
+  business_id: string;
+  branch_id?: string;
+  item_name: string;
+  customer_name?: string;
+  customer_phone?: string;
+  quantity_needed?: string;
+  estimated_price?: number;
+  notes?: string;
+  status: CustomerRequestStatus;
+  recorded_by?: string;
+  recorded_by_name?: string;
+  bought_at?: string;
+  created_at: string;
+  updated_at: string;
 }

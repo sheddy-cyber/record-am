@@ -10,6 +10,7 @@ import {
   TextInput,
   Modal,
   Pressable,
+  StyleSheet,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,11 +27,11 @@ import {
   updateExpenseOffline,
   deleteExpenseOffline,
 } from '@/lib/offlineRecords';
-import { readCachedExpenses, cacheExpenses } from '@/lib/offlineStore';
+import { readCachedExpenses, cacheExpenses, upsertCachedExpenses } from '@/lib/offlineStore';
 import { Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, EXPENSE_CATEGORIES, FONT, PAYMENT_METHODS, RADIUS } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, EXPENSE_CATEGORIES, FONT, PAYMENT_METHODS, RADIUS, SHADOW } from '@/constants';
 import { Expense, PaymentMethod } from '@/types';
 import { dismissScreen } from '@/lib/navigation';
 
@@ -49,6 +50,7 @@ const CATEGORY_META: Record<
   internet: { label: 'Internet', icon: 'wifi', color: '#06B6D4', bg: 'rgba(6, 182, 212, 0.12)' },
   water: { label: 'Water', icon: 'droplet', color: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.12)' },
   security: { label: 'Security', icon: 'shield', color: '#64748B', bg: 'rgba(100, 116, 139, 0.12)' },
+  damage: { label: 'Damaged Goods', icon: 'x-octagon', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.12)' },
   other: { label: 'Other', icon: 'tag', color: COLORS.accent, bg: 'rgba(202, 138, 4, 0.12)' },
 };
 
@@ -77,7 +79,8 @@ const formatCurrency = (val: number) =>
 
 export default function ExpensesScreen() {
   const insets = useSafeAreaInsets();
-  const { currentBusiness, currentBranch, user } = useAuthStore();
+  const { currentBusiness, currentBranch, user, userRole } = useAuthStore();
+  const isOwnerOrManager = userRole === 'owner' || userRole === 'manager';
   const params = useLocalSearchParams<{ expenseId?: string | string[]; action?: string }>();
 
   // State
@@ -109,21 +112,36 @@ export default function ExpensesScreen() {
       // 1. Read cached expenses for instant render
       const cached = await readCachedExpenses(currentBusiness.id, currentBranch.id);
       if (cached && cached.length > 0) {
-        setExpenses(cached);
+        const visibleCached = isOwnerOrManager
+          ? cached
+          : cached.filter((e) => e.recorded_by === user?.id);
+        setExpenses(visibleCached);
       }
 
       // 2. Fetch fresh data from Supabase
-      const { data, error } = await supabase
+      let query = supabase
         .from('expenses')
         .select('*')
         .eq('business_id', currentBusiness.id)
-        .eq('branch_id', currentBranch.id)
+        .eq('branch_id', currentBranch.id);
+
+      // Staff only sees their own recorded expenses; owner and manager see everything
+      if (!isOwnerOrManager && user?.id) {
+        query = query.eq('recorded_by', user.id);
+      }
+
+      const { data, error } = await query
         .order('expense_date', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        setExpenses(data as Expense[]);
-        await cacheExpenses(currentBusiness.id, currentBranch.id, data as Expense[]);
+        const fetchedExpenses = data as Expense[];
+        setExpenses(fetchedExpenses);
+        if (isOwnerOrManager) {
+          await cacheExpenses(currentBusiness.id, currentBranch.id, fetchedExpenses);
+        } else {
+          await upsertCachedExpenses(currentBusiness.id, currentBranch.id, fetchedExpenses);
+        }
       }
     } catch (err) {
       console.warn('Failed to load expenses:', err);
@@ -131,7 +149,7 @@ export default function ExpensesScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [currentBusiness, currentBranch]);
+  }, [currentBusiness, currentBranch, isOwnerOrManager, user?.id]);
 
   useEffect(() => {
     loadExpenses();
@@ -139,9 +157,9 @@ export default function ExpensesScreen() {
 
   // Realtime synchronization
   useRealtimeRefresh({
-    channelName: `expenses-${currentBranch?.id ?? 'unknown'}`,
+    channelName: `expenses-${currentBranch?.id ?? 'unknown'}-${user?.id ?? 'all'}`,
     enabled: Boolean(currentBusiness && currentBranch),
-    watch: [currentBusiness?.id, currentBranch?.id],
+    watch: [currentBusiness?.id, currentBranch?.id, user?.id],
     tables: [
       ...(currentBranch ? [{ table: 'expenses', filter: `branch_id=eq.${currentBranch.id}` }] : []),
     ],
@@ -154,12 +172,16 @@ export default function ExpensesScreen() {
     if (targetId && expenses.length > 0) {
       const match = expenses.find((e) => e.id === targetId);
       if (match) {
+        if (!isOwnerOrManager && match.recorded_by && match.recorded_by !== user?.id) {
+          Alert.alert('Permission Denied', 'You can only view or edit expenses that you recorded.');
+          return;
+        }
         startEditExpense(match);
       }
     } else if (params.action === 'new') {
       startNewExpense();
     }
-  }, [params.expenseId, params.action, expenses]);
+  }, [params.expenseId, params.action, expenses, isOwnerOrManager, user?.id]);
 
   // Start new expense
   const startNewExpense = () => {
@@ -174,6 +196,10 @@ export default function ExpensesScreen() {
 
   // Start editing expense
   const startEditExpense = (expense: Expense) => {
+    if (!isOwnerOrManager && expense.recorded_by && expense.recorded_by !== user?.id) {
+      Alert.alert('Permission Denied', 'You can only view or edit expenses that you recorded.');
+      return;
+    }
     setEditingExpense(expense);
     setExpenseCategory(expense.category);
     setExpenseDescription(expense.description);
@@ -264,6 +290,10 @@ export default function ExpensesScreen() {
 
   // Delete expense handler
   const handleDeleteExpense = (expense: Expense) => {
+    if (!isOwnerOrManager && expense.recorded_by && expense.recorded_by !== user?.id) {
+      Alert.alert('Permission Denied', 'You can only delete expenses that you recorded.');
+      return;
+    }
     Alert.alert(
       'Delete Expense',
       `Are you sure you want to delete "${expense.description}" (${formatCurrency(expense.amount)})?`,
@@ -505,11 +535,7 @@ export default function ExpensesScreen() {
       <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
         <ScreenHeader
           title={editingExpense ? 'Edit Expense' : 'Record Expense'}
-          subtitle={
-            editingExpense
-              ? 'Update operational cost details.'
-              : 'Capture an operational cost for your branch.'
-          }
+          subtitle={editingExpense ? 'Update expense details' : 'Log branch expense'}
           theme="dark"
           left={<HeaderAction icon="arrow-left" onPress={closeForm} />}
         />
@@ -649,7 +675,11 @@ export default function ExpensesScreen() {
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <ScreenHeader
         title="Expenses"
-        subtitle={`${filteredExpenses.length} shown · ${selectedPeriodLabel}`}
+        subtitle={
+          isOwnerOrManager
+            ? `${filteredExpenses.length} shown`
+            : `${filteredExpenses.length} by you`
+        }
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={<HeaderAction icon="plus" label="Record" onPress={startNewExpense} />}
@@ -668,22 +698,22 @@ export default function ExpensesScreen() {
       >
         <View
           style={{
-            borderWidth: 1,
-            borderRadius: RADIUS.md,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderRadius: RADIUS.lg,
             borderColor: COLORS.border,
             backgroundColor: COLORS.card,
-            paddingHorizontal: 12,
-            minHeight: 44,
+            paddingHorizontal: 14,
+            height: 48,
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 8,
+            gap: 10,
           }}
         >
-          <Feather name="search" size={15} color={COLORS.text.muted} />
+          <Feather name="search" size={16} color={COLORS.text.muted} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search description, category, amount..."
+            placeholder="Search expenses by note, category, or amount..."
             placeholderTextColor={COLORS.text.muted}
             underlineColorAndroid="transparent"
             selectionColor={COLORS.accent}
@@ -692,9 +722,9 @@ export default function ExpensesScreen() {
             style={{
               fontFamily: FONT.regular,
               flex: 1,
-              fontSize: 13.5,
+              fontSize: 14,
               color: COLORS.text.primary,
-              paddingVertical: 0,
+              paddingVertical: 10,
             }}
           />
           {searchQuery ? (
@@ -702,38 +732,76 @@ export default function ExpensesScreen() {
               onPress={() => setSearchQuery('')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="x" size={15} color={COLORS.text.muted} />
+              <Feather name="x" size={16} color={COLORS.text.muted} />
             </TouchableOpacity>
           ) : null}
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 8 }}>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity
             onPress={() => setFilterSheetVisible(true)}
-            activeOpacity={0.8}
-            style={{ flex: 1, minHeight: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
+            activeOpacity={0.7}
+            style={{
+              flex: 1,
+              minHeight: 46,
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 12,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderRadius: RADIUS.lg,
+              borderColor: COLORS.border,
+              backgroundColor: COLORS.card,
+            }}
           >
-            <View style={{ width: 27, height: 27, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: `${COLORS.accent}14` }}>
+            <View
+              style={{
+                width: 28,
+                height: 28,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: RADIUS.md,
+                backgroundColor: COLORS.accentLight,
+              }}
+            >
               <Feather name="calendar" size={14} color={COLORS.accent} />
             </View>
-            <View style={{ flex: 1, marginLeft: 8 }}>
-              <Text style={{ fontFamily: FONT.regular, fontSize: 10.5, color: COLORS.text.muted }}>Time period</Text>
-              <Text style={{ marginTop: 1, fontFamily: FONT.medium, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedPeriodLabel}</Text>
+            <View style={{ flex: 1, marginLeft: 9 }}>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 10.5, color: COLORS.text.muted }}>Time Period</Text>
+              <Text style={{ marginTop: 1, fontFamily: FONT.semiBold, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedPeriodLabel}</Text>
             </View>
             <Feather name="chevron-down" size={15} color={COLORS.text.muted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => setFilterSheetVisible(true)}
-            activeOpacity={0.8}
-            style={{ flex: 1, minHeight: 46, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 11, borderWidth: 1, borderRadius: RADIUS.md, borderColor: selectedCategory === 'all' ? COLORS.border : COLORS.accent, backgroundColor: COLORS.card }}
+            activeOpacity={0.7}
+            style={{
+              flex: 1,
+              minHeight: 46,
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingHorizontal: 12,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderRadius: RADIUS.lg,
+              borderColor: selectedCategory === 'all' ? COLORS.border : COLORS.accent,
+              backgroundColor: COLORS.card,
+            }}
           >
-            <View style={{ width: 27, height: 27, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: selectedCategory === 'all' ? COLORS.surface2 : `${COLORS.accent}14` }}>
+            <View
+              style={{
+                width: 28,
+                height: 28,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: RADIUS.md,
+                backgroundColor: selectedCategory === 'all' ? COLORS.surface2 : COLORS.accentLight,
+              }}
+            >
               <Feather name="tag" size={14} color={selectedCategory === 'all' ? COLORS.text.muted : COLORS.accent} />
             </View>
-            <View style={{ flex: 1, marginLeft: 8 }}>
-              <Text style={{ fontFamily: FONT.regular, fontSize: 10.5, color: COLORS.text.muted }}>Category</Text>
-              <Text style={{ marginTop: 1, fontFamily: FONT.medium, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedCategoryLabel}</Text>
+            <View style={{ flex: 1, marginLeft: 9 }}>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 10.5, color: COLORS.text.muted }}>Category</Text>
+              <Text style={{ marginTop: 1, fontFamily: FONT.semiBold, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedCategoryLabel}</Text>
             </View>
             <Feather name="sliders" size={14} color={COLORS.text.muted} />
           </TouchableOpacity>
@@ -741,11 +809,23 @@ export default function ExpensesScreen() {
 
         <View style={{ minHeight: 30, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 }}>
           <Text style={{ flex: 1, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
-            {filteredExpenses.length} {filteredExpenses.length === 1 ? 'expense' : 'expenses'} shown
+            {filteredExpenses.length} {filteredExpenses.length === 1 ? 'expense' : 'expenses'} {isOwnerOrManager ? 'recorded' : 'recorded by you'}
           </Text>
-          <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: visibleExpenseTotal > 0 ? COLORS.danger : COLORS.text.primary }}>
-            -{formatCurrency(visibleExpenseTotal)}
-          </Text>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              backgroundColor: COLORS.dangerLight,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+              borderRadius: RADIUS.full,
+            }}
+          >
+            <Text style={{ fontFamily: FONT.semiBold, fontSize: 12, color: COLORS.danger }}>
+              -{formatCurrency(visibleExpenseTotal)}
+            </Text>
+          </View>
           {hasExtraFilters ? (
             <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ marginLeft: 10, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
               <Feather name="x-circle" size={14} color={COLORS.text.muted} />
@@ -827,10 +907,10 @@ export default function ExpensesScreen() {
                   borderTopRightRadius: isFirst ? RADIUS.lg : 0,
                   borderBottomLeftRadius: isLast ? RADIUS.lg : 0,
                   borderBottomRightRadius: isLast ? RADIUS.lg : 0,
-                  borderLeftWidth: 1,
-                  borderRightWidth: 1,
-                  borderTopWidth: isFirst ? 1 : 0,
-                  borderBottomWidth: isLast ? 1 : 0,
+                  borderLeftWidth: StyleSheet.hairlineWidth,
+                  borderRightWidth: StyleSheet.hairlineWidth,
+                  borderTopWidth: isFirst ? StyleSheet.hairlineWidth : 0,
+                  borderBottomWidth: isLast ? StyleSheet.hairlineWidth : 0,
                   borderColor: COLORS.border,
                   overflow: 'hidden',
                 }}
@@ -976,12 +1056,16 @@ export default function ExpensesScreen() {
               icon="dollar-sign"
               title={
                 expenses.length === 0
-                  ? 'No expenses recorded'
+                  ? isOwnerOrManager
+                    ? 'No expenses recorded'
+                    : 'No expenses recorded by you'
                   : `No expenses for ${selectedPeriodLabel}`
               }
               description={
                 expenses.length === 0
-                  ? 'Capture operational costs like rent, electricity, transport, salaries, and daily maintenance.'
+                  ? isOwnerOrManager
+                    ? 'Capture operational costs like rent, electricity, transport, salaries, and daily maintenance.'
+                    : 'Any operational costs you record will show up here.'
                   : searchQuery || selectedCategory !== 'all'
                   ? 'Try adjusting your search query or selecting a different category filter.'
                   : `No expenses recorded during ${selectedPeriodLabel}. Tap below to record one or switch time period.`

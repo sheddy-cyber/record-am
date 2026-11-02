@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated, Pressable, InteractionManager } from 'react-native';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
+import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,11 +14,11 @@ import { fetchRevenueActivities } from '@/lib/revenue';
 import { isDebtSettlementSale } from '@/lib/records';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { Badge, Card, EmptyState, LoadingScreen, SectionHeader, StatCard, PaymentSummary } from '@/components/ui';
+import { Badge, Card, EmptyState, LoadingScreen, SectionHeader, StatCard, PaymentSummary, SmartChip, PressableScale } from '@/components/ui';
 import { BrandMark, ScreenShell, ScreenHeader, HeaderAction, BusinessAvatar } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { useNotificationStore } from '@/store/notificationStore';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP, TYPE } from '@/constants';
 import { CustomerDebt, DashboardStats, RevenueActivity } from '@/types';
 
 // Formats with 2 decimal places for the hero number
@@ -134,287 +134,549 @@ function DashboardScreen() {
     (stats?.today_sales ?? 0) > 0
       ? Math.min(((stats?.today_profit ?? 0) / (stats?.today_sales ?? 1)) * 100, 100)
       : 0;
-  const stockAlertMessages = [
-    (stats?.out_of_stock_count ?? 0) > 0
-      ? `${stats?.out_of_stock_count} product${stats?.out_of_stock_count === 1 ? ' is' : 's are'} out of stock`
-      : null,
-    (stats?.low_stock_count ?? 0) > 0
-      ? `${stats?.low_stock_count} product${stats?.low_stock_count === 1 ? ' is' : 's are'} running low`
-      : null,
-  ].filter((message): message is string => Boolean(message));
+  const outOfStockCount = stats?.out_of_stock_count ?? 0;
+  const lowStockCount = stats?.low_stock_count ?? 0;
+  const hasStockAlerts = outOfStockCount > 0 || lowStockCount > 0;
+
+  const todaySalesCount = Math.max(
+    stats?.today_sales_count ?? 0,
+    recentActivities.filter((a) => {
+      try {
+        return format(new Date(a.created_at), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+      } catch {
+        return false;
+      }
+    }).length
+  );
+
+  // ─── Micro-animations ───────────────────────────────────────────────────────
+  const revenueAnim = useRef(new Animated.Value(1)).current;
+  const alertAnim = useRef(new Animated.Value(hasStockAlerts ? 1 : 0)).current;
+
+  // Revenue privacy toggle transition
+  const isFirstRevenueMount = useRef(true);
+  useEffect(() => {
+    if (isFirstRevenueMount.current) {
+      isFirstRevenueMount.current = false;
+      return;
+    }
+    revenueAnim.setValue(0.8);
+    Animated.spring(revenueAnim, {
+      toValue: 1,
+      speed: 28,
+      bounciness: 6,
+      useNativeDriver: true,
+    }).start();
+  }, [revenueVisible, revenueAnim]);
+
+  // Stock alert slide entrance
+  useEffect(() => {
+    if (hasStockAlerts) {
+      Animated.spring(alertAnim, {
+        toValue: 1,
+        bounciness: 6,
+        speed: 18,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      alertAnim.setValue(0);
+    }
+  }, [hasStockAlerts, alertAnim]);
 
   // Render instantly without blocking UI. RefreshControl will indicate background fetching.
 
   return (
     <SwipeableTabScreen name="dashboard">
-    <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
-      <ScreenHeader
-        title={`${greeting()}`}
-        titleStyle={{ fontSize: 22, fontFamily: FONT.black, letterSpacing: -0.5 }}
-        subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEE, d MMM')}`}
-        theme="dark"
-        left={
-          <TouchableOpacity activeOpacity={0.7} onPress={() => router.push('/(app)/settings')}>
-            <BusinessAvatar name={businessName} size={40} />
-          </TouchableOpacity>
-        }
-        right={
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            {!isOnline ? (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                onPress={() => router.push('/(app)/settings')}
-                style={{
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: 36,
-                  height: 36,
-                  borderRadius: RADIUS.md,
-                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                }}
-              >
-                <Feather name="wifi-off" size={16} color={COLORS.danger} />
-              </TouchableOpacity>
-            ) : null}
-
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => router.push('/(app)/notifications')}
-              style={{
-                minHeight: 38,
-                minWidth: 38,
-                borderRadius: RADIUS.md,
-                backgroundColor: 'rgba(239,239,208,0.12)',
-                alignItems: 'center',
-                justifyContent: 'center',
-                position: 'relative',
-              }}
-            >
-              <Feather name="bell" size={18} color={COLORS.text.inverse} />
-              {unreadCount > 0 ? (
-                <View
+      <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
+        <ScreenHeader
+          title={`${greeting()}`}
+          titleStyle={{ fontSize: 21, fontFamily: FONT.bold, letterSpacing: -0.3 }}
+          subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEE, d MMM')}`}
+          theme="dark"
+          left={
+            <TouchableOpacity activeOpacity={0.75} onPress={() => router.push('/(app)/settings')}>
+              <BusinessAvatar name={businessName} size={38} />
+            </TouchableOpacity>
+          }
+          right={
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {!isOnline ? (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => router.push('/(app)/settings')}
                   style={{
-                    position: 'absolute',
-                    top: -4,
-                    right: -4,
-                    backgroundColor: COLORS.danger,
-                    borderRadius: 10,
-                    minWidth: 18,
-                    height: 18,
-                    paddingHorizontal: 4,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    borderWidth: 1.5,
-                    borderColor: COLORS.ink,
+                    width: 36,
+                    height: 36,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
                   }}
                 >
-                  <Text
+                  <Feather name="wifi-off" size={15} color={COLORS.danger} />
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={() => router.push('/(app)/notifications')}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: RADIUS.full,
+                  backgroundColor: 'rgba(255, 255, 255, 0.12)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255, 255, 255, 0.18)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  position: 'relative',
+                }}
+              >
+                <Feather name="bell" size={17} color="#FFFFFF" />
+                {unreadCount > 0 ? (
+                  <View
                     style={{
-                      color: '#FFFFFF',
-                      fontSize: 10,
-                      fontFamily: FONT.bold,
+                      position: 'absolute',
+                      top: -2,
+                      right: -2,
+                      backgroundColor: COLORS.danger,
+                      borderRadius: RADIUS.full,
+                      minWidth: 16,
+                      height: 16,
+                      paddingHorizontal: 3,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderWidth: 1.5,
+                      borderColor: COLORS.ink,
                     }}
                   >
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </Text>
-                </View>
-              ) : null}
-            </TouchableOpacity>
-          </View>
-        }
-      />
+                    <Text
+                      style={{
+                        color: '#FFFFFF',
+                        fontSize: 9.5,
+                        fontFamily: FONT.bold,
+                      }}
+                    >
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </TouchableOpacity>
+            </View>
+          }
+        />
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
-
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              fetchData();
-            }}
-            tintColor={COLORS.accent}
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Minimalist Aura Hero ───────────────────────────────────────── */}
-        <View style={{ alignItems: 'center', marginTop: 40, marginBottom: 50, paddingHorizontal: SP.page }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 }}>
-            <Text style={{ ...TYPE.overline, color: 'rgba(239,239,208,0.3)', letterSpacing: 3 }}>
-              TODAY'S REVENUE
-            </Text>
-            <TouchableOpacity
-              onPress={() => toggleRevenueVisibility(businessId)}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Feather name={revenueVisible ? 'eye-off' : 'eye'} size={14} color="rgba(239,239,208,0.3)" />
-            </TouchableOpacity>
-          </View>
-          <Text
-            style={{
-              fontSize: 64,
-              fontFamily: FONT.black,
-              color: COLORS.accent,
-              letterSpacing: -2,
-            }}
-            numberOfLines={1}
-            adjustsFontSizeToFit
-          >
-            {revenueVisible ? (
-              <>
-                {fmtFull(stats?.today_sales ?? 0).split('.')[0]}
-                <Text style={{ fontSize: 40, fontFamily: FONT.bold, letterSpacing: 0, opacity: 0.85 }}>
-                  .{fmtFull(stats?.today_sales ?? 0).split('.')[1]}
-                </Text>
-              </>
-            ) : (
-              '₦****'
-            )}
-          </Text>
-          {/* Glowing Aura Effect */}
+        <ScrollView
+          style={{ flex: 1, backgroundColor: COLORS.surface }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 92 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                setRefreshing(true);
+                fetchData();
+              }}
+              tintColor={COLORS.accent}
+            />
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Top overscroll background filler so pulling/bouncing down never exposes a white gap */}
           <View
             style={{
               position: 'absolute',
-              top: '50%',
-              left: '50%',
-              width: 200,
-              height: 200,
-              borderRadius: 100,
-              backgroundColor: 'rgba(255,107,53,0.1)',
-              transform: [{ translateX: -100 }, { translateY: -100 }],
-              zIndex: -1,
+              top: -1000,
+              left: 0,
+              right: 0,
+              height: 1002,
+              backgroundColor: COLORS.ink,
             }}
           />
-        </View>
 
-        {/* ── Quick Actions (Two Rows Grid) ────────────────────── */}
-        <View style={{ paddingHorizontal: SP.page, paddingBottom: 30, gap: 10 }}>
-          {[
-            [
-              { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale' },
-              { icon: 'plus' as const, label: 'Add Stock', route: '/(app)/add-stock' },
-            ],
-            [
-              { icon: 'minus' as const, label: 'Expenses', route: '/(app)/record-expense' },
-              { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/record-debt' },
-            ],
-          ].map((row, rowIndex) => (
-            <View key={rowIndex} style={{ flexDirection: 'row', gap: 10 }}>
-              {row.map((action) => (
-                <TouchableOpacity
-                  key={action.label}
-                  onPress={() => router.push(action.route as any)}
-                  activeOpacity={0.7}
-                  delayPressIn={0}
-                  style={{
-                    flex: 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 8,
-                    paddingVertical: 12,
-                    paddingHorizontal: 12,
-                    borderRadius: RADIUS.full,
-                    backgroundColor: 'rgba(255,255,255,0.03)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.06)',
-                  }}
-                >
-                  <Feather name={action.icon} size={16} color={COLORS.text.inverse} />
-                  <Text
-                    style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.inverse }}
-                    numberOfLines={1}
-                  >
-                    {action.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ))}
-        </View>
-
-        {/* ── Low stock alert ─────────────────────────────── */}
-        {stockAlertMessages.length > 0 ? (
-          <TouchableOpacity
-            onPress={() => useTabStore.getState().setActiveTab('inventory')}
-            activeOpacity={0.8}
+          {/* ── Executive Hero Card ───────────────────────────────────────── */}
+          <View
             style={{
-              marginHorizontal: SP.page,
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 16,
-              borderRadius: RADIUS.xl,
-              backgroundColor: COLORS.surface2,
-              padding: 18,
-              marginBottom: 30,
+              backgroundColor: COLORS.ink,
+              paddingHorizontal: SP.page,
+              paddingTop: 8,
+              paddingBottom: 24,
+              borderBottomLeftRadius: RADIUS.xl,
+              borderBottomRightRadius: RADIUS.xl,
             }}
           >
-            <View style={{
-              width: 44,
-              height: 44,
-              borderRadius: RADIUS.full,
-              backgroundColor: 'rgba(239, 68, 68, 0.12)',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Feather name="alert-circle" size={20} color="#dc2626" />
-            </View>
-            <View style={{ flex: 1, gap: 4 }}>
-              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: '#dc2626', letterSpacing: 0.5 }}>
-                INVENTORY ALERT
-              </Text>
-              {stockAlertMessages.map((message) => (
-                <Text key={message} style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.ink }}>
-                  {message}
+            {/* Balance Card Container */}
+            <View
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                borderRadius: RADIUS.lg,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: 'rgba(255, 255, 255, 0.12)',
+                padding: 20,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <Text style={{ ...TYPE.overline, color: 'rgba(255, 255, 255, 0.65)', letterSpacing: 1.2 }}>
+                  TODAY'S REVENUE
                 </Text>
-              ))}
-            </View>
-            <Feather name="arrow-right" size={18} color={COLORS.ink} style={{ opacity: 0.4 }} />
-          </TouchableOpacity>
-        ) : null}
-
-        {/* ── Ultra-Minimal Recent Activity ─────────────────── */}
-        <View style={{ paddingHorizontal: SP.page, paddingBottom: 20 }}>
-          <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, marginBottom: 20 }}>
-            RECENT ACTIVITY
-          </Text>
-          {recentActivities.length === 0 ? (
-            <Text style={{ color: 'rgba(255,255,255,0.3)', fontFamily: FONT.regular, fontSize: 14 }}>No activity today.</Text>
-          ) : (
-            <View style={{ gap: 24 }}>
-              {recentActivities.map((activity) => (
-                <View key={`${activity.kind}-${activity.id}`} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 14 }}>
-                    <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.03)', alignItems: 'center', justifyContent: 'center' }}>
-                      <Feather name={activity.kind === 'debt_repayment' ? 'refresh-ccw' : 'check'} size={18} color="rgba(255,255,255,0.7)" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontFamily: FONT.medium, color: COLORS.text.inverse }}>
-                        {activity.customer_name}
-                      </Text>
-                      {activity.items_summary ? (
-                        <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(255,255,255,0.35)', marginTop: 3 }} numberOfLines={1}>
-                          {activity.items_summary}
-                        </Text>
-                      ) : null}
-                      <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(255,255,255,0.25)', marginTop: 2 }}>
-                        {format(new Date(activity.created_at), 'h:mm a')}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.success }}>
-                    +{fmt(activity.amount_paid)}
+                <TouchableOpacity
+                  onPress={() => toggleRevenueVisibility(businessId)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                  }}
+                >
+                  <Feather name={revenueVisible ? 'eye' : 'eye-off'} size={12} color="rgba(255, 255, 255, 0.8)" />
+                  <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: 'rgba(255, 255, 255, 0.8)' }}>
+                    {revenueVisible ? 'Hide' : 'Show'}
                   </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Animated.View style={{ opacity: revenueAnim, transform: [{ scale: revenueAnim }] }}>
+                <Text
+                  style={{
+                    fontSize: 38,
+                    fontFamily: FONT.black,
+                    color: COLORS.gold,
+                    letterSpacing: -1,
+                    marginVertical: 4,
+                  }}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {revenueVisible ? (
+                    <>
+                      {fmtFull(stats?.today_sales ?? 0).split('.')[0]}
+                      <Text style={{ fontSize: 24, fontFamily: FONT.bold, letterSpacing: 0, opacity: 0.85 }}>
+                        .{fmtFull(stats?.today_sales ?? 0).split('.')[1]}
+                      </Text>
+                    </>
+                  ) : (
+                    '₦••••••'
+                  )}
+                </Text>
+              </Animated.View>
+
+              {/* Sub-pulse KPIs */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 16,
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTopWidth: 1,
+                  borderTopColor: 'rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather name="shopping-bag" size={13} color="rgba(255, 255, 255, 0.7)" />
+                  <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: 'rgba(255, 255, 255, 0.85)' }}>
+                    {todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'} today
+                  </Text>
+                </View>
+
+                {canViewCosts && stats?.today_profit !== undefined ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Feather
+                      name={profitPositive ? 'trending-up' : 'trending-down'}
+                      size={13}
+                      color={profitPositive ? COLORS.success : COLORS.danger}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12.5,
+                        fontFamily: FONT.bold,
+                        color: profitPositive ? '#34d399' : '#f87171',
+                      }}
+                    >
+                      {revenueVisible ? `${profitPositive ? '+' : ''}${fmt(stats.today_profit)} profit` : '•••• profit'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+
+            {/* ── Quick Actions Grid ────────────────────── */}
+            <View style={{ marginTop: 18, gap: 10 }}>
+              {[
+                [
+                  { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale', primary: true },
+                  { icon: 'plus-circle' as const, label: 'Add Stock', route: '/(app)/add-stock', primary: false },
+                ],
+                [
+                  { icon: 'minus-circle' as const, label: 'Record Expense', route: '/(app)/record-expense', primary: false },
+                  { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/record-debt', primary: false },
+                ],
+              ].map((row, rowIndex) => (
+                <View key={rowIndex} style={{ flexDirection: 'row', gap: 10 }}>
+                  {row.map((action) => (
+                    <PressableScale
+                      key={action.label}
+                      onPress={() => router.push(action.route as any)}
+                      activeScale={0.95}
+                      containerStyle={{ flex: 1 }}
+                      style={{
+                        flex: 1,
+                        width: '100%',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        paddingVertical: 13,
+                        paddingHorizontal: 12,
+                        borderRadius: RADIUS.md,
+                        backgroundColor: action.primary ? COLORS.accent : 'rgba(255, 255, 255, 0.08)',
+                        borderWidth: StyleSheet.hairlineWidth,
+                        borderColor: action.primary ? COLORS.accent : 'rgba(255, 255, 255, 0.12)',
+                      }}
+                    >
+                      <Feather name={action.icon} size={15} color={action.primary ? '#000000' : '#FFFFFF'} />
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontFamily: FONT.bold,
+                          color: action.primary ? '#000000' : '#FFFFFF',
+                          letterSpacing: -0.1,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {action.label}
+                      </Text>
+                    </PressableScale>
+                  ))}
                 </View>
               ))}
             </View>
-          )}
-        </View>
-      </ScrollView>
-    </ScreenShell>
+          </View>
+
+          {/* ── Lower Section on Crisp Surface ───────────────────────────── */}
+          <View style={{ paddingHorizontal: SP.page, paddingTop: 20 }}>
+            {/* ── Inventory Alert / Stock Notice ── */}
+            {hasStockAlerts ? (
+              <Animated.View
+                style={{
+                  opacity: alertAnim,
+                  transform: [
+                    {
+                      translateY: alertAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [12, 0],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <PressableScale
+                  onPress={() => useTabStore.getState().setActiveTab('inventory')}
+                  activeScale={0.97}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 13,
+                    borderRadius: RADIUS.lg,
+                    backgroundColor: COLORS.dangerLight,
+                    borderWidth: 1,
+                    borderColor: '#fecaca',
+                    paddingHorizontal: 15,
+                    paddingVertical: 13,
+                    marginBottom: 18,
+                    shadowColor: COLORS.danger,
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.06,
+                    shadowRadius: 6,
+                    elevation: 1,
+                  }}
+                >
+                  <View
+                    style={{
+                      width: 38,
+                      height: 38,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: COLORS.danger,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name="alert-triangle" size={17} color="#FFFFFF" />
+                  </View>
+                  <View style={{ flex: 1, gap: 1 }}>
+                    <Text style={{ fontSize: 10.5, fontFamily: FONT.bold, color: '#b91c1c', letterSpacing: 0.5 }}>
+                      {outOfStockCount > 0 && lowStockCount > 0
+                        ? 'STOCK REMINDER'
+                        : outOfStockCount > 0
+                          ? 'RESTOCK REMINDER'
+                          : 'LOW STOCK NOTICE'}
+                    </Text>
+                    <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }} numberOfLines={1}>
+                      {outOfStockCount > 0 && lowStockCount > 0
+                        ? `${outOfStockCount} out of stock · ${lowStockCount} running low`
+                        : outOfStockCount > 0
+                          ? `${outOfStockCount} product${outOfStockCount === 1 ? ' is' : 's are'} out of stock`
+                          : `${lowStockCount} product${lowStockCount === 1 ? ' is' : 's are'} running low`}
+                    </Text>
+                    <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                      Tap to review and reorder
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 3,
+                      backgroundColor: '#fee2e2',
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: '#fecaca',
+                      paddingHorizontal: 9,
+                      paddingVertical: 5,
+                      borderRadius: RADIUS.full,
+                    }}
+                  >
+                    <Text style={{ fontSize: 11.5, fontFamily: FONT.bold, color: '#b91c1c' }}>Restock</Text>
+                    <Feather name="arrow-right" size={12} color="#b91c1c" />
+                  </View>
+                </PressableScale>
+              </Animated.View>
+            ) : null}
+
+            {/* ── Recent Activity Ledger ─────────────────── */}
+            <SectionHeader
+              title="Recent Activity"
+              action={
+                recentActivities.length > 0
+                  ? { label: 'View all sales', onPress: () => useTabStore.getState().setActiveTab('sales') }
+                  : undefined
+              }
+            />
+
+            {recentActivities.length === 0 ? (
+              <Card style={{ paddingVertical: 28, alignItems: 'center', gap: 8 }}>
+                <Feather name="clock" size={24} color={COLORS.text.muted} />
+                <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                  No activity recorded today
+                </Text>
+                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center' }}>
+                  Transactions and debt settlements made today will appear here in real time.
+                </Text>
+              </Card>
+            ) : (
+              <Card style={{ padding: 0, overflow: 'hidden' }}>
+                {recentActivities.map((activity, index) => {
+                  const isRepayment = activity.kind === 'debt_repayment';
+                  const initials = (activity.customer_name || 'C').charAt(0).toUpperCase();
+                  const formattedMethod =
+                    activity.payment_method === 'mixed'
+                      ? 'Mixed'
+                      : activity.payment_method?.replace('_', ' ') || 'Cash';
+
+                  return (
+                    <View key={`${activity.kind}-${activity.id}`}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          paddingVertical: 14,
+                          paddingHorizontal: 16,
+                          gap: 12,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+                          <View
+                            style={{
+                              width: 38,
+                              height: 38,
+                              borderRadius: RADIUS.full,
+                              backgroundColor: isRepayment ? COLORS.successLight : COLORS.navyLight,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                fontSize: 13,
+                                fontFamily: FONT.bold,
+                                color: isRepayment ? COLORS.success : COLORS.ink,
+                              }}
+                            >
+                              {initials}
+                            </Text>
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text
+                                style={{ fontSize: 14.5, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.1 }}
+                                numberOfLines={1}
+                              >
+                                {activity.customer_name}
+                              </Text>
+                              {isRepayment ? (
+                                <View
+                                  style={{
+                                    backgroundColor: COLORS.successLight,
+                                    paddingHorizontal: 5,
+                                    paddingVertical: 1.5,
+                                    borderRadius: RADIUS.xs,
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 9.5, fontFamily: FONT.bold, color: COLORS.success }}>Settlement</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            <Text
+                              style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}
+                              numberOfLines={1}
+                            >
+                              {activity.items_summary || (isRepayment ? 'Debt settlement' : 'General sale')}
+                              {' · '}
+                              {format(new Date(activity.created_at), 'h:mm a')}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                          <Text
+                            style={{
+                              fontSize: 15,
+                              fontFamily: FONT.bold,
+                              color: isRepayment ? COLORS.success : COLORS.text.primary,
+                              letterSpacing: -0.2,
+                            }}
+                          >
+                            +{fmt(activity.amount_paid)}
+                          </Text>
+                          {activity.amount_owed > 0 ? (
+                            <SmartChip
+                              label={`Owes ${fmt(activity.amount_owed)}`}
+                              deep
+                              variant="danger"
+                              size="xs"
+                            />
+                          ) : (
+                            <SmartChip
+                              label={formattedMethod}
+                              variant="neutral"
+                              size="xs"
+                            />
+                          )}
+                        </View>
+                      </View>
+                      {index < recentActivities.length - 1 ? (
+                        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginLeft: 66 }} />
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </Card>
+            )}
+          </View>
+        </ScrollView>
+      </ScreenShell>
     </SwipeableTabScreen>
   );
 }

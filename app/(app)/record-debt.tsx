@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View, InteractionManager, RefreshControl } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View, InteractionManager, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -8,10 +8,10 @@ import { useCustomerStore } from '@/store/customerStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useDebtStore } from '@/store/debtStore';
 import { recordDebtOffline } from '@/lib/offlineRecords';
-import { Button } from '@/components/ui';
+import { Button, Card } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from '@/constants';
 import { dismissScreen } from '@/lib/navigation';
 
 const formatCurrency = (value: number) =>
@@ -129,38 +129,42 @@ export default function RecordDebtScreen() {
           />
         }
       >
-          <View style={{
-            backgroundColor: '#F0F5F2',
-            padding: 14,
-            borderRadius: RADIUS.md,
+        <View
+          style={{
+            backgroundColor: COLORS.card,
+            padding: 16,
+            borderRadius: RADIUS.lg,
             marginBottom: 20,
-            borderWidth: 1,
-            borderColor: '#D0E3D8',
-          }}>
-            <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: '#1B5E20', marginBottom: 4 }}>
-              💡 Standalone Debt vs. Credit Sale
-            </Text>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: '#2E7D32', lineHeight: 18 }}>
-              Use this screen only for historical debts, cash loans, or services. If you are selling stock items on credit, please go to{' '}
-              <Text
-                style={{ fontFamily: FONT.bold, textDecorationLine: 'underline' }}
-                onPress={() => {
-                  closeScreen();
-                  router.push('/(app)/record-sale');
-                }}
-              >
-                Record Sale
-              </Text>{' '}
-              and set "Amount Paid" to 0 (or partial payment) to correctly deplete inventory.
-            </Text>
-          </View>
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: COLORS.border,
+          }}
+        >
+          <Text style={{ fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.text.primary, marginBottom: 4 }}>
+            Standalone Debt vs. Credit Sale
+          </Text>
+          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary, lineHeight: 18 }}>
+            Use this screen for prior customer balances, cash loans, or services. If you are selling items from inventory on credit, record it through{' '}
+            <Text
+              style={{ fontFamily: FONT.bold, color: COLORS.accentDark, textDecorationLine: 'underline' }}
+              onPress={() => {
+                closeScreen();
+                router.push('/(app)/record-sale');
+              }}
+            >
+              Record Sale
+            </Text>{' '}
+            so your stock is accurately deducted.
+          </Text>
+        </View>
 
+        <Card style={{ padding: 18, gap: 14 }}>
           <InputField
             label="Customer Name"
             value={debtCustomerName}
             onChangeText={setDebtCustomerName}
             placeholder="e.g. Chioma Okafor"
             required
+            containerStyle={{ marginBottom: 0 }}
           />
           <InputField
             label="Customer Phone"
@@ -168,6 +172,7 @@ export default function RecordDebtScreen() {
             onChangeText={setDebtCustomerPhone}
             placeholder="08012345678"
             keyboardType="phone-pad"
+            containerStyle={{ marginBottom: 0 }}
           />
           <InputField
             label="Amount Owed"
@@ -178,25 +183,34 @@ export default function RecordDebtScreen() {
             prefix={CURRENCY_SYMBOL}
             isAmount={true}
             required
+            containerStyle={{ marginBottom: 0 }}
           />
           <InputField
             label="Due Date"
             value={debtDueDate}
             onChangeText={setDebtDueDate}
             placeholder="YYYY-MM-DD"
-            hint="Leave blank if this does not have a fixed due date."
+            hint="Leave blank if this does not have a fixed repayment due date."
+            containerStyle={{ marginBottom: 0 }}
           />
           <InputField
-            label="Notes"
+            label="Notes / Reason"
             value={debtNotes}
             onChangeText={setDebtNotes}
-            placeholder="What is this debt for?"
+            placeholder="What was this debt or credit for?"
             multiline
             numberOfLines={3}
             required
+            containerStyle={{ marginBottom: 6 }}
           />
-          <Button title="Record Debt" onPress={handleAddDebt} loading={savingDebt} size="lg" />
-        </KeyboardAwareScrollView>
+          <Button
+            title="Record Debt"
+            onPress={handleAddDebt}
+            loading={savingDebt}
+            size="lg"
+          />
+        </Card>
+      </KeyboardAwareScrollView>
       </ScreenShell>
   );
 }

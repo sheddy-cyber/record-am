@@ -22,7 +22,7 @@ import { LoadingScreen, Button, PermissionDenied } from '@/components/ui';
 import { hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP } from '@/constants';
 import { BusinessMember, UserProfile } from '@/types';
 import {
   fetchTeamStaffStats,
@@ -39,7 +39,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 type TeamMember = BusinessMember & { user_profiles: UserProfile };
 
 const ROLE_COLORS: Record<string, string> = {
-  owner: COLORS.accent,
+  owner: COLORS.accentDark,
   manager: COLORS.info,
   cashier: COLORS.success,
   auditor: COLORS.warning,
@@ -526,11 +526,12 @@ export default function TeamScreen() {
 
 const styles = StyleSheet.create({
   inviteContainer: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.card,
     borderRadius: RADIUS.lg,
     borderWidth: 1,
     borderColor: COLORS.border,
     overflow: 'hidden',
+    ...SHADOW.sm,
   },
   inviteHeader: {
     flexDirection: 'row',
@@ -561,7 +562,7 @@ const styles = StyleSheet.create({
   inviteRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.surface,
     borderRadius: RADIUS.md,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -579,7 +580,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: COLORS.surface2,
+    backgroundColor: COLORS.navyLight,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: RADIUS.sm,
@@ -587,7 +588,7 @@ const styles = StyleSheet.create({
   copyButtonText: {
     fontSize: 12,
     fontFamily: FONT.bold,
-    color: COLORS.ink,
+    color: COLORS.navy,
   },
   inviteHint: {
     fontSize: 11,
@@ -607,13 +608,13 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     borderWidth: 1,
     borderColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   periodPillActive: {
-    borderColor: COLORS.ink,
-    backgroundColor: COLORS.ink,
+    borderColor: COLORS.navy,
+    backgroundColor: COLORS.navy,
   },
   periodText: {
     fontSize: 12,
@@ -621,16 +622,16 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
   },
   periodTextActive: {
-    color: COLORS.text.inverse,
+    color: '#ffffff',
     fontFamily: FONT.bold,
   },
 
   // ── Overview Card ─────────────────────────────────────────
   overviewCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.card,
     borderRadius: RADIUS.xl,
     padding: 18,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     gap: 16,
   },
@@ -662,11 +663,11 @@ const styles = StyleSheet.create({
   overviewStatsGrid: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.surface,
     borderRadius: RADIUS.lg,
     paddingVertical: 14,
     paddingHorizontal: 16,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
   },
   overviewStatCol: {
@@ -717,9 +718,9 @@ const styles = StyleSheet.create({
 
   // ── Member Card ───────────────────────────────────────────
   memberCard: {
-    backgroundColor: COLORS.surface,
+    backgroundColor: COLORS.card,
     borderRadius: RADIUS.xl,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     overflow: 'hidden',
     padding: 16,
@@ -806,7 +807,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     padding: 10,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: COLORS.borderSubtle,
     gap: 2,
   },
   statChipHeader: {
@@ -834,7 +835,7 @@ const styles = StyleSheet.create({
   // ── Expanded Details ──────────────────────────────────────
   expandedDetails: {
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    borderTopColor: COLORS.borderSubtle,
     paddingTop: 12,
     gap: 8,
   },

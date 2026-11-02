@@ -71,7 +71,7 @@ export default function LoginScreen() {
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: COLORS.surface }}>
-        <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: 28, paddingBottom: 30, gap: 18 }}>
+        <View style={{ backgroundColor: COLORS.navy, paddingTop: insets.top + 16, paddingHorizontal: 28, paddingBottom: 30, gap: 18 }}>
           <BrandMark size={60} badge />
           <View>
             <Text style={{ ...TYPE.h1, color: COLORS.text.inverse, marginTop: 4, marginBottom: 6 }}>
@@ -136,7 +136,7 @@ export default function LoginScreen() {
               style={{ alignSelf: 'flex-end', marginBottom: 24, marginTop: -4 }}
               onPress={() => router.push('/(auth)/forgot-password')}
             >
-              <Text style={{ color: COLORS.accent, fontSize: 13, fontFamily: FONT.medium }}>Forgot password?</Text>
+              <Text style={{ color: COLORS.accentDark, fontSize: 13, fontFamily: FONT.medium }}>Forgot password?</Text>
             </TouchableOpacity>
 
             <Button title="Sign In" onPress={handleLogin} loading={loading} size="lg" />

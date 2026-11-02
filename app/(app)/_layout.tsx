@@ -78,6 +78,7 @@ function Bootloader({ children }: { children: React.ReactNode }) {
         useSupplierStore.getState().fetchSuppliers(currentBusiness.id).catch(() => {});
       }
       useBusinessStore.getState().fetchProducts(currentBusiness.id, canViewCosts).catch(() => {});
+      useBusinessStore.getState().fetchCategories(currentBusiness.id).catch(() => {});
       if (currentBranch) {
         useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id).catch(() => {});
         useSaleStore.getState().loadSoldProductQuantities(currentBusiness.id, currentBranch.id).catch(() => {});
@@ -118,6 +119,7 @@ export default function AppLayout() {
           <Stack.Screen name="record-payment" />
           <Stack.Screen name="record-purchase" />
           <Stack.Screen name="close-day" />
+          <Stack.Screen name="record-damage" />
           <Stack.Screen name="customer-create" />
           <Stack.Screen name="customer-edit" />
           <Stack.Screen name="customer-detail" />

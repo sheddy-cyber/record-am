@@ -3,6 +3,13 @@ import { Product } from '@/types';
 export const DEBT_SETTLEMENT_NOTE_PREFIX = '[record-am-debt-settlement]';
 export const ALT_UNIT_NOTE_PREFIX = '[record-am-unit]';
 export const MIXED_PAYMENT_NOTE_PREFIX = '[record-am-mixed]';
+export const DEBT_FORGIVEN_NOTE_PREFIX = '[record-am-forgiven]';
+
+export function isDebtForgiven(status?: string | null, notes?: string | null): boolean {
+  if (status === 'forgiven') return true;
+  if (notes && (notes.includes(DEBT_FORGIVEN_NOTE_PREFIX) || notes.includes('[Debt Forgiven]'))) return true;
+  return false;
+}
 
 export function createDebtSettlementNote(debtId: string, notes?: string) {
   return `${DEBT_SETTLEMENT_NOTE_PREFIX}:${debtId}${notes ? ` ${notes}` : ''}`.trim();
@@ -90,6 +97,8 @@ export function cleanSaleNotes(notes?: string | null): string {
     .replace(/\[record-am-bank\]:[^\s]+\s*/g, '')
     .replace(/\[record-am-debt-settlement\]:[^\s]+\s*/g, '')
     .replace(/\[record-am-unit\]:[^\s]+\s*/g, '')
+    .replace(/\[record-am-forgiven\]\s*/g, '')
+    .replace(/\[Debt Forgiven\]\s*/g, '')
     .trim();
 }
 

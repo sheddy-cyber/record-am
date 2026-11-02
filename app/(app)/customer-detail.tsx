@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Alert, Modal, Pressable, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Pressable, RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -8,11 +8,12 @@ import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { Product, Sale } from '@/types';
-import { Button, Card, EmptyState, SectionHeader, confirmModal } from '@/components/ui';
+import { Button, Card, EmptyState, SectionHeader, SmartChip, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { printCounterpartyStatement, shareCounterpartyStatementPDF } from '@/lib/reports';
 import { dismissScreen } from '@/lib/navigation';
+import { isDebtForgiven } from '@/lib/records';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
@@ -151,14 +152,19 @@ export default function CustomerDetailScreen() {
         counterparty: customer,
         totalTrade: customer.total_spent ?? 0,
         outstandingBalance: customer.outstanding_debt ?? 0,
-        items: customerSales.map((sale) => ({
-          reference: sale.sale_number,
-          description: getSaleItemsSummary(sale, products),
-          date: sale.created_at,
-          total: sale.total_amount,
-          paid: sale.amount_paid,
-          balance: sale.amount_owed,
-        })),
+        items: customerSales.map((sale) => {
+          const forgiven = isDebtForgiven(sale.payment_status, sale.notes);
+          return {
+            reference: sale.sale_number,
+            description: forgiven
+              ? `${getSaleItemsSummary(sale, products)} (Debt Forgiven)`
+              : getSaleItemsSummary(sale, products),
+            date: sale.created_at,
+            total: sale.total_amount,
+            paid: forgiven ? sale.total_amount : sale.amount_paid,
+            balance: forgiven ? 0 : sale.amount_owed,
+          };
+        }),
       });
       setManageSheetVisible(false);
     } catch (err: any) {
@@ -180,14 +186,19 @@ export default function CustomerDetailScreen() {
         counterparty: customer,
         totalTrade: customer.total_spent ?? 0,
         outstandingBalance: customer.outstanding_debt ?? 0,
-        items: customerSales.map((sale) => ({
-          reference: sale.sale_number,
-          description: getSaleItemsSummary(sale, products),
-          date: sale.created_at,
-          total: sale.total_amount,
-          paid: sale.amount_paid,
-          balance: sale.amount_owed,
-        })),
+        items: customerSales.map((sale) => {
+          const forgiven = isDebtForgiven(sale.payment_status, sale.notes);
+          return {
+            reference: sale.sale_number,
+            description: forgiven
+              ? `${getSaleItemsSummary(sale, products)} (Debt Forgiven)`
+              : getSaleItemsSummary(sale, products),
+            date: sale.created_at,
+            total: sale.total_amount,
+            paid: forgiven ? sale.total_amount : sale.amount_paid,
+            balance: forgiven ? 0 : sale.amount_owed,
+          };
+        }),
       });
       setManageSheetVisible(false);
     } catch (err: any) {
@@ -222,46 +233,55 @@ export default function CustomerDetailScreen() {
           />
         }
       >
-        <Card style={{ backgroundColor: COLORS.ink, padding: 18 }}>
+        <Card style={{ backgroundColor: COLORS.navy, padding: 18 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 22, backgroundColor: 'rgba(255,253,248,0.1)' }}>
-              <Feather name="user" size={20} color={COLORS.successLight} />
+            <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.full, backgroundColor: 'rgba(255, 255, 255, 0.12)' }}>
+              <Feather name="user" size={20} color="#ffffff" />
             </View>
-            <View style={{ flex: 1, marginLeft: 11 }}>
-              <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: 'rgba(255,253,248,0.6)', letterSpacing: 0.7 }}>CUSTOMER ACCOUNT</Text>
-              <Text style={{ marginTop: 3, fontFamily: FONT.regular, fontSize: 13, color: 'rgba(255,253,248,0.82)' }}>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={{ fontFamily: FONT.semiBold, fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', letterSpacing: 0.8, textTransform: 'uppercase' }}>CUSTOMER ACCOUNT</Text>
+              <Text style={{ marginTop: 2, fontFamily: FONT.medium, fontSize: 13, color: '#ffffff' }}>
                 {customer.total_transactions ?? 0} sale{customer.total_transactions === 1 ? '' : 's'} recorded
               </Text>
             </View>
           </View>
 
-          <View style={{ marginTop: 22 }}>
-            <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: 'rgba(255,253,248,0.6)', letterSpacing: 0.7 }}>CURRENT BALANCE</Text>
-            <Text style={{ marginTop: 5, fontFamily: FONT.bold, fontSize: 28, color: (customer.outstanding_debt ?? 0) > 0 ? '#FECACA' : COLORS.successLight }}>
+          <View style={{ marginTop: 20 }}>
+            <Text style={{ fontFamily: FONT.semiBold, fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', letterSpacing: 0.8, textTransform: 'uppercase' }}>CURRENT BALANCE</Text>
+            <Text style={{ marginTop: 4, fontFamily: FONT.bold, fontSize: 32, color: (customer.outstanding_debt ?? 0) > 0 ? '#ff8585' : '#4ade80' }}>
               {formatCurrency(customer.outstanding_debt ?? 0)}
             </Text>
-            <Text style={{ marginTop: 3, fontFamily: FONT.regular, fontSize: 12, color: 'rgba(255,253,248,0.72)' }}>
-              {(customer.outstanding_debt ?? 0) > 0 ? 'Outstanding from recorded sales' : 'No outstanding balance for this customer'}
+            <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 12, color: 'rgba(255, 255, 255, 0.75)' }}>
+              {(customer.outstanding_debt ?? 0) > 0 ? 'Outstanding debt from unpaid or partial sales' : 'No outstanding debt. Customer is fully settled.'}
             </Text>
           </View>
 
           <TouchableOpacity
             onPress={openRecordSale}
-            activeOpacity={0.82}
-            style={{ minHeight: 46, marginTop: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: RADIUS.md, backgroundColor: COLORS.accent }}
+            activeOpacity={0.8}
+            style={{
+              height: 48,
+              marginTop: 18,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              borderRadius: RADIUS.lg,
+              backgroundColor: COLORS.accent,
+            }}
           >
-            <Feather name="plus" size={17} color="#FFFFFF" />
-            <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: '#FFFFFF' }}>Record sale</Text>
+            <Feather name="plus-circle" size={18} color="#000000" />
+            <Text style={{ fontFamily: FONT.semiBold, fontSize: 14, color: '#000000' }}>Record Sale for {customer.name.split(' ')[0]}</Text>
           </TouchableOpacity>
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
             {[
-              { label: 'TOTAL SPENT', value: formatCurrency(customer.total_spent ?? 0), color: COLORS.successLight },
-              { label: 'SALES RECORDS', value: String(customer.total_transactions ?? 0), color: COLORS.infoLight },
+              { label: 'TOTAL SPENT', value: formatCurrency(customer.total_spent ?? 0), color: '#4ade80' },
+              { label: 'SALES COUNT', value: String(customer.total_transactions ?? 0), color: '#93c5fd' },
             ].map((stat) => (
-              <View key={stat.label} style={{ flex: 1, padding: 10, borderWidth: 1, borderRadius: RADIUS.md, borderColor: 'rgba(255,253,248,0.1)', backgroundColor: 'rgba(255,253,248,0.06)' }}>
-                <Text style={{ fontFamily: FONT.medium, fontSize: 9.5, color: 'rgba(255,253,248,0.58)', letterSpacing: 0.45 }}>{stat.label}</Text>
-                <Text style={{ marginTop: 4, fontFamily: FONT.bold, fontSize: 14, color: stat.color }} numberOfLines={1}>{stat.value}</Text>
+              <View key={stat.label} style={{ flex: 1, padding: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: 'rgba(255, 255, 255, 0.12)', backgroundColor: 'rgba(255, 255, 255, 0.08)' }}>
+                <Text style={{ fontFamily: FONT.semiBold, fontSize: 10, color: 'rgba(255, 255, 255, 0.6)', letterSpacing: 0.5 }}>{stat.label}</Text>
+                <Text style={{ marginTop: 4, fontFamily: FONT.bold, fontSize: 15, color: stat.color }} numberOfLines={1}>{stat.value}</Text>
               </View>
             ))}
           </View>
@@ -309,7 +329,7 @@ export default function CustomerDetailScreen() {
                     </View>
                     <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.danger }}>{formatCurrency(debt.balance)}</Text>
                   </View>
-                  {index < activeDebts.length - 1 ? <View style={{ height: 1, marginHorizontal: 14, backgroundColor: COLORS.border }} /> : null}
+                  {index < activeDebts.length - 1 ? <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: 14, backgroundColor: COLORS.borderSubtle }} /> : null}
                 </View>
               ))}
             </Card>
@@ -332,8 +352,8 @@ export default function CustomerDetailScreen() {
               {customerSales.map((sale, index) => (
                 <View key={sale.id}>
                   <TouchableOpacity onPress={() => openEditSale(sale.id)} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 11 }}>
-                    <View style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: `${COLORS.success}14` }}>
-                      <Feather name="shopping-bag" size={17} color={COLORS.success} />
+                    <View style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.full, backgroundColor: COLORS.navyLight }}>
+                      <Feather name="shopping-bag" size={16} color={COLORS.ink} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>{getSaleItemsSummary(sale, products)}</Text>
@@ -341,14 +361,18 @@ export default function CustomerDetailScreen() {
                         {sale.sale_number} · {format(new Date(sale.created_at), 'MMM d, yyyy')}
                       </Text>
                     </View>
-                    <View style={{ alignItems: 'flex-end', maxWidth: 102 }}>
-                      <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>{formatCurrency(sale.total_amount)}</Text>
-                      <Text style={{ marginTop: 3, fontFamily: FONT.medium, fontSize: 11, color: sale.amount_owed > 0 ? COLORS.danger : COLORS.success }} numberOfLines={1}>
-                        {sale.amount_owed > 0 ? `Owes ${formatCurrency(sale.amount_owed)}` : 'Paid'}
-                      </Text>
+                    <View style={{ alignItems: 'flex-end', gap: 3 }}>
+                      <Text style={{ fontSize: 14.5, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>{formatCurrency(sale.total_amount)}</Text>
+                      {sale.amount_owed > 0 && !isDebtForgiven(sale.payment_status, sale.notes) ? (
+                        <SmartChip label={`Owes ${formatCurrency(sale.amount_owed)}`} deep variant="danger" size="xs" />
+                      ) : isDebtForgiven(sale.payment_status, sale.notes) ? (
+                        <SmartChip label="Debt Forgiven" deep variant="neutral" size="xs" />
+                      ) : (
+                        <SmartChip label="Paid" deep variant="success" size="xs" />
+                      )}
                     </View>
                   </TouchableOpacity>
-                  {index < customerSales.length - 1 ? <View style={{ height: 1, marginHorizontal: 14, backgroundColor: COLORS.border }} /> : null}
+                  {index < customerSales.length - 1 ? <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: 14, backgroundColor: COLORS.borderSubtle }} /> : null}
                 </View>
               ))}
             </Card>

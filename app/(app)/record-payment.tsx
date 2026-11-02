@@ -15,10 +15,10 @@ import { PaymentAccountModal } from '@/components/settings/PaymentAccountModal';
 import { supabase } from '@/lib/supabase';
 import { recordRepaymentOffline } from '@/lib/offlineRecords';
 import { readCachedCustomerDebts } from '@/lib/offlineStore';
-import { Button, EmptyState, LoadingScreen } from '@/components/ui';
+import { Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
-import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, PAYMENT_METHODS, RADIUS } from '@/constants';
+import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { COLORS, CURRENCY_SYMBOL, FONT, PAYMENT_METHODS, RADIUS, SHADOW } from '@/constants';
 import { CustomerDebt, PaymentMethod } from '@/types';
 import { dismissScreen } from '@/lib/navigation';
 
@@ -270,16 +270,39 @@ export default function RecordPaymentScreen() {
           />
         }
       >
-          <FlatSection style={{ padding: 16, marginBottom: 20 }}>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Balance remaining</Text>
-            <Text style={{ fontSize: 30, fontFamily: FONT.bold, color: COLORS.danger, marginTop: 6 }}>
-              {formatCurrency(selectedDebt.balance)}
-            </Text>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
-              Track repayments here. Settled debts get added to sales automatically.
-            </Text>
-          </FlatSection>
+        <Card style={{ padding: 18, marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <View>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                Outstanding Balance
+              </Text>
+              <Text style={{ fontSize: 32, fontFamily: FONT.bold, color: COLORS.danger, marginTop: 4 }}>
+                {formatCurrency(selectedDebt.balance)}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => handleRepayAmountChange(`${selectedDebt.balance}`)}
+              activeOpacity={0.7}
+              style={{
+                backgroundColor: COLORS.accentLight,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: RADIUS.full,
+                borderWidth: 1,
+                borderColor: '#FDE047',
+              }}
+            >
+              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.accentDark }}>
+                Pay in Full
+              </Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary, marginTop: 10, lineHeight: 18 }}>
+            Payments are automatically tracked and reconciled into today's revenue.
+          </Text>
+        </Card>
 
+        <Card style={{ padding: 18, gap: 14 }}>
           <InputField
             label="Amount Being Paid"
             value={repayAmount}
@@ -289,17 +312,20 @@ export default function RecordPaymentScreen() {
             prefix={CURRENCY_SYMBOL}
             isAmount={true}
             required
+            containerStyle={{ marginBottom: 0 }}
           />
+
           <SelectField
             label="Payment Method"
             value={repayMethod}
             options={PAYMENT_METHODS}
             onChange={(value) => handleRepayMethodChange(value as PaymentMethod)}
+            containerStyle={{ marginBottom: 0 }}
           />
 
           {(isTransfer || isPos) ? (
             relevantAccounts.length > 0 ? (
-              <View style={{ gap: 4, marginBottom: 16 }}>
+              <View style={{ gap: 6 }}>
                 <SelectField
                   label={accountLabel}
                   value={paymentAccountId}
@@ -322,7 +348,7 @@ export default function RecordPaymentScreen() {
                   activeOpacity={0.7}
                   style={{ alignSelf: 'flex-start', paddingVertical: 2, paddingHorizontal: 4 }}
                 >
-                  <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.accent }}>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accentDark }}>
                     + Add new {isPos ? 'POS terminal' : 'bank account'}
                   </Text>
                 </TouchableOpacity>
@@ -336,21 +362,31 @@ export default function RecordPaymentScreen() {
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: 12,
-                  backgroundColor: '#EBF3FB',
+                  backgroundColor: COLORS.surface,
                   borderRadius: RADIUS.md,
                   borderWidth: 1,
-                  borderColor: '#B8CFDF',
-                  marginBottom: 16,
+                  borderColor: COLORS.border,
                 }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                  <Feather name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                  <View
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: COLORS.surface2,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Feather name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
+                  </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.navy }}>
-                      No {isPos ? 'POS terminals' : 'bank accounts'} saved yet.
+                    <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
+                      No {isPos ? 'POS terminals' : 'bank accounts'} saved yet
                     </Text>
-                    <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                      Tap to add so you can track inflows by {isPos ? 'terminal' : 'bank'}.
+                    <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}>
+                      Add one to track inflows by {isPos ? 'terminal' : 'bank'}.
                     </Text>
                   </View>
                 </View>
@@ -363,19 +399,18 @@ export default function RecordPaymentScreen() {
             <View
               style={{
                 padding: 14,
-                backgroundColor: '#F5F0E4',
+                backgroundColor: COLORS.surface,
                 borderRadius: RADIUS.md,
                 borderWidth: 1,
-                borderColor: '#D8CEB7',
-                marginBottom: 16,
-                gap: 10,
+                borderColor: COLORS.border,
+                gap: 12,
               }}
             >
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
                   Mixed Payment Split
                 </Text>
-                <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                   Total: {formatCurrency(parseFloat(repayAmount) || 0)}
                 </Text>
               </View>
@@ -434,10 +469,10 @@ export default function RecordPaymentScreen() {
                     alignItems: 'center',
                     justifyContent: 'space-between',
                     padding: 10,
-                    backgroundColor: '#FFFDF8',
+                    backgroundColor: COLORS.card,
                     borderRadius: RADIUS.sm,
                     borderWidth: 1,
-                    borderColor: '#D8CEB7',
+                    borderColor: COLORS.border,
                   }}
                 >
                   <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
@@ -448,28 +483,37 @@ export default function RecordPaymentScreen() {
               )}
 
               {Math.abs(Number(((parseFloat(cashAmount) || 0) + (parseFloat(transferAmount) || 0)).toFixed(2)) - Number((parseFloat(repayAmount) || 0).toFixed(2))) > 0.01 ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.dangerLight, padding: 8, borderRadius: RADIUS.sm }}>
                   <Feather name="alert-circle" size={14} color={COLORS.danger} />
-                  <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.danger }}>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.danger, flex: 1 }}>
                     Split ({formatCurrency((parseFloat(cashAmount) || 0) + (parseFloat(transferAmount) || 0))}) does not match amount ({formatCurrency(parseFloat(repayAmount) || 0)})
                   </Text>
                 </View>
               ) : (
-                <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                  Cash: {formatCurrency(parseFloat(cashAmount) || 0)} · Transfer: {formatCurrency(parseFloat(transferAmount) || 0)}
+                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.success }}>
+                  ✓ Cash: {formatCurrency(parseFloat(cashAmount) || 0)} · Transfer: {formatCurrency(parseFloat(transferAmount) || 0)}
                 </Text>
               )}
             </View>
           ) : null}
+
           <InputField
             label="Notes"
             value={repayNotes}
             onChangeText={setRepayNotes}
-            placeholder="Optional note for this payment"
+            placeholder="Optional reference or payment note"
             multiline
-            numberOfLines={3}
+            numberOfLines={2}
+            containerStyle={{ marginBottom: 6 }}
           />
-          <Button title="Confirm Payment" onPress={handleRepayment} loading={savingRepay} size="lg" />
+
+          <Button
+            title="Confirm Repayment"
+            onPress={handleRepayment}
+            loading={savingRepay}
+            size="lg"
+          />
+        </Card>
         </KeyboardAwareScrollView>
 
         {currentBusiness ? (

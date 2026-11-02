@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { Customer, Sale, CustomerDebt, SaleItem } from '@/types';
+import { Customer, Sale, CustomerDebt, SaleItem, PaymentStatus } from '@/types';
 import {
   createLocalId,
   enqueueMutations,
@@ -35,6 +35,7 @@ interface CustomerState {
   deleteCustomer: (id: string) => Promise<void>;
   removeDebt: (params: {
     debtId: string;
+    saleId?: string;
     customerId?: string;
     customerName?: string;
     balance: number;
@@ -154,11 +155,28 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false });
 
-      const newSales = ((sales as Sale[]) ?? []).map((sale) => ({
-        ...sale,
-        items: attachProductSummaries(maskSaleItemCosts(sale.items ?? [])),
-      }));
       const newDebts = (debts as CustomerDebt[]) ?? [];
+      const activeDebtSaleIds = new Set(
+        newDebts.filter((d) => d.status !== 'settled').map((d) => d.sale_id).filter(Boolean)
+      );
+
+      const newSales = ((sales as Sale[]) ?? []).map((sale) => {
+        const isForgiven =
+          sale.payment_status === 'forgiven' ||
+          sale.notes?.includes('[Debt Forgiven]') ||
+          sale.notes?.includes('[record-am-forgiven]') ||
+          (sale.amount_owed > 0 && !activeDebtSaleIds.has(sale.id));
+
+        return {
+          ...sale,
+          amount_owed: isForgiven ? 0 : sale.amount_owed,
+          payment_status: isForgiven ? ('forgiven' as PaymentStatus) : sale.payment_status,
+          notes: isForgiven && !sale.notes?.includes('[Debt Forgiven]') && !sale.notes?.includes('[record-am-forgiven]')
+            ? (sale.notes ? `${sale.notes} [Debt Forgiven]` : '[Debt Forgiven]')
+            : sale.notes,
+          items: attachProductSummaries(maskSaleItemCosts(sale.items ?? [])),
+        };
+      });
       
       if (
         hasArrayChanged(get().customerSales, newSales) ||
@@ -175,15 +193,31 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
           readCachedRows<SaleItem>({ businessId }, 'sale_items').catch(() => [] as SaleItem[]),
         ]);
         const newDebts = cachedDebts.filter((d) => d.customer_id === customerId);
+        const activeDebtSaleIds = new Set(
+          newDebts.filter((d) => d.status !== 'settled').map((d) => d.sale_id).filter(Boolean)
+        );
         const filteredSales = cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20);
-        const newSales = filteredSales.map((s) => ({
-          ...s,
-          items: maskSaleItemCosts(
-            attachProductSummaries(
-              s.items && s.items.length > 0 ? s.items : cachedSaleItems.filter((i) => i.sale_id === s.id),
+        const newSales = filteredSales.map((s) => {
+          const isForgiven =
+            s.payment_status === 'forgiven' ||
+            s.notes?.includes('[Debt Forgiven]') ||
+            s.notes?.includes('[record-am-forgiven]') ||
+            (s.amount_owed > 0 && !activeDebtSaleIds.has(s.id));
+
+          return {
+            ...s,
+            amount_owed: isForgiven ? 0 : s.amount_owed,
+            payment_status: isForgiven ? ('forgiven' as PaymentStatus) : s.payment_status,
+            notes: isForgiven && !s.notes?.includes('[Debt Forgiven]') && !s.notes?.includes('[record-am-forgiven]')
+              ? (s.notes ? `${s.notes} [Debt Forgiven]` : '[Debt Forgiven]')
+              : s.notes,
+            items: maskSaleItemCosts(
+              attachProductSummaries(
+                s.items && s.items.length > 0 ? s.items : cachedSaleItems.filter((i) => i.sale_id === s.id),
+              ),
             ),
-          ),
-        }));
+          };
+        });
 
         if (
           hasArrayChanged(get().customerSales, newSales) ||
@@ -325,6 +359,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
 
   removeDebt: async ({
     debtId,
+    saleId,
     customerId,
     customerName,
     balance,
@@ -334,6 +369,18 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       const nextCustomerDebts = state.customerDebts.filter(
         (d) => d.id !== debtId && d.sale_id !== debtId,
       );
+
+      const nextCustomerSales = state.customerSales.map((s) => {
+        if (saleId && s.id === saleId) {
+          return {
+            ...s,
+            amount_owed: 0,
+            payment_status: 'forgiven' as PaymentStatus,
+            notes: s.notes ? `${s.notes} [Debt Forgiven]` : '[Debt Forgiven]',
+          };
+        }
+        return s;
+      });
 
       const nextCustomers = state.customers.map((c) => {
         const isMatch =
@@ -362,6 +409,7 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
 
       return {
         customerDebts: nextCustomerDebts,
+        customerSales: nextCustomerSales,
         customers: nextCustomers,
         selectedCustomer: nextSelected,
       };

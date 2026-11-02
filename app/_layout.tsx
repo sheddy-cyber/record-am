@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { AppState, Text, TextInput, View, Platform } from 'react-native';
+import { useEffect, useState, useRef } from 'react';
+import { AppState, Text, TextInput, View, Platform, Animated } from 'react-native';
 import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
@@ -87,23 +87,37 @@ inputDefaults.defaultProps.style = [
 
 // ─── Custom Toast Configuration ───────────────────────────────────────────────
 
-const ToastContent = ({ iconName, iconColor, text1, text2 }: any) => (
-  <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 }}>
-    <Feather name={iconName} size={22} color={iconColor} />
-    <View style={{ flex: 1, gap: 2, justifyContent: 'center' }}>
-      {text1 ? (
-        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#1A1A1C' }}>
-          {text1}
-        </Text>
-      ) : null}
-      {text2 ? (
-        <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: '#4A4A4D', lineHeight: 18 }}>
-          {text2}
-        </Text>
-      ) : null}
+const ToastContent = ({ iconName, iconColor, text1, text2 }: any) => {
+  const iconScale = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.spring(iconScale, {
+      toValue: 1,
+      friction: 4,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
+  }, [iconScale]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 }}>
+      <Animated.View style={{ transform: [{ scale: iconScale }] }}>
+        <Feather name={iconName} size={22} color={iconColor} />
+      </Animated.View>
+      <View style={{ flex: 1, gap: 2, justifyContent: 'center' }}>
+        {text1 ? (
+          <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#1A1A1C' }}>
+            {text1}
+          </Text>
+        ) : null}
+        {text2 ? (
+          <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: '#4A4A4D', lineHeight: 18 }}>
+            {text2}
+          </Text>
+        ) : null}
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 const ThemedToast = ({ text1, text2, type }: any) => {
   const isSuccess = type === 'success';

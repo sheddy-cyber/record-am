@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -180,7 +181,7 @@ export default function AnalyticsScreen() {
       <View
         style={{
           backgroundColor: COLORS.card,
-          borderBottomWidth: 1,
+          borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: COLORS.border,
           paddingHorizontal: 20,
           paddingVertical: 14,
@@ -194,21 +195,22 @@ export default function AnalyticsScreen() {
                 <TouchableOpacity
                   key={range.key}
                   onPress={() => setDateRange(range.key)}
-                  activeOpacity={0.8}
+                  activeOpacity={0.7}
                   style={{
                     paddingHorizontal: 14,
-                    paddingVertical: 8,
-                    borderWidth: 1,
-                    borderRadius: RADIUS.md,
-                    borderColor: active ? COLORS.ink : COLORS.border,
-                    backgroundColor: active ? COLORS.ink : COLORS.surface,
+                    height: 34,
+                    justifyContent: 'center',
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderRadius: RADIUS.full,
+                    borderColor: active ? COLORS.navy : COLORS.border,
+                    backgroundColor: active ? COLORS.navy : COLORS.card,
                   }}
                 >
                   <Text
                     style={{
-                      fontSize: 13,
+                      fontSize: 12,
                       fontFamily: FONT.medium,
-                      color: active ? COLORS.text.inverse : COLORS.text.secondary,
+                      color: active ? '#ffffff' : COLORS.text.secondary,
                     }}
                   >
                     {range.label}
@@ -295,7 +297,7 @@ export default function AnalyticsScreen() {
                         alignItems: 'center',
                         backgroundColor: summary.revenue_growth >= 0 ? '#EAFBF1' : '#FEF3F2',
                         borderColor: summary.revenue_growth >= 0 ? '#A6F4C5' : '#FECDCA',
-                        borderWidth: 1,
+                        borderWidth: StyleSheet.hairlineWidth,
                         borderRadius: RADIUS.full,
                         paddingHorizontal: 10,
                         paddingVertical: 5,
@@ -327,7 +329,7 @@ export default function AnalyticsScreen() {
                     padding: 14,
                     borderRadius: RADIUS.md,
                     backgroundColor: isProfitable ? '#F0FDF4' : '#FEF2F2',
-                    borderWidth: 1,
+                    borderWidth: StyleSheet.hairlineWidth,
                     borderColor: isProfitable ? '#BBF7D0' : '#FECACA',
                   }}
                 >
@@ -439,7 +441,7 @@ export default function AnalyticsScreen() {
                         justifyContent: 'center',
                       }}
                     >
-                      <Feather name="pie-chart" size={17} color={COLORS.accent} />
+                      <Feather name="pie-chart" size={17} color={COLORS.accentDark} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
@@ -467,14 +469,14 @@ export default function AnalyticsScreen() {
                         marginTop: 2,
                       }}
                     >
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.accentMuted }}>
+                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.accentDark }}>
                         {grossMarginPct.toFixed(0)}% gross margin
                       </Text>
                     </View>
                   </View>
                 </View>
 
-                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 14 }} />
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginVertical: 14 }} />
 
                 {/* Discounts Given Item */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -524,7 +526,7 @@ export default function AnalyticsScreen() {
                   </View>
                 </View>
 
-                <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 14 }} />
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginVertical: 14 }} />
 
                 {/* Operating Expenses Item */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -640,7 +642,7 @@ export default function AnalyticsScreen() {
 
                 <RoleGate allowedRoles={['owner']}>
                   <React.Fragment>
-                    <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 14 }} />
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginVertical: 14 }} />
 
                     {/* Stock Valuation Item */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -826,7 +828,7 @@ export default function AnalyticsScreen() {
                               style={{
                                 width: 24,
                                 height: 24,
-                                borderWidth: 1,
+                                borderWidth: StyleSheet.hairlineWidth,
                                 borderRadius: RADIUS.md,
                                 borderColor: COLORS.ink + '20',
                                 backgroundColor: COLORS.ink + '12',
@@ -869,7 +871,7 @@ export default function AnalyticsScreen() {
                       alignItems: 'center',
                       backgroundColor: COLORS.surface,
                       borderRadius: RADIUS.md,
-                      borderWidth: 1,
+                      borderWidth: StyleSheet.hairlineWidth,
                       borderColor: COLORS.border,
                     }}
                   >

@@ -22,15 +22,16 @@ import { useCustomerStore } from '@/store/customerStore';
 import { useDebtStore } from '@/store/debtStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
-import { decrementPersistedDashboardSales, removeCachedRow } from '@/lib/offlineStore';
+import { decrementPersistedDashboardSales, enqueueMutations, readCachedRows, removeCachedRow, replaceCachedRows } from '@/lib/offlineStore';
+import { supabase } from '@/lib/supabase';
 import { deleteSaleRecord } from '@/lib/recordDeletion';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDebtReminderViaWhatsApp } from '@/lib/reports';
-import { Button, EmptyState } from '@/components/ui';
+import { Button, EmptyState, SmartChip } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
-import { CustomerDebt } from '@/types';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP } from '@/constants';
+import { CustomerDebt, PaymentStatus, RevenueActivity, Sale } from '@/types';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -172,27 +173,106 @@ function DebtsScreen() {
       try {
         if (businessId && branchId) {
           const balance = Number(debt.balance || 0);
+
+          // 1. If linked to a sale, update the sale record to forgiven
+          if (debt.sale_id) {
+            try {
+              await supabase
+                .from('sales')
+                .update({
+                  amount_owed: 0,
+                  payment_status: 'forgiven',
+                  notes: debt.notes
+                    ? `${debt.notes} [Debt Forgiven]`
+                    : '[Debt Forgiven]',
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', debt.sale_id);
+            } catch (saleErr) {
+              console.warn('Failed to update sale to forgiven in supabase:', saleErr);
+            }
+
+            await enqueueMutations([
+              {
+                operation: 'update',
+                table: 'sales',
+                payload: {
+                  amount_owed: 0,
+                  payment_status: 'forgiven',
+                  notes: debt.notes ? `${debt.notes} [Debt Forgiven]` : '[Debt Forgiven]',
+                  updated_at: new Date().toISOString(),
+                },
+                match: { id: debt.sale_id },
+                description: `Mark sale ${debt.sale_id} as debt forgiven`,
+              },
+            ]);
+
+            try {
+              const cachedSales = await readCachedRows<Sale>({ businessId, branchId }, 'sales');
+              const updatedSales = cachedSales.map((s) =>
+                s.id === debt.sale_id
+                  ? {
+                      ...s,
+                      amount_owed: 0,
+                      payment_status: 'forgiven' as PaymentStatus,
+                      notes: s.notes ? `${s.notes} [Debt Forgiven]` : '[Debt Forgiven]',
+                    }
+                  : s,
+              );
+              await replaceCachedRows({ businessId, branchId }, 'sales', updatedSales);
+            } catch {}
+
+            try {
+              const cachedActivities = await readCachedRows<RevenueActivity>(
+                { businessId, branchId },
+                'revenue_activities',
+              );
+              const updatedActivities = cachedActivities.map((a) =>
+                a.id === debt.sale_id
+                  ? {
+                      ...a,
+                      amount_owed: 0,
+                      payment_status: 'forgiven' as PaymentStatus,
+                      notes: a.notes ? `${a.notes} [Debt Forgiven]` : '[Debt Forgiven]',
+                    }
+                  : a,
+              );
+              await replaceCachedRows(
+                { businessId, branchId },
+                'revenue_activities',
+                updatedActivities,
+              );
+            } catch {}
+          }
+
+          // 2. Remove debt from debtStore & cache
           await useDebtStore.getState().deleteDebt(debt.id, businessId, branchId);
+
+          // 3. Update customerStore (both customer debt balance & customerSales)
           await useCustomerStore.getState().removeDebt({
             debtId: debt.id,
+            saleId: debt.sale_id,
             customerId: debt.customer_id,
             customerName: debt.customer_name,
             balance,
             businessId,
           });
+
+          // 4. Update persisted today's sales & KPIs
           await decrementPersistedDashboardSales(businessId, branchId, 0, balance);
           useDashboardStore.getState().decrementTodaySales(0, balance);
           void useDashboardStore.getState().refreshFromCache(businessId, branchId);
           void useAnalyticsStore.getState().refreshFromCache(businessId, branchId);
         }
+
         await loadDebts();
         Toast.show({
           type: 'success',
-          text1: 'Debt deleted',
-          text2: 'Original sale record was preserved.',
+          text1: 'Debt forgiven',
+          text2: 'Customer debt cleared. Sale marked as forgiven.',
         });
       } catch (err: any) {
-        Alert.alert('Unable to delete debt', err.message ?? 'Please try again.');
+        Alert.alert('Unable to forgive debt', err.message ?? 'Please try again.');
       }
     },
     [businessId, branchId, loadDebts],
@@ -408,7 +488,7 @@ function DebtsScreen() {
 
             return (
               <View style={styles.debtCard}>
-                {/* ── Card Header ─────────────────────────────────────────── */}
+                {/* ── Card Header: Avatar, Name, and Status Chip ── */}
                 <View style={styles.cardHeader}>
                   <View style={styles.customerAvatar}>
                     <Text style={styles.customerAvatarText}>{initials}</Text>
@@ -429,14 +509,19 @@ function DebtsScreen() {
                     </View>
                   </View>
 
-                  {/* Top Right Corner Actions: Overdue Badge & Delete Button */}
+                  {/* Top Right: Smart Status Chip + Delete */}
                   <View style={styles.cardHeaderRight}>
                     {isOverdue ? (
-                      <View style={styles.overdueBadge}>
-                        <Feather name="alert-circle" size={11} color="#b91c1c" />
-                        <Text style={styles.overdueBadgeText}>{dueInfo?.label}</Text>
-                      </View>
-                    ) : null}
+                      <SmartChip label={dueInfo?.label ?? 'Overdue'} deep variant="danger" size="xs" />
+                    ) : dueInfo?.isDueToday ? (
+                      <SmartChip label="Due today" deep variant="warning" size="xs" />
+                    ) : dueInfo?.isDueSoon ? (
+                      <SmartChip label={dueInfo.label} deep variant="warning" size="xs" />
+                    ) : dueInfo ? (
+                      <SmartChip label={dueInfo.formatted} icon="calendar" variant="neutral" size="xs" />
+                    ) : (
+                      <SmartChip label="No due date" variant="neutral" size="xs" />
+                    )}
                     <TouchableOpacity
                       onPress={() => handleDeleteDebt(item)}
                       style={styles.deleteIconButton}
@@ -444,7 +529,7 @@ function DebtsScreen() {
                       accessibilityRole="button"
                       accessibilityLabel="Delete debt"
                     >
-                      <Feather name="trash-2" size={15} color={COLORS.danger} />
+                      <Feather name="trash-2" size={14} color={COLORS.danger} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -460,10 +545,7 @@ function DebtsScreen() {
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                       <Text style={styles.originalLabel}>
-                        Original: {formatCurrency(item.original_amount)}
-                      </Text>
-                      <Text style={styles.paidLabel}>
-                        Paid: {formatCurrency(item.amount_paid)}
+                        Paid: {formatCurrency(item.amount_paid)} of {formatCurrency(item.original_amount)}
                       </Text>
                     </View>
                   </View>
@@ -482,46 +564,20 @@ function DebtsScreen() {
                   </View>
                 </View>
 
-                {/* ── Due Date & Notes Meta ───────────────────────────────── */}
-                <View style={styles.metaRow}>
-                  {dueInfo ? (
-                    <View style={styles.dueTag}>
-                      <Feather
-                        name="calendar"
-                        size={12}
-                        color={isOverdue ? COLORS.danger : COLORS.text.secondary}
-                      />
-                      <Text
-                        style={[
-                          styles.dueTagText,
-                          isOverdue && { color: COLORS.danger, fontFamily: FONT.bold },
-                        ]}
-                      >
-                        {dueInfo.formatted}
-                      </Text>
-                    </View>
-                  ) : (
-                    <View style={styles.dueTag}>
-                      <Feather name="clock" size={12} color={COLORS.text.muted} />
-                      <Text style={styles.dueTagText}>No fixed due date</Text>
-                    </View>
-                  )}
-
-                  {item.notes ? (
-                    <View style={styles.notesTag}>
-                      <Feather name="file-text" size={11} color={COLORS.text.muted} />
-                      <Text style={styles.notesText} numberOfLines={1}>
-                        {item.notes}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
+                {item.notes ? (
+                  <View style={styles.notesTag}>
+                    <Feather name="file-text" size={11} color={COLORS.text.muted} />
+                    <Text style={styles.notesText} numberOfLines={1}>
+                      "{item.notes}"
+                    </Text>
+                  </View>
+                ) : null}
 
                 {/* ── Action Buttons ──────────────────────────────────────── */}
                 <View style={styles.actionsRow}>
                   <Button
                     title="Record Payment"
-                    icon="check-circle"
+                    icon="dollar-sign"
                     size="sm"
                     variant="secondary"
                     onPress={() =>
@@ -534,7 +590,7 @@ function DebtsScreen() {
                   />
                   <Button
                     title="Send Reminder"
-                    icon="message-circle"
+                    icon="send"
                     size="sm"
                     variant="ghost"
                     onPress={() => {
@@ -568,9 +624,12 @@ function DebtsScreen() {
 const styles = StyleSheet.create({
   // ── Outstanding Total (no card chrome) ───────────────────────
   outstandingBlock: {
-    paddingHorizontal: 2,
-    paddingVertical: 4,
-    gap: 3,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
+    padding: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    gap: 4,
   },
   portfolioHeader: {
     flexDirection: 'row',
@@ -709,17 +768,17 @@ const styles = StyleSheet.create({
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.lg,
-    borderWidth: 1,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.md,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     paddingHorizontal: 14,
-    paddingVertical: Platform.OS === 'ios' ? 12 : 8,
+    height: 44,
     gap: 10,
   },
   searchInput: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 13.5,
     fontFamily: FONT.regular,
     color: COLORS.text.primary,
     padding: 0,
@@ -799,10 +858,10 @@ const styles = StyleSheet.create({
 
   // ── Debt Card ─────────────────────────────────────────────
   debtCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.xl,
+    backgroundColor: COLORS.card,
+    borderRadius: RADIUS.lg,
     padding: 16,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     gap: 12,
   },
@@ -816,7 +875,7 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 19,
     backgroundColor: COLORS.surface2,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
@@ -920,7 +979,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderRadius: RADIUS.lg,
     padding: 12,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     gap: 8,
   },

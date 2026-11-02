@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
   error: { color: COLORS.danger, fontFamily: FONT.regular, fontSize: 12, lineHeight: 18, marginTop: 8 },
   resendRow: { flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', marginTop: 24 },
   resendText: { color: COLORS.text.muted, fontFamily: FONT.regular, fontSize: 13 },
-  resendAction: { color: COLORS.accent, fontFamily: FONT.bold, fontSize: 13 },
+  resendAction: { color: COLORS.accentDark, fontFamily: FONT.bold, fontSize: 13 },
   resendDisabled: { color: COLORS.text.muted },
   changeEmailButton: { paddingVertical: 18, marginTop: 4 },
   changeEmailText: { color: COLORS.text.secondary, fontFamily: FONT.medium, fontSize: 13 },

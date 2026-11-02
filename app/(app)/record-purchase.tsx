@@ -1305,7 +1305,7 @@ const styles = {
     letterSpacing: 0.7,
   },
   flowTotalValue: {
-    color: COLORS.accentMuted,
+    color: COLORS.accentDark,
     fontFamily: FONT.bold,
     fontSize: 14,
     marginTop: 2,
@@ -1345,7 +1345,7 @@ const styles = {
     fontSize: 10,
   },
   flowStepNumberTextActive: {
-    color: '#FFFFFF',
+    color: '#000000',
   },
   flowStepLabel: {
     color: COLORS.text.secondary,
@@ -1393,7 +1393,7 @@ const styles = {
     paddingVertical: 3,
   },
   todayActionText: {
-    color: COLORS.accentMuted,
+    color: COLORS.accentDark,
     fontFamily: FONT.medium,
     fontSize: 12,
   },
@@ -1417,7 +1417,7 @@ const styles = {
   newItemToggle: {
     alignItems: 'center' as const,
     backgroundColor: COLORS.accentLight,
-    borderColor: '#ffd4bc',
+    borderColor: '#FDE047',
     borderRadius: RADIUS.sm,
     borderWidth: 1,
     flexDirection: 'row' as const,
@@ -1430,12 +1430,12 @@ const styles = {
     borderColor: COLORS.accent,
   },
   newItemToggleText: {
-    color: COLORS.accentMuted,
+    color: COLORS.accentDark,
     fontFamily: FONT.medium,
     fontSize: 12,
   },
   newItemToggleTextActive: {
-    color: '#FFFFFF',
+    color: '#000000',
   },
   newItemForm: {
     backgroundColor: COLORS.warningLight,

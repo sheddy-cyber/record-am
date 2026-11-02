@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { View, Text, Pressable, StyleSheet, BackHandler } from 'react-native';
+import { View, Text, Pressable, StyleSheet, BackHandler, Animated } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
-import { COLORS, FONT } from '@/constants';
+import { COLORS, FONT, RADIUS } from '@/constants';
 import { useTabStore } from '@/store/tabStore';
 import PagerView from 'react-native-pager-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -15,7 +15,7 @@ import DebtsScreen from './_debts';
 import MoreScreen from './_more';
 
 const TAB_CONFIG: Record<string, { label: string; icon: keyof typeof Feather.glyphMap }> = {
-  dashboard: { label: 'Hub', icon: 'layout' },
+  dashboard: { label: 'Hub', icon: 'home' },
   inventory: { label: 'Inventory', icon: 'box' },
   sales: { label: 'Sales', icon: 'shopping-cart' },
   debts: { label: 'Debts', icon: 'users' },
@@ -30,6 +30,12 @@ const ROUTES = [
   { key: 'more', component: MoreScreen },
 ];
 
+const ACTIVE_TAB_COLOR = COLORS.gold; // Canary Gold — aligned with today's revenue & executive highlights
+const ACTIVE_TAB_BG = COLORS.goldMuted;
+const ACTIVE_TAB_BORDER = 'rgba(250, 204, 21, 0.32)';
+
+const INACTIVE_TAB_COLOR = '#93B4D1'; // Clear, vibrant silver-sky — completely visible against #00335c
+
 // ─── Individual tab icon (never re-renders unless its own isActive changes) ───
 const TabIcon = React.memo(function TabIcon({
   routeKey,
@@ -41,31 +47,71 @@ const TabIcon = React.memo(function TabIcon({
   onPressIn: () => void;
 }) {
   const config = TAB_CONFIG[routeKey] || { label: '', icon: 'circle' };
+  const scaleAnim = useRef(new Animated.Value(isActive ? 1 : 0.94)).current;
+  const isFirstMount = useRef(true);
+
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
+    if (isActive) {
+      scaleAnim.setValue(0.85);
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        bounciness: 7,
+        speed: 20,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(scaleAnim, {
+        toValue: 0.94,
+        duration: 120,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isActive, scaleAnim]);
+
+  const handlePressIn = () => {
+    if (isActive) {
+      // Subtle single spring pulse if user taps the current active tab
+      scaleAnim.setValue(0.92);
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        bounciness: 6,
+        speed: 20,
+        useNativeDriver: true,
+      }).start();
+    }
+    onPressIn();
+  };
 
   return (
     <Pressable
-      onPressIn={onPressIn}
+      onPressIn={handlePressIn}
       android_ripple={null}
-      style={[
-        styles.tabItem,
-        isActive && styles.activeTabItem,
-      ]}
+      style={styles.tabItem}
     >
-      <View style={[styles.iconWrapper, isActive && styles.activeIconWrapper]}>
-        {isActive && <View style={styles.activeCircle} />}
+      <Animated.View
+        style={[
+          styles.iconWrapper,
+          isActive && styles.activeIconWrapper,
+          { transform: [{ scale: scaleAnim }] },
+        ]}
+      >
         <Feather 
           name={config.icon} 
-          size={isActive ? 21 : 18} 
-          color={isActive ? COLORS.accent : "rgba(255,255,255,0.4)"} 
-          style={{ position: 'absolute' }}
+          size={20} 
+          color={isActive ? ACTIVE_TAB_COLOR : INACTIVE_TAB_COLOR} 
         />
-      </View>
+      </Animated.View>
       <Text
         style={{
-          fontSize: isActive ? 11 : 10,
+          fontSize: 10.5,
           fontFamily: isActive ? FONT.bold : FONT.medium,
-          color: isActive ? COLORS.accent : "rgba(255,255,255,0.45)",
-          marginTop: isActive ? 1 : 3,
+          color: isActive ? ACTIVE_TAB_COLOR : INACTIVE_TAB_COLOR,
+          marginTop: 2,
+          letterSpacing: isActive ? -0.1 : 0,
         }}
         numberOfLines={1}
       >
@@ -215,18 +261,18 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    elevation: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
+    elevation: 20,
+    shadowColor: '#002040',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
     backgroundColor: 'transparent',
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#0F172A',
+    backgroundColor: '#00335c', // Refined deep steel azure matching app theme
     borderTopWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
     paddingTop: 6,
     overflow: 'hidden',
   },
@@ -234,29 +280,19 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    height: 56,
-  },
-  activeTabItem: {
-    transform: [{ translateY: -3 }],
+    height: 54,
   },
   iconWrapper: {
-    width: 36,
+    width: 48,
     height: 28,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   activeIconWrapper: {
-    width: 44,
-    height: 32,
-    borderRadius: 16,
-  },
-  activeCircle: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 107, 53, 0.18)',
-    borderRadius: 16,
+    backgroundColor: ACTIVE_TAB_BG,
     borderWidth: 1,
-    borderColor: 'rgba(255, 107, 53, 0.28)',
+    borderColor: ACTIVE_TAB_BORDER,
+    borderRadius: 14,
   },
 });

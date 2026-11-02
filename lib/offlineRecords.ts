@@ -1,3 +1,4 @@
+import { format } from 'date-fns';
 import {
   CartItem,
   Customer,
@@ -1095,11 +1096,13 @@ export async function updateProductAndInventoryOffline(params: {
   }));
   await upsertCachedProducts(params.businessId, [nextProduct]);
 
+  const { category: _ignoredCat, inventory: _ignoredInv, ...dbProductPatch } = productPatch as any;
+
   const mutations: Parameters<typeof enqueueMutations>[0] = [
     {
       operation: 'update',
       table: 'products',
-      payload: productPatch,
+      payload: dbProductPatch,
       match: { id: params.product.id },
       conflictPolicy: 'server-wins-if-newer',
       description: `Sync product ${nextProduct.name}`,
@@ -1151,6 +1154,119 @@ export async function updateProductAndInventoryOffline(params: {
   }
 
   await enqueueMutations(mutations);
+}
+
+export async function recordDamagedStockOffline(params: {
+  businessId: string;
+  branchId: string;
+  userId?: string;
+  product: Product;
+  quantity: number;
+  unitCost: number;
+  reason: string;
+  notes?: string;
+  deductFromProfit?: boolean;
+  damageDate?: string;
+}) {
+  const timestamp = nowIso();
+  const quantity = Math.max(0, roundAmount(params.quantity));
+  const unitCost = Math.max(0, roundAmount(params.unitCost));
+  const totalCost = roundAmount(quantity * unitCost);
+  const damageDate = params.damageDate || timestamp;
+  const expenseDate = format(new Date(damageDate), 'yyyy-MM-dd');
+
+  // 1. Calculate new on-hand inventory
+  const currentBranchStock = params.product.inventory?.find(
+    (inv) => inv.branch_id === params.branchId,
+  )?.quantity ?? 0;
+  const nextQuantity = Math.max(0, roundAmount(currentBranchStock - quantity));
+
+  // 2. Update cached inventory and in-memory product
+  await setCachedProductInventory(params.businessId, params.branchId, params.product.id, nextQuantity);
+  patchProductInventoryInMemory(params.product.id, params.branchId, nextQuantity);
+
+  const fullNotes = params.notes?.trim()
+    ? `${params.reason.trim()} · ${params.notes.trim()}`
+    : params.reason.trim();
+
+  // 3. Create stock movement record
+  const stockMovement: StockMovement = {
+    id: createLocalId(),
+    business_id: params.businessId,
+    branch_id: params.branchId,
+    product_id: params.product.id,
+    type: 'damage',
+    quantity: quantity,
+    unit_cost: unitCost > 0 ? unitCost : undefined,
+    total_cost: totalCost > 0 ? totalCost : undefined,
+    reference: 'Damaged Stock',
+    notes: fullNotes,
+    performed_by: params.userId,
+    created_at: damageDate,
+  };
+
+  const mutations: Parameters<typeof enqueueMutations>[0] = [
+    {
+      operation: 'upsert',
+      table: 'inventory',
+      payload: {
+        product_id: params.product.id,
+        branch_id: params.branchId,
+        quantity: nextQuantity,
+        last_updated: timestamp,
+      },
+      onConflict: 'product_id,branch_id',
+      description: `Sync inventory deduction for damaged ${params.product.name}`,
+    },
+    {
+      operation: 'upsert',
+      table: 'stock_movements',
+      payload: stockMovement,
+      onConflict: 'id',
+      description: `Sync damage movement for ${params.product.name}`,
+    },
+  ];
+
+  await upsertCachedRows(
+    { businessId: params.businessId, branchId: params.branchId },
+    'stock_movements',
+    [stockMovement],
+  );
+
+  // 4. If deductFromProfit is true and totalCost > 0, record as an expense write-off
+  let createdExpense: Expense | null = null;
+  if (params.deductFromProfit && totalCost > 0) {
+    const expenseRecord: Expense = {
+      id: createLocalId(),
+      business_id: params.businessId,
+      branch_id: params.branchId,
+      category: 'damage',
+      description: `Damaged Stock: ${quantity}x ${params.product.name} (${params.reason})`,
+      amount: totalCost,
+      payment_method: 'other',
+      expense_date: expenseDate,
+      recorded_by: params.userId,
+      created_at: damageDate,
+      updated_at: timestamp,
+    };
+
+    await upsertCachedExpenses(params.businessId, params.branchId, [expenseRecord]);
+    await applyExpenseToPersistedDashboardStats(params.businessId, params.branchId, totalCost);
+
+    mutations.push({
+      operation: 'upsert',
+      table: 'expenses',
+      payload: expenseRecord,
+      onConflict: 'id',
+      description: `Sync damage loss expense for ${params.product.name}`,
+    });
+
+    createdExpense = expenseRecord;
+  }
+
+  await enqueueMutations(mutations);
+
+  return { stockMovement, expense: createdExpense, nextQuantity };
 }
 
 export function sanitizeProductForWrite(product: Product) {

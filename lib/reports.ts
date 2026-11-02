@@ -2,7 +2,7 @@ import { Share } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { format } from 'date-fns';
-import { cleanSaleNotes, getPaymentBreakdown } from '@/lib/records';
+import { cleanSaleNotes, getPaymentBreakdown, isDebtForgiven } from '@/lib/records';
 import { CURRENCY_SYMBOL } from '@/constants';
 import { Branch, Business, Customer, Sale, Supplier } from '@/types';
 
@@ -11,36 +11,71 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   const formatMoney = (value: number) =>
     `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-  const itemRows = (sale.items ?? [])
-    .map(
-      (item) => `
-      <tr>
-        <td style="padding:8px 0;border-bottom:1px solid #f0ede3;">
-          <div style="font-weight:600;color:#1B201D;">${(item.product as any)?.name ?? 'Item'}</div>
-          <div style="font-size:12px;color:#7D877F;">
-            ${item.quantity} x ${formatMoney(item.unit_price)}
-            ${item.discount_amount > 0 ? `(Discount: -${formatMoney(item.discount_amount)})` : ''}
+  const isRepayment = Boolean((sale as any).isRepayment);
+  const isForgiven = !isRepayment && isDebtForgiven(sale.payment_status, sale.notes);
+  const hasHigherPayment = !isRepayment && sale.amount_paid > sale.total_amount;
+  const effectiveTotal = hasHigherPayment ? sale.amount_paid : sale.total_amount;
+  const effectivePaid = hasHigherPayment ? sale.amount_paid : (sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount);
+
+  const items = sale.items ?? [];
+  const totalBaseAmount = items.reduce((sum: number, it: any) => sum + (Number(it.total_price) || 0), 0) || sale.total_amount || 1;
+  let remainingCalculatedTotal = hasHigherPayment ? effectiveTotal : 0;
+
+  const itemRows = items
+    .map((item, index) => {
+      let itemTotalPrice = item.total_price;
+      let itemUnitPrice = item.unit_price;
+
+      if (hasHigherPayment) {
+        if (items.length === 1) {
+          itemTotalPrice = effectiveTotal;
+        } else if (index === items.length - 1) {
+          itemTotalPrice = remainingCalculatedTotal;
+        } else {
+          itemTotalPrice = Number(((Number(item.total_price) / totalBaseAmount) * effectiveTotal).toFixed(2));
+          remainingCalculatedTotal = Number((remainingCalculatedTotal - itemTotalPrice).toFixed(2));
+        }
+        const qty = Number(item.quantity) || 1;
+        itemUnitPrice = Number((itemTotalPrice / qty).toFixed(2));
+      }
+
+      return `
+      <tr class="item-row">
+        <td>
+          <div class="item-name">${(item.product as any)?.name ?? (item as any).product_name ?? 'Item'}</div>
+          <div class="item-sub">
+            ${item.quantity} × ${formatMoney(itemUnitPrice)} each
+            ${item.discount_amount > 0 && !hasHigherPayment ? ` (-${formatMoney(item.discount_amount)})` : ''}
           </div>
         </td>
-        <td style="padding:8px 0;border-bottom:1px solid #f0ede3;text-align:right;font-weight:600;color:#1B201D;">
-          ${formatMoney(item.total_price)}
+        <td class="item-total">
+          ${formatMoney(itemTotalPrice)}
         </td>
-      </tr>`
-    )
+      </tr>`;
+    })
     .join('');
 
   const statusColor =
-    sale.payment_status === 'paid'
-      ? '#238B5B'
-      : sale.payment_status === 'partial'
-        ? '#C87A22'
-        : '#C44536';
+    isRepayment
+      ? '#004E89'
+      : isForgiven
+        ? '#004E89'
+        : (sale.payment_status === 'paid' || hasHigherPayment)
+          ? '#059669'
+          : sale.payment_status === 'partial'
+            ? '#D97706'
+            : '#DC2626';
+
   const statusLabel =
-    sale.payment_status === 'paid'
-      ? 'PAID IN FULL'
-      : sale.payment_status === 'partial'
-        ? 'PARTIALLY PAID'
-        : 'CREDIT / UNPAID';
+    isRepayment
+      ? 'SETTLEMENT'
+      : isForgiven
+        ? 'DEBT FORGIVEN'
+        : (sale.payment_status === 'paid' || hasHigherPayment)
+          ? 'PAID IN FULL'
+          : sale.payment_status === 'partial'
+            ? 'PARTIALLY PAID'
+            : 'CREDIT / UNPAID';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -50,86 +85,358 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
 <title>Receipt ${sale.sale_number}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f0e4; display: flex; justify-content: center; padding: 20px; }
-  .receipt { background: #fffdf8; width: 100%; max-width: 420px; border: 1px solid #d8ceb7; overflow: hidden; }
-  .header { background: #14211C; padding: 28px 24px 24px; text-align: center; }
-  .header .biz-name { font-size: 22px; font-weight: 800; color: #fffdf8; margin-bottom: 4px; }
-  .header .biz-sub { font-size: 13px; color: rgba(255,253,248,0.72); }
-  .receipt-tag { background: #fffdf8; margin: 0 24px; margin-top: -14px; padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #d8ceb7; }
-  .receipt-num { font-size: 13px; font-weight: 700; color: #14211C; }
-  .receipt-date { font-size: 12px; color: #7D877F; }
-  .section { padding: 20px 24px; }
-  .section-title { font-size: 11px; font-weight: 700; color: #7D877F; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-  table { width: 100%; border-collapse: collapse; }
-  .customer-box { background: #f5f0e4; padding: 12px 16px; margin-bottom: 4px; border: 1px solid #d8ceb7; }
-  .customer-box .name { font-size: 15px; font-weight: 700; color: #1B201D; }
-  .customer-box .phone { font-size: 13px; color: #4C5A52; margin-top: 2px; }
-  .totals-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; color: #4C5A52; }
-  .totals-row.total { border-top: 2px solid #d8ceb7; margin-top: 8px; padding-top: 12px; font-size: 17px; font-weight: 800; color: #1B201D; }
-  .totals-row.owed { color: #C44536; font-weight: 700; }
-  .status-badge { text-align: center; padding: 14px; background: ${statusColor}18; border-top: 1px solid #d8ceb7; }
-  .status-badge span { font-size: 13px; font-weight: 800; color: ${statusColor}; letter-spacing: 1px; }
-  .footer { padding: 20px 24px; text-align: center; border-top: 1px dashed #d8ceb7; }
-  .footer p { font-size: 12px; color: #7D877F; margin-bottom: 4px; }
-  .powered { font-size: 11px; color: #9AA39D; margin-top: 12px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #f1f5f9;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px;
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+  }
+  .receipt {
+    background: #ffffff;
+    width: 100%;
+    max-width: 400px;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+  }
+  .header {
+    background: #004e89;
+    padding: 24px 20px 20px;
+    text-align: center;
+    color: #ffffff;
+  }
+  .header .biz-name {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    margin-bottom: 4px;
+  }
+  .header .biz-sub {
+    font-size: 11.5px;
+    color: rgba(255, 255, 255, 0.8);
+    line-height: 1.4;
+  }
+  .receipt-ribbon {
+    background: #f8fafc;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .receipt-lbl {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.6px;
+  }
+  .receipt-num {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 1px;
+  }
+  .receipt-date {
+    font-size: 10.5px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    background: ${statusColor};
+    color: #ffffff;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+  }
+  .customer-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 14px 20px 0;
+  }
+  .customer-lbl {
+    font-size: 9px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.6px;
+  }
+  .customer-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-top: 2px;
+  }
+  .customer-phone {
+    font-size: 11px;
+    color: #475569;
+    margin-top: 1px;
+  }
+  .section {
+    padding: 14px 20px;
+  }
+  .table-header {
+    display: flex;
+    justify-content: space-between;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 0.8px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .item-row td {
+    padding: 9px 0;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .item-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #0f172a;
+  }
+  .item-sub {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 2px;
+  }
+  .item-total {
+    text-align: right;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: #0f172a;
+    vertical-align: top;
+  }
+  .perforation {
+    border-top: 1px dashed #cbd5e1;
+    margin: 4px 20px;
+  }
+  .summary-section {
+    padding: 14px 20px 16px;
+  }
+  .totals-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    font-size: 12.5px;
+    color: #475569;
+  }
+  .total-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin: 8px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .total-box .lbl {
+    font-size: 14px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .total-box .val {
+    font-size: 19px;
+    font-weight: 800;
+    color: #004e89;
+  }
+  .paid-val {
+    color: #10b981;
+    font-weight: 700;
+  }
+  .owed-box {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 6px 0;
+    display: flex;
+    justify-content: space-between;
+    color: #ef4444;
+    font-weight: 700;
+    font-size: 12.5px;
+  }
+  .payment-method-row {
+    display: flex;
+    justify-content: space-between;
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 1px solid #f1f5f9;
+    font-size: 11.5px;
+    color: #94a3b8;
+  }
+  .payment-method-val {
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .footer {
+    background: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    padding: 18px 20px;
+    text-align: center;
+  }
+  .footer .thanks {
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .footer .note {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 6px 12px;
+    display: inline-block;
+    font-size: 11px;
+    font-style: italic;
+    color: #475569;
+    margin-top: 8px;
+    max-width: 90%;
+  }
+  .barcode {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 2px;
+    height: 24px;
+    margin: 14px auto 4px;
+  }
+  .bar {
+    height: 24px;
+    background: #0f172a;
+  }
+  .barcode-num {
+    font-size: 9.5px;
+    color: #94a3b8;
+    letter-spacing: 2px;
+  }
+  .powered {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: #94a3b8;
+    letter-spacing: 1px;
+    margin-top: 12px;
+  }
 </style>
 </head>
 <body>
 <div class="receipt">
   <div class="header">
     <div class="biz-name">${business.name}</div>
-    <div class="biz-sub">${branch.name}${business.address ? ' - ' + business.address : ''}${business.phone ? ' - ' + business.phone : ''}</div>
+    <div class="biz-sub">${branch.name}${business.address ? ' · ' + business.address : ''}${business.phone ? ' · ' + business.phone : ''}</div>
   </div>
 
-  <div class="receipt-tag">
-    <span class="receipt-num">${sale.sale_number}</span>
-    <span class="receipt-date">${format(new Date(sale.created_at), 'MMM d, yyyy - h:mm a')}</span>
-  </div>
-
-  ${(sale.customer || sale.amount_owed > 0) ? `
-  <div class="section" style="padding-bottom:0;">
-    <div class="section-title">Customer</div>
-    <div class="customer-box">
-      <div class="name">${(sale.customer as any)?.name ?? 'Walk-in Customer'}</div>
-      ${(sale.customer as any)?.phone ? `<div class="phone">${(sale.customer as any).phone}</div>` : ''}
+  <div class="receipt-ribbon">
+    <div>
+      <div class="receipt-lbl">RECEIPT</div>
+      <div class="receipt-num">${sale.sale_number}</div>
+      <div class="receipt-date">${format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}</div>
     </div>
+    <div class="status-pill">
+      <span>${statusLabel}</span>
+    </div>
+  </div>
+
+  ${((sale.customer as any)?.name || sale.amount_owed > 0) ? `
+  <div class="customer-card">
+    <div class="customer-lbl">BILLED TO</div>
+    <div class="customer-name">${(sale.customer as any)?.name ?? 'Walk-in Customer'}</div>
+    ${(sale.customer as any)?.phone ? `<div class="customer-phone">${(sale.customer as any).phone}</div>` : ''}
   </div>` : ''}
 
-  <div class="section" style="padding-bottom:0;">
-    <div class="section-title">Items</div>
+  <div class="section">
+    <div class="table-header">
+      <span>ITEM</span>
+      <span>AMOUNT</span>
+    </div>
     <table>${itemRows}</table>
   </div>
 
-  <div class="section">
-    <div class="section-title">Summary</div>
-    ${sale.discount_amount > 0 ? `
+  <div class="perforation"></div>
+
+  <div class="summary-section">
+    ${sale.discount_amount > 0 && !hasHigherPayment ? `
     <div class="totals-row"><span>Subtotal</span><span>${formatMoney(sale.subtotal)}</span></div>
-    <div class="totals-row"><span>Discount</span><span>- ${formatMoney(sale.discount_amount)}</span></div>` : ''}
+    <div class="totals-row" style="color:#ef4444;"><span>Discount</span><span>- ${formatMoney(sale.discount_amount)}</span></div>` : ''}
     ${sale.tax_amount > 0 ? `<div class="totals-row"><span>Tax</span><span>${formatMoney(sale.tax_amount)}</span></div>` : ''}
-    <div class="totals-row total"><span>Total</span><span>${formatMoney(sale.total_amount)}</span></div>
-    <div class="totals-row" style="color:#238B5B;font-weight:700;padding-top:8px;">
-      <span>Amount Paid</span><span>${formatMoney(sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount)}</span>
+    
+    <div class="total-box">
+      <span class="lbl">Total</span>
+      <span class="val">${formatMoney(effectiveTotal)}</span>
     </div>
-    ${sale.amount_owed > 0 ? `<div class="totals-row owed"><span>Balance Owed</span><span>${formatMoney(sale.amount_owed)}</span></div>` : ''}
-    <div class="totals-row" style="font-size:12px;color:#7D877F;padding-top:4px;">
-      <span>Payment Method</span><span>${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}</span>
+    
+    <div class="totals-row">
+      <span>Amount Paid</span>
+      <span class="paid-val">${formatMoney(effectivePaid)}</span>
     </div>
+
+    ${(!hasHigherPayment && !isForgiven && sale.amount_owed > 0) ? `
+    <div class="owed-box">
+      <span>Balance Owed</span>
+      <span>${formatMoney(sale.amount_owed)}</span>
+    </div>` : isForgiven ? `
+    <div class="owed-box" style="background:#f0f9ff;border-color:#bae6fd;color:#004e89;">
+      <span>Debt Status</span>
+      <span>FORGIVEN (₦0 DUE)</span>
+    </div>` : ''}
+
+    <div class="payment-method-row">
+      <span>Payment Method</span>
+      <span class="payment-method-val">${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}</span>
+    </div>
+
     ${sale.payment_method === 'mixed' ? `
-    <div class="totals-row" style="font-size:12px;color:#4C5A52;padding-top:2px;">
-      <span style="padding-left:12px;">• Cash</span><span>${formatMoney(getPaymentBreakdown(sale).cash)}</span>
+    <div class="totals-row" style="font-size:11px;color:#64748b;padding-left:12px;">
+      <span>• Cash</span><span>${formatMoney(getPaymentBreakdown(sale).cash)}</span>
     </div>
-    <div class="totals-row" style="font-size:12px;color:#4C5A52;padding-top:2px;">
-      <span style="padding-left:12px;">• Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}</span><span>${formatMoney(getPaymentBreakdown(sale).transfer)}</span>
+    <div class="totals-row" style="font-size:11px;color:#64748b;padding-left:12px;">
+      <span>• Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}</span><span>${formatMoney(getPaymentBreakdown(sale).transfer)}</span>
     </div>` : ''}
   </div>
 
-  <div class="status-badge"><span>${statusLabel}</span></div>
-
   <div class="footer">
-    <p>Thank you for your business.</p>
-    ${cleanSaleNotes(sale.notes) ? `<p style="font-style:italic;">"${cleanSaleNotes(sale.notes)}"</p>` : ''}
-    <p style="margin-top:8px;">${business.name} - ${format(new Date(sale.created_at), 'yyyy')}</p>
-    <div class="powered">Powered by Record Am - Designed by PYTHRON</div>
+    <div class="thanks">Thank you for your business!</div>
+    ${cleanSaleNotes(sale.notes) ? `<div class="note">"${cleanSaleNotes(sale.notes)}"</div>` : ''}
+    <div class="barcode">
+      <div class="bar" style="width:2px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:3px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:2px;"></div>
+      <div class="bar" style="width:4px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:3px;"></div>
+      <div class="bar" style="width:2px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:4px;"></div>
+      <div class="bar" style="width:2px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:3px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:2px;"></div>
+      <div class="bar" style="width:3px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:2px;"></div>
+      <div class="bar" style="width:4px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:2px;"></div>
+      <div class="bar" style="width:1px;background:transparent;"></div>
+      <div class="bar" style="width:3px;"></div>
+    </div>
+    <div class="barcode-num">${sale.sale_number}</div>
+    <div class="powered">POWERED BY RECORD AM</div>
   </div>
 </div>
 </body>
@@ -241,28 +548,59 @@ export async function shareReceiptViaWhatsApp(sale: Sale, business: Business, br
   const currency = business.currency_symbol ?? CURRENCY_SYMBOL;
   const formatMoney = (value: number) => `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
 
-  const itemLines = (sale.items ?? [])
-    .map((item) => {
-      const discountText = item.discount_amount > 0 ? ` (Discount: -${formatMoney(item.discount_amount)})` : '';
-      return `- ${(item.product as any)?.name ?? 'Item'} x${item.quantity} = ${formatMoney(item.total_price)}${discountText}`;
+  const isRepayment = Boolean((sale as any).isRepayment);
+  const isForgiven = !isRepayment && isDebtForgiven(sale.payment_status, sale.notes);
+  const hasHigherPayment = !isRepayment && sale.amount_paid > sale.total_amount;
+  const effectiveTotal = hasHigherPayment ? sale.amount_paid : sale.total_amount;
+  const effectivePaid = hasHigherPayment ? sale.amount_paid : (sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount);
+
+  const items = sale.items ?? [];
+  const totalBaseAmount = items.reduce((sum: number, it: any) => sum + (Number(it.total_price) || 0), 0) || sale.total_amount || 1;
+  let remainingCalculatedTotal = hasHigherPayment ? effectiveTotal : 0;
+
+  const itemLines = items
+    .map((item, index) => {
+      let itemTotalPrice = item.total_price;
+      let itemUnitPrice = item.unit_price;
+
+      if (hasHigherPayment) {
+        if (items.length === 1) {
+          itemTotalPrice = effectiveTotal;
+        } else if (index === items.length - 1) {
+          itemTotalPrice = remainingCalculatedTotal;
+        } else {
+          itemTotalPrice = Number(((Number(item.total_price) / totalBaseAmount) * effectiveTotal).toFixed(2));
+          remainingCalculatedTotal = Number((remainingCalculatedTotal - itemTotalPrice).toFixed(2));
+        }
+        const qty = Number(item.quantity) || 1;
+        itemUnitPrice = Number((itemTotalPrice / qty).toFixed(2));
+      }
+
+      const discountText = item.discount_amount > 0 && !hasHigherPayment ? ` (Discount: -${formatMoney(item.discount_amount)})` : '';
+      const unitText = itemUnitPrice ? ` (@ ${formatMoney(itemUnitPrice)})` : '';
+      return `- ${(item.product as any)?.name ?? (item as any).product_name ?? 'Item'} x${item.quantity}${unitText} = ${formatMoney(itemTotalPrice)}${discountText}`;
     })
     .join('\n');
 
   const message =
-    `*RECEIPT - ${sale.sale_number}*\n` +
-    `${business.name} (${branch.name})\n` +
-    `${format(new Date(sale.created_at), 'MMM d, yyyy - h:mm a')}\n\n` +
-    `*ITEMS*\n${itemLines}\n\n` +
-    (sale.discount_amount > 0 ? `*SUBTOTAL:* ${formatMoney(sale.subtotal)}\n*DISCOUNT:* -${formatMoney(sale.discount_amount)}\n` : '') +
-    `*TOTAL:* ${formatMoney(sale.total_amount)}\n` +
-    `*PAID:* ${formatMoney(sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount)}\n` +
-    (sale.amount_owed > 0 ? `*BALANCE:* ${formatMoney(sale.amount_owed)}\n` : '') +
-    `\n*PAYMENT METHOD:* ${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}` +
+    `🧾 *RECEIPT · ${sale.sale_number}*\n` +
+    `*${business.name}*${branch.name ? ` · ${branch.name}` : ''}\n` +
+    `${format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}\n` +
+    ((sale.customer as any)?.name ? `Customer: ${(sale.customer as any).name}\n` : '') +
+    `\n────────────────────\n` +
+    `*ITEMS*\n${itemLines}\n` +
+    `────────────────────\n` +
+    (sale.discount_amount > 0 && !hasHigherPayment ? `Subtotal: ${formatMoney(sale.subtotal)}\nDiscount: -${formatMoney(sale.discount_amount)}\n` : '') +
+    `*TOTAL: ${formatMoney(effectiveTotal)}*\n` +
+    `*PAID: ${formatMoney(effectivePaid)}* ✅\n` +
+    (!hasHigherPayment && !isForgiven && sale.amount_owed > 0 ? `*BALANCE OWED: ${formatMoney(sale.amount_owed)}* ⚠️\n` : '') +
+    (isForgiven ? `*DEBT STATUS: FORGIVEN (₦0 DUE)* 🕊️\n` : '') +
+    `Payment Method: ${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}\n` +
     (sale.payment_method === 'mixed'
-      ? `\n  • Cash: ${formatMoney(getPaymentBreakdown(sale).cash)}\n  • Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}: ${formatMoney(getPaymentBreakdown(sale).transfer)}`
+      ? `  • Cash: ${formatMoney(getPaymentBreakdown(sale).cash)}\n  • Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}: ${formatMoney(getPaymentBreakdown(sale).transfer)}\n`
       : '') +
-    (cleanSaleNotes(sale.notes) ? `\n\n*NOTE:* "${cleanSaleNotes(sale.notes)}"` : '') +
-    `\n\n_Thank you for your business._\n_Powered by Record Am - Designed by PYTHRON_`;
+    (cleanSaleNotes(sale.notes) ? `\nNote: "${cleanSaleNotes(sale.notes)}"\n` : '') +
+    `\n_Thank you for your business!_\n_Powered by Record Am_`;
 
   try {
     await Share.share({

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View, Platform } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -132,6 +132,7 @@ export default function DailyBalanceScreen() {
           title="Daily Balance"
           subtitle={format(new Date(selectedDate), 'EEEE, MMMM d, yyyy')}
           theme="dark"
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
           right={isClosed ? <Badge label="Closed" variant="success" /> : undefined}
         />
 
@@ -152,31 +153,59 @@ export default function DailyBalanceScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
-              backgroundColor: 'rgba(255,253,248,0.08)',
-              borderWidth: 1,
-              borderRadius: RADIUS.md,
-              borderColor: 'rgba(255,253,248,0.12)',
-              padding: 12,
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              borderWidth: StyleSheet.hairlineWidth,
+              borderRadius: RADIUS.lg,
+              borderColor: 'rgba(255, 255, 255, 0.14)',
+              padding: 10,
             }}
           >
-            <TouchableOpacity onPress={() => changeDate(-1)} activeOpacity={0.8} style={{ padding: 4 }}>
-              <Feather name="chevron-left" size={18} color={COLORS.text.inverse} />
+            <TouchableOpacity
+              onPress={() => changeDate(-1)}
+              activeOpacity={0.7}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: RADIUS.full,
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Feather name="chevron-left" size={18} color="#ffffff" />
             </TouchableOpacity>
-            <TouchableOpacity style={{ alignItems: 'center', padding: 4 }} onPress={() => setShowPicker(true)} activeOpacity={0.8}>
-              <Text style={{ color: COLORS.text.inverse, fontFamily: FONT.bold, fontSize: 16 }}>
-                {format(new Date(selectedDate), 'EEEE')}
-              </Text>
-              <Text style={{ fontFamily: FONT.regular, color: 'rgba(255,253,248,0.62)', fontSize: 13 }}>
+
+            <TouchableOpacity
+              style={{ alignItems: 'center', paddingVertical: 2, paddingHorizontal: 12 }}
+              onPress={() => setShowPicker(true)}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ color: '#ffffff', fontFamily: FONT.bold, fontSize: 16 }}>
+                  {format(new Date(selectedDate), 'EEEE')}
+                </Text>
+                <Feather name="calendar" size={13} color="rgba(255, 255, 255, 0.7)" />
+              </View>
+              <Text style={{ fontFamily: FONT.medium, color: 'rgba(255, 255, 255, 0.7)', fontSize: 12, marginTop: 2 }}>
                 {format(new Date(selectedDate), 'MMMM d, yyyy')}
               </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => changeDate(1)}
-              activeOpacity={0.8}
-              style={{ padding: 4, opacity: isToday ? 0.35 : 1 }}
+              activeOpacity={0.7}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: RADIUS.full,
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: isToday ? 0.3 : 1,
+              }}
               disabled={isToday}
             >
-              <Feather name="chevron-right" size={18} color={COLORS.text.inverse} />
+              <Feather name="chevron-right" size={18} color="#ffffff" />
             </TouchableOpacity>
           </View>
         </View>
@@ -191,7 +220,7 @@ export default function DailyBalanceScreen() {
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <Card style={{ flex: 1 }}>
                   <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginBottom: 4 }}>Total Revenue</Text>
-                  <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.accent }}>
+                  <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.accentDark }}>
                     {formatCurrency(totalRevenue)}
                   </Text>
                   <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
@@ -459,7 +488,7 @@ export default function DailyBalanceScreen() {
                         </View>
                         <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.success }}>+{formatCurrency(entry.amount)}</Text>
                       </View>
-                      {index < salesEntries.length - 1 ? <View style={{ height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 }} /> : null}
+                      {index < salesEntries.length - 1 ? <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginHorizontal: 14 }} /> : null}
                     </View>
                   ))}
                 </Card>
@@ -485,9 +514,9 @@ export default function DailyBalanceScreen() {
                               : entry.payment_method.toUpperCase()}
                           </Text>
                         </View>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accent }}>+{formatCurrency(entry.amount)}</Text>
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accentDark }}>+{formatCurrency(entry.amount)}</Text>
                       </View>
-                      {index < repaymentEntries.length - 1 ? <View style={{ height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 }} /> : null}
+                      {index < repaymentEntries.length - 1 ? <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginHorizontal: 14 }} /> : null}
                     </View>
                   ))}
                 </Card>
@@ -513,7 +542,7 @@ export default function DailyBalanceScreen() {
                           -{formatCurrency(Math.abs(entry.amount))}
                         </Text>
                       </View>
-                      {index < expenseEntries.length - 1 ? <View style={{ height: 1, backgroundColor: COLORS.border, marginHorizontal: 14 }} /> : null}
+                      {index < expenseEntries.length - 1 ? <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginHorizontal: 14 }} /> : null}
                     </View>
                   ))}
                 </Card>

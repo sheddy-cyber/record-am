@@ -18,88 +18,95 @@ export const FONT = {
   light: 'Steradian Trial Light',
   regular: 'Steradian Trial',
   medium: 'Steradian Trial Medium',
+  semiBold: 'Steradian Trial Bold',
   bold: 'Steradian Trial Bold',
   black: 'Steradian Trial Black',
 } as const;
 
 // ─── Colors ─────────────────────────────────────────────────────────────────
-// Theme: Atomic Tangerine + Steel Azure — warm energy meets professional depth
+// Theme: Steel Azure + Canary Gold — prestigious financial clarity meets modern vibrancy
 export const COLORS = {
   // Core brand
-  accent: '#ff6b35',          // atomic tangerine — primary action
-  accentLight: '#fff1eb',     // soft tangerine wash
-  accentMuted: '#e55a25',     // deeper tangerine for pressed/text
+  accent: '#FACC15',          // canary gold — primary action & highlights
+  accentLight: '#FEF9C3',     // soft champagne/gold wash
+  accentMuted: '#CA8A04',     // deeper gold for pressed states / borders
+  accentDark: '#B45309',      // rich amber-gold for accessible text on light surfaces
+  gold: '#FACC15',            // canary gold — high-contrast revenue metrics & active highlights
+  goldLight: '#FEF9C3',       // soft gold wash
+  goldMuted: 'rgba(250, 204, 21, 0.18)', // translucent gold capsule
 
   // Surfaces
   ink: '#004e89',             // steel azure — headers, tab bar, dark surfaces
   navy: '#1a659e',            // baltic blue for secondary dark
+  navyLight: '#e0f2fe',       // soft blue wash
   card: '#FFFFFF',
-  surface: '#f9f8f6',         // warm off-white page background
-  surface2: '#efefd0',        // beige — subtle warm alt background
+  surface: '#f8fafc',         // crisp, modern off-white page background
+  surface2: '#f1f5f9',        // subtle slate tint for secondary containers
   elevated: '#FFFFFF',
 
   // Semantic
-  success: '#2ecc71',
-  successLight: '#eafaf1',
-  warning: '#d97706',         // lively warm amber-orange — vibrant alerts & actions
-  warningLight: '#fff8f0',
-  danger: '#e74c3c',
-  dangerLight: '#fdf0ef',
-  info: '#1a659e',            // baltic blue
-  infoLight: '#eaf2f8',
+  success: '#10b981',         // emerald green
+  successLight: '#ecfdf5',
+  warning: '#f59e0b',         // lively warm amber-orange
+  warningLight: '#fffbeb',
+  danger: '#ef4444',          // modern crimson red
+  dangerLight: '#fef2f2',
+  info: '#0284c7',            // ocean blue
+  infoLight: '#f0f9ff',
 
   // Text
   text: {
-    primary: '#004e89',       // steel azure for primary text
-    secondary: '#1a659e',     // baltic blue
-    muted: '#7a9ab5',         // muted azure
-    inverse: '#efefd0',       // beige — text on dark
-    accent: '#ff6b35',
+    primary: '#0f172a',       // slate-900 for ultra-crisp, mature readability
+    secondary: '#475569',     // slate-600
+    muted: '#94a3b8',         // slate-400
+    inverse: '#f8fafc',       // text on dark
+    accent: '#B45309',        // rich amber-gold text (readable on white/light surfaces!)
   },
 
   // Borders
-  border: '#dde8f0',
-  borderDark: '#b8cfdf',
-  shadow: '#004e89',
+  border: '#eaedf1',          // whisper-thin, sophisticated edge (Upwork reference)
+  borderSubtle: '#f1f4f8',    // ultra-soft for internal card dividers
+  borderDark: '#cbd5e1',      // slate-300
+  shadow: '#0f172a',
 
   // Chart palette
-  chart: ['#ff6b35', '#004e89', '#1a659e', '#f7c59f', '#efefd0', '#e55a25'],
+  chart: ['#FACC15', '#004e89', '#0284c7', '#10b981', '#f59e0b', '#8b5cf6'],
 
   // Legacy aliases
-  primary: '#ff6b35',
-  background: '#f9f8f6',
-  cyan: '#1a659e',
+  primary: '#FACC15',
+  background: '#f8fafc',
+  cyan: '#0284c7',
   cyanDark: '#004e89',
-  cyanLight: '#eaf2f8',
-  lime: '#2ecc71',
-  limeLight: '#eafaf1',
-  limeDark: '#27ae60',
-  record: '#ff6b35',
+  cyanLight: '#f0f9ff',
+  lime: '#10b981',
+  limeLight: '#ecfdf5',
+  limeDark: '#059669',
+  record: '#FACC15',
 } as const;
 
 // ─── Semantic accent groups ─────────────────────────────────────────────────
 export const ACCENTS = {
-  sales:     { bg: '#fff1eb', border: '#ffd4bc', text: '#c44a1c' },
-  inventory: { bg: '#eaf2f8', border: '#b8cfdf', text: '#004e89' },
-  debt:      { bg: '#fdf0ef', border: '#f5c6c2', text: '#c0392b' },
-  expense:   { bg: '#fef9f5', border: '#f7dfc8', text: '#b7650a' },
-  profit:    { bg: '#eafaf1', border: '#a9dfbf', text: '#1e8449' },
-  warning:   { bg: '#fef9f5', border: '#f7dfc8', text: '#b7650a' },
-  danger:    { bg: '#fdf0ef', border: '#f5c6c2', text: '#c0392b' },
+  sales:     { bg: '#FEF9C3', border: '#FDE047', text: '#A16207' },
+  inventory: { bg: '#f0f9ff', border: '#bae6fd', text: '#0284c7' },
+  debt:      { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' },
+  expense:   { bg: '#fffbeb', border: '#fde68a', text: '#d97706' },
+  profit:    { bg: '#ecfdf5', border: '#a7f3d0', text: '#059669' },
+  warning:   { bg: '#fffbeb', border: '#fde68a', text: '#d97706' },
+  danger:    { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' },
 } as const;
 
 // ─── Typography Scale ───────────────────────────────────────────────────────
 export const TYPE = {
-  h1:       { fontSize: 28, fontFamily: FONT.bold, letterSpacing: 0 },
-  h2:       { fontSize: 22, fontFamily: FONT.bold, letterSpacing: 0 },
-  h3:       { fontSize: 18, fontFamily: FONT.bold, letterSpacing: 0 },
-  body:     { fontSize: 15, fontFamily: FONT.regular, letterSpacing: 0 },
-  bodyBold: { fontSize: 15, fontFamily: FONT.bold, letterSpacing: 0 },
+  h1:       { fontSize: 26, fontFamily: FONT.bold, letterSpacing: -0.4 },
+  h2:       { fontSize: 21, fontFamily: FONT.bold, letterSpacing: -0.3 },
+  h3:       { fontSize: 17, fontFamily: FONT.bold, letterSpacing: -0.2 },
+  body:     { fontSize: 15, fontFamily: FONT.regular, letterSpacing: -0.1 },
+  bodyBold: { fontSize: 15, fontFamily: FONT.bold, letterSpacing: -0.1 },
   caption:  { fontSize: 13, fontFamily: FONT.regular, letterSpacing: 0 },
   label:    { fontSize: 13, fontFamily: FONT.medium, letterSpacing: 0 },
-  overline: { fontSize: 11, fontFamily: FONT.medium, letterSpacing: 0.8, textTransform: 'uppercase' as const },
-  big:      { fontSize: 34, fontFamily: FONT.black, letterSpacing: 0 },
-  stat:     { fontSize: 24, fontFamily: FONT.bold, letterSpacing: 0 },
+  overline: { fontSize: 11, fontFamily: FONT.bold, letterSpacing: 1, textTransform: 'uppercase' as const },
+  big:      { fontSize: 34, fontFamily: FONT.black, letterSpacing: -1 },
+  stat:     { fontSize: 22, fontFamily: FONT.bold, letterSpacing: -0.5 },
 } as const;
 
 // ─── Spacing (4-point grid) ─────────────────────────────────────────────────
@@ -113,26 +120,44 @@ export const SP = {
   '2xl': 32,
   '3xl': 40,
   '4xl': 48,
-  page: 20,
+  page: 18,
   card: 16,
 } as const;
 
 // ─── Border Radius ──────────────────────────────────────────────────────────
 export const RADIUS = {
   xs: 6,
-  sm: 10,
-  md: 14,
+  sm: 8,
+  md: 12,
   lg: 16,
   xl: 20,
   '2xl': 24,
   full: 999,
 } as const;
 
-// ─── Shadows (disabled — relying on borders and spacing for depth) ──────────
+// ─── Shadows (flat cards for clean Upwork look; elevation 0 eliminates fuzzy borders) ─
 export const SHADOW = {
-  sm: {},
-  md: {},
-  lg: {},
+  sm: {
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+  },
+  md: {
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  lg: {
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 14,
+    elevation: 3,
+  },
 } as const;
 
 // ─── Business Data ──────────────────────────────────────────────────────────
@@ -162,6 +187,7 @@ export const EXPENSE_CATEGORIES = [
   { value: 'internet', label: 'Internet / Data' },
   { value: 'water', label: 'Water Bill' },
   { value: 'security', label: 'Security' },
+  { value: 'damage', label: 'Damaged Goods / Loss' },
   { value: 'other', label: 'Other Expense' },
 ];
 

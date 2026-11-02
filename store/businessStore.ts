@@ -457,14 +457,55 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   createCategory: async (data) => {
     try {
-      const { data: category, error } = await supabase
-        .from('categories')
-        .insert(data)
-        .select()
-        .single();
+      if (!data.business_id || !data.name) {
+        throw new Error('Business ID and Category name are required.');
+      }
+      const localId = data.id || createLocalId();
+      const timestamp = nowIso();
+      const category: Category = {
+        id: localId,
+        business_id: data.business_id,
+        name: data.name.trim(),
+        color: data.color || '#4F46E5',
+        icon: data.icon || 'tag',
+        created_at: timestamp,
+      };
 
-      if (error) throw error;
-      set((state) => ({ categories: [...state.categories, category] }));
+      set((state) => ({
+        categories: [...state.categories.filter((c) => c.name.toLowerCase() !== category.name.toLowerCase()), category],
+      }));
+
+      try {
+        const { data: serverCat, error } = await supabase
+          .from('categories')
+          .insert({
+            id: category.id,
+            business_id: category.business_id,
+            name: category.name,
+            color: category.color,
+            icon: category.icon,
+          })
+          .select()
+          .single();
+
+        if (!error && serverCat) {
+          set((state) => ({
+            categories: state.categories.map((c) => (c.id === category.id ? serverCat : c)),
+          }));
+          return serverCat;
+        }
+      } catch (_) {}
+
+      await enqueueMutations([
+        {
+          operation: 'upsert',
+          table: 'categories',
+          payload: category,
+          onConflict: 'id',
+          description: `Sync category ${category.name}`,
+        },
+      ]);
+
       return category;
     } catch (err: any) {
       set({ error: err.message });
@@ -479,6 +520,12 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       }
 
       const timestamp = nowIso();
+      const selectedCategory =
+        data.category ??
+        (data.category_id
+          ? get().categories.find((c) => c.id === data.category_id)
+          : undefined);
+
       const product: Product = {
         id: data.id ?? createLocalId(),
         business_id: data.business_id,
@@ -497,6 +544,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         created_at: data.created_at ?? timestamp,
         updated_at: timestamp,
         inventory: data.inventory ?? [],
+        category: selectedCategory,
       };
 
       set((state) => ({ products: [...state.products, product] }));

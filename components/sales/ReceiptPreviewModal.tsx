@@ -4,6 +4,7 @@ import {
   Modal,
   ScrollView,
   Share,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -13,7 +14,7 @@ import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { format } from 'date-fns';
-import { getPaymentBreakdown } from '@/lib/records';
+import { getPaymentBreakdown, isDebtForgiven } from '@/lib/records';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { Sale } from '@/types';
 
@@ -40,8 +41,8 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   previewSale,
   businessId,
   branchId,
-  businessName,
-  branchName,
+  businessName = 'Record Am Merchant',
+  branchName = 'Main Branch',
   businessAddress,
   businessPhone,
   downloadReceipt,
@@ -63,7 +64,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
       if (status !== 'granted') {
         Alert.alert(
           'Permission required',
-          'Gallery write permission is needed to download the receipt to your device.',
+          'Gallery write permission is needed to save the receipt to your device.',
         );
         return;
       }
@@ -73,7 +74,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
       if (!imageUri) throw new Error('Could not capture receipt image');
 
       await MediaLibrary.createAssetAsync(imageUri);
-      Alert.alert('Download Complete', 'The receipt has been successfully saved to your gallery.');
+      Alert.alert('Saved to Gallery', 'Receipt image has been saved to your gallery.');
     } catch (err) {
       Alert.alert('Download failed', 'The receipt could not be saved to your device.');
       console.error(err);
@@ -114,29 +115,34 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
     <Modal
       visible={visible}
       transparent={true}
-      animationType="slide"
+      animationType="fade"
       onRequestClose={onClose}
     >
       <View
         style={{
           flex: 1,
-          backgroundColor: 'rgba(20, 33, 28, 0.85)',
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
           justifyContent: 'center',
           alignItems: 'center',
-          paddingVertical: 40,
-          paddingHorizontal: 10,
+          paddingVertical: 36,
+          paddingHorizontal: 16,
         }}
       >
         <View
           style={{
-            backgroundColor: COLORS.surface,
+            backgroundColor: COLORS.card,
             borderRadius: RADIUS['2xl'],
             width: '100%',
-            maxWidth: 350,
-            maxHeight: '90%',
+            maxWidth: 366,
+            maxHeight: '92%',
             overflow: 'hidden',
-            borderWidth: 1,
-            borderColor: 'rgba(255, 253, 248, 0.1)',
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: COLORS.border,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: 0.15,
+            shadowRadius: 24,
+            elevation: 12,
           }}
         >
           {/* Header */}
@@ -146,15 +152,22 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
               justifyContent: 'space-between',
               alignItems: 'center',
               paddingHorizontal: 20,
-              paddingVertical: 16,
-              borderBottomWidth: 1,
+              paddingVertical: 15,
+              borderBottomWidth: StyleSheet.hairlineWidth,
               borderBottomColor: COLORS.border,
-              backgroundColor: COLORS.surface,
+              backgroundColor: COLORS.card,
             }}
           >
-            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-              Receipt Preview
-            </Text>
+            <View>
+              <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }}>
+                Receipt Preview
+              </Text>
+              {previewSale ? (
+                <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 }}>
+                  {previewSale.sale_number}
+                </Text>
+              ) : null}
+            </View>
             <TouchableOpacity
               onPress={onClose}
               style={{
@@ -165,8 +178,9 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
+              activeOpacity={0.7}
             >
-              <Feather name="x" size={16} color={COLORS.text.muted} />
+              <Feather name="x" size={16} color={COLORS.text.secondary} />
             </TouchableOpacity>
           </View>
 
@@ -174,13 +188,13 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
           <ScrollView
             contentContainerStyle={{
               alignItems: 'center',
-              paddingVertical: 20,
-              paddingHorizontal: 10,
-              backgroundColor: '#F5F0E4',
+              paddingVertical: 18,
+              paddingHorizontal: 12,
+              backgroundColor: '#F1F5F9',
             }}
             showsVerticalScrollIndicator={false}
           >
-            {previewSale && businessName && branchName && (
+            {previewSale && (
               <ViewShot
                 ref={receiptCaptureRef}
                 options={{ format: 'png', quality: 1, result: 'tmpfile' }}
@@ -203,9 +217,9 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
             style={{
               padding: 16,
               gap: 10,
-              borderTopWidth: 1,
+              borderTopWidth: StyleSheet.hairlineWidth,
               borderTopColor: COLORS.border,
-              backgroundColor: COLORS.surface,
+              backgroundColor: COLORS.card,
             }}
           >
             <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -219,17 +233,18 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
                   justifyContent: 'center',
                   gap: 8,
                   backgroundColor: COLORS.ink,
-                  paddingVertical: 12,
-                  borderRadius: RADIUS.md,
+                  paddingVertical: 13,
+                  borderRadius: RADIUS.lg,
                   opacity: isSharingImage ? 0.7 : 1,
                 }}
+                activeOpacity={0.8}
               >
                 {isSharingImage ? (
-                  <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFFDF8' }}>Preparing...</Text>
+                  <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: '#FFFFFF' }}>Preparing...</Text>
                 ) : (
                   <>
-                    <Feather name="image" size={16} color="#FFFDF8" />
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFFDF8' }}>Share Image</Text>
+                    <Feather name="share-2" size={15} color="#FFFFFF" />
+                    <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: '#FFFFFF' }}>Share Image</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -243,18 +258,21 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: 8,
-                  backgroundColor: COLORS.success,
-                  paddingVertical: 12,
-                  borderRadius: RADIUS.md,
+                  backgroundColor: COLORS.surface2,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: COLORS.border,
+                  paddingVertical: 13,
+                  borderRadius: RADIUS.lg,
                   opacity: isDownloading ? 0.7 : 1,
                 }}
+                activeOpacity={0.8}
               >
                 {isDownloading ? (
-                  <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFF' }}>Downloading...</Text>
+                  <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>Saving...</Text>
                 ) : (
                   <>
-                    <Feather name="download" size={16} color="#FFF" />
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: '#FFF' }}>Download</Text>
+                    <Feather name="download" size={15} color={COLORS.text.primary} />
+                    <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>Save Image</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -279,285 +297,506 @@ export function ReceiptShareCard({
   businessPhone?: string | null;
   branchName: string;
 }) {
-  const statusColor =
-    sale.payment_status === 'paid'
-      ? COLORS.success
-      : sale.payment_status === 'partial'
-        ? COLORS.warning
-        : COLORS.danger;
+  const isRepayment = Boolean((sale as any).isRepayment);
+  const hasHigherPayment = !isRepayment && sale.amount_paid > sale.total_amount;
+  const effectiveTotal = hasHigherPayment ? sale.amount_paid : sale.total_amount;
+  const effectiveAmountPaid = (sale as any).accumulatedAmountPaid ?? (hasHigherPayment ? sale.amount_paid : (sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount));
+
+  const isForgiven = !isRepayment && isDebtForgiven(sale.payment_status, sale.notes);
+
+  const statusLabel =
+    isRepayment
+      ? 'SETTLEMENT'
+      : isForgiven
+        ? 'DEBT FORGIVEN'
+        : (sale.payment_status === 'paid' || hasHigherPayment)
+          ? 'PAID IN FULL'
+          : sale.payment_status === 'partial'
+            ? 'PARTIALLY PAID'
+            : 'CREDIT / UNPAID';
+
+  const statusBgColor =
+    isRepayment
+      ? '#004E89'
+      : isForgiven
+        ? '#004E89'
+        : (sale.payment_status === 'paid' || hasHigherPayment)
+          ? '#059669'
+          : sale.payment_status === 'partial'
+            ? '#D97706'
+            : '#DC2626';
+
+  const items = sale.items ?? [];
+  const totalBaseAmount = items.reduce((sum: number, it: any) => sum + (Number(it.total_price) || 0), 0) || sale.total_amount || 1;
+  let remainingCalculatedTotal = hasHigherPayment ? effectiveTotal : 0;
 
   return (
     <View
       style={{
-        width: 330,
-        backgroundColor: '#FFFDF8',
-        borderWidth: 1,
-        borderColor: '#D8CEB7',
+        width: 340,
+        backgroundColor: '#FFFFFF',
+        borderRadius: RADIUS.xl,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: '#E2E8F0',
+        overflow: 'hidden',
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.08,
+        shadowRadius: 16,
+        elevation: 6,
       }}
       collapsable={false}
     >
-      <View style={{ backgroundColor: COLORS.ink, paddingHorizontal: 24, paddingVertical: 24 }}>
-        <Text style={{ fontSize: 22, fontFamily: FONT.bold, color: '#FFFDF8', textAlign: 'center' }}>
+      {/* ── Business Branding Header (Steel Azure) ── */}
+      <View
+        style={{
+          backgroundColor: COLORS.ink,
+          paddingHorizontal: 20,
+          paddingTop: 22,
+          paddingBottom: 20,
+          alignItems: 'center',
+        }}
+      >
+        <View
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginBottom: 10,
+          }}
+        >
+          <Feather name="shopping-bag" size={18} color="#FFFFFF" />
+        </View>
+        <Text
+          style={{
+            fontSize: 18,
+            fontFamily: FONT.bold,
+            color: '#FFFFFF',
+            textAlign: 'center',
+            letterSpacing: -0.2,
+          }}
+        >
           {businessName}
         </Text>
         <Text
           style={{
-            fontSize: 12,
+            fontSize: 11.5,
             fontFamily: FONT.regular,
-            color: 'rgba(255,253,248,0.75)',
+            color: 'rgba(255, 255, 255, 0.8)',
             textAlign: 'center',
-            marginTop: 6,
+            marginTop: 4,
+            lineHeight: 16,
           }}
         >
           {[branchName, businessAddress, businessPhone].filter(Boolean).join(' · ')}
         </Text>
       </View>
 
+      {/* ── Receipt Reference & Status Ribbon ── */}
       <View
         style={{
-          marginHorizontal: 24,
-          marginTop: -12,
-          backgroundColor: '#FFFDF8',
-          borderWidth: 1,
-          borderColor: '#D8CEB7',
-          paddingHorizontal: 14,
-          paddingVertical: 10,
+          backgroundColor: '#F8FAFC',
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: '#E2E8F0',
+          paddingHorizontal: 18,
+          paddingVertical: 12,
           flexDirection: 'row',
           justifyContent: 'space-between',
           alignItems: 'center',
         }}
       >
-        <View style={{ flex: 1, marginRight: 8 }}>
-          <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+        <View style={{ flex: 1, marginRight: 10 }}>
+          <Text style={{ fontSize: 9.5, fontFamily: FONT.bold, color: COLORS.text.muted, letterSpacing: 0.6 }}>
+            RECEIPT
+          </Text>
+          <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 1 }}>
             {sale.sale_number}
           </Text>
-          {(sale as any).isRepayment ? (
-            <Text style={{ fontSize: 9, fontFamily: FONT.bold, color: COLORS.warning, marginTop: 2 }}>
-              INSTALMENT REPAYMENT
-            </Text>
-          ) : null}
+          <Text style={{ fontSize: 10.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}>
+            {format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}
+          </Text>
         </View>
-        <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-          {format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}
-        </Text>
-      </View>
 
-      <View style={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 8 }}>
-        <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-          CUSTOMER
-        </Text>
+        {/* Deep solid pill with white text (Clean & Smart philosophy) */}
         <View
           style={{
-            marginTop: 10,
-            backgroundColor: '#F5F0E4',
-            borderWidth: 1,
-            borderColor: '#D8CEB7',
-            paddingHorizontal: 14,
-            paddingVertical: 12,
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: statusBgColor,
+            paddingHorizontal: 10,
+            paddingVertical: 4.5,
+            borderRadius: RADIUS.full,
           }}
         >
-          <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-            {(sale.customer as any)?.name ?? 'Walk-in Customer'}
+          <Text style={{ fontSize: 10.5, fontFamily: FONT.bold, color: '#FFFFFF', letterSpacing: 0.4 }}>
+            {statusLabel}
           </Text>
-          {(sale.customer as any)?.phone ? (
-            <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: 2 }}>
-              {(sale.customer as any).phone}
-            </Text>
-          ) : null}
         </View>
       </View>
 
-      {sale.items && sale.items.length > 0 ? (
-        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
-          <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-            ITEMS
-          </Text>
-          <View style={{ marginTop: 6 }}>
-            {sale.items.map((item: any, index: number) => (
-              <View
-                key={item.id ?? `${item.product_id}-${index}`}
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  paddingVertical: 10,
-                  borderBottomWidth: 1,
-                  borderBottomColor: '#F0EDE3',
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                    {(item.product as any)?.name ?? 'Item'}
-                  </Text>
-                  <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
-                    {item.quantity} × {formatCurrency(item.unit_price)}
-                    {item.discount_amount > 0 ? ` (Discount: -${formatCurrency(item.discount_amount)})` : ''}
-                  </Text>
-                </View>
-                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                  {formatCurrency(item.total_price)}
+      {/* ── Customer Info ── */}
+      {(sale.customer as any)?.name || sale.amount_owed > 0 ? (
+        <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 2 }}>
+          <View
+            style={{
+              backgroundColor: '#F8FAFC',
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: '#E2E8F0',
+              borderRadius: RADIUS.md,
+              paddingHorizontal: 12,
+              paddingVertical: 10,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <View
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: COLORS.navyLight,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Feather name="user" size={15} color={COLORS.ink} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 9, fontFamily: FONT.bold, color: COLORS.text.muted, letterSpacing: 0.6 }}>
+                BILLED TO
+              </Text>
+              <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 1 }} numberOfLines={1}>
+                {(sale.customer as any)?.name ?? 'Walk-in Customer'}
+              </Text>
+              {(sale.customer as any)?.phone ? (
+                <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: 1 }}>
+                  {(sale.customer as any).phone}
                 </Text>
-              </View>
-            ))}
+              ) : null}
+            </View>
           </View>
         </View>
-      ) : (sale as any).isRepayment ? (
-        <View style={{ paddingHorizontal: 24, paddingTop: 16, paddingBottom: 16 }}>
-          <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-            PAYMENT DESCRIPTION
-          </Text>
-          <View style={{ marginTop: 6, paddingVertical: 10 }}>
-            <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-              Debt Repayment
+      ) : null}
+
+      {/* ── Items Breakdown ── */}
+      {items.length > 0 ? (
+        <View style={{ paddingHorizontal: 18, paddingTop: 14 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              paddingBottom: 6,
+              borderBottomWidth: StyleSheet.hairlineWidth,
+              borderBottomColor: '#E2E8F0',
+            }}
+          >
+            <Text style={{ fontSize: 9.5, fontFamily: FONT.bold, color: COLORS.text.muted, letterSpacing: 0.8 }}>
+              ITEM
             </Text>
-            <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }}>
-              Manual standalone debt settlement
+            <Text style={{ fontSize: 9.5, fontFamily: FONT.bold, color: COLORS.text.muted, letterSpacing: 0.8 }}>
+              AMOUNT
+            </Text>
+          </View>
+
+          <View style={{ marginTop: 2 }}>
+            {items.map((item: any, index: number) => {
+              let itemTotalPrice = item.total_price;
+              let itemUnitPrice = item.unit_price;
+
+              if (hasHigherPayment) {
+                if (items.length === 1) {
+                  itemTotalPrice = effectiveTotal;
+                } else if (index === items.length - 1) {
+                  itemTotalPrice = remainingCalculatedTotal;
+                } else {
+                  itemTotalPrice = Number(((Number(item.total_price) / totalBaseAmount) * effectiveTotal).toFixed(2));
+                  remainingCalculatedTotal = Number((remainingCalculatedTotal - itemTotalPrice).toFixed(2));
+                }
+                const qty = Number(item.quantity) || 1;
+                itemUnitPrice = Number((itemTotalPrice / qty).toFixed(2));
+              }
+
+              return (
+                <View
+                  key={item.id ?? `${item.product_id}-${index}`}
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    paddingVertical: 9,
+                    borderBottomWidth: StyleSheet.hairlineWidth,
+                    borderBottomColor: '#F1F5F9',
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                      {(item.product as any)?.name ?? item.product_name ?? 'Item'}
+                    </Text>
+                    <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}>
+                      {item.quantity} × {formatCurrency(itemUnitPrice)} each
+                      {item.discount_amount > 0 && !hasHigherPayment ? ` (-${formatCurrency(item.discount_amount)})` : ''}
+                    </Text>
+                  </View>
+                  <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 1 }}>
+                    {formatCurrency(itemTotalPrice)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      ) : isRepayment ? (
+        <View style={{ paddingHorizontal: 18, paddingTop: 14 }}>
+          <View style={{ backgroundColor: '#F8FAFC', borderRadius: RADIUS.md, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: '#E2E8F0' }}>
+            <Text style={{ fontSize: 9.5, fontFamily: FONT.bold, color: COLORS.text.muted, letterSpacing: 0.6 }}>
+              PAYMENT PURPOSE
+            </Text>
+            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 2 }}>
+              Customer Debt Settlement
+            </Text>
+            <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}>
+              Instalment payment recorded against outstanding balance
             </Text>
           </View>
         </View>
       ) : null}
 
-      <View style={{ paddingHorizontal: 24, paddingBottom: 20 }}>
-        <Text style={{ fontSize: 10, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 1 }}>
-          SUMMARY
-        </Text>
-        <View style={{ marginTop: 12, gap: 8 }}>
-          {!(sale as any).isRepayment && sale.discount_amount > 0 ? (
-            <SummaryRow label="Subtotal" value={formatCurrency(sale.subtotal)} />
-          ) : null}
-          {!(sale as any).isRepayment && sale.discount_amount > 0 ? (
-            <SummaryRow label="Discount" value={`- ${formatCurrency(sale.discount_amount)}`} />
-          ) : null}
-          {!(sale as any).isRepayment && sale.tax_amount > 0 ? (
-            <SummaryRow label="Tax" value={formatCurrency(sale.tax_amount)} />
-          ) : null}
-          
-          {(sale as any).isRepayment ? (
-            <>
-              {sale.items && sale.items.length > 0 ? (
-                <SummaryRow
-                  label="Total Purchase"
-                  value={formatCurrency(sale.total_amount)}
-                />
-              ) : null}
-              <View style={{ height: 1, backgroundColor: '#D8CEB7', marginTop: 4, marginBottom: 4 }} />
+      {/* ── Perforated Tear Line ── */}
+      <View style={{ marginHorizontal: 18, marginVertical: 12, borderStyle: 'dashed', borderWidth: 0.8, borderColor: '#CBD5E1' }} />
+
+      {/* ── Financial Summary ── */}
+      <View style={{ paddingHorizontal: 18, paddingBottom: 16, gap: 8 }}>
+        {!(sale as any).isRepayment && sale.discount_amount > 0 && !hasHigherPayment ? (
+          <SummaryRow label="Subtotal" value={formatCurrency(sale.subtotal)} />
+        ) : null}
+        {!(sale as any).isRepayment && sale.discount_amount > 0 && !hasHigherPayment ? (
+          <SummaryRow
+            label="Discount"
+            value={`- ${formatCurrency(sale.discount_amount)}`}
+            valueStyle={{ color: COLORS.danger }}
+          />
+        ) : null}
+        {!(sale as any).isRepayment && sale.tax_amount > 0 ? (
+          <SummaryRow label="Tax" value={formatCurrency(sale.tax_amount)} />
+        ) : null}
+
+        {isRepayment ? (
+          <>
+            {items.length > 0 ? (
+              <SummaryRow label="Total Purchase" value={formatCurrency(sale.total_amount)} />
+            ) : null}
+            <View
+              style={{
+                backgroundColor: '#ECFDF5',
+                borderRadius: RADIUS.md,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: '#A7F3D0',
+                marginVertical: 4,
+              }}
+            >
               <SummaryRow
                 label="This Payment"
                 value={formatCurrency(sale.amount_paid)}
-                labelStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
-                valueStyle={{ color: COLORS.success, fontFamily: FONT.bold, fontSize: 15 }}
+                labelStyle={{ color: '#047857', fontFamily: FONT.bold }}
+                valueStyle={{ color: '#047857', fontFamily: FONT.bold, fontSize: 16 }}
               />
-              <SummaryRow
-                label="Total Paid (All-time)"
-                value={formatCurrency((sale as any).accumulatedAmountPaid ?? sale.amount_paid)}
-                labelStyle={{ color: COLORS.text.secondary }}
-                valueStyle={{ color: COLORS.text.secondary }}
-              />
-              <SummaryRow
-                label="Remaining Balance"
-                value={sale.amount_owed > 0 ? formatCurrency(sale.amount_owed) : 'FULLY SETTLED'}
-                labelStyle={{ color: sale.amount_owed > 0 ? COLORS.danger : COLORS.success, fontFamily: FONT.medium }}
-                valueStyle={{ color: sale.amount_owed > 0 ? COLORS.danger : COLORS.success, fontFamily: FONT.bold }}
-              />
-            </>
-          ) : (
-            <>
-              <View style={{ height: 1, backgroundColor: '#D8CEB7', marginTop: 4, marginBottom: 4 }} />
-              <SummaryRow
-                label="Total"
-                value={formatCurrency(sale.total_amount)}
-                labelStyle={{ fontFamily: FONT.bold, color: COLORS.text.primary }}
-                valueStyle={{ fontSize: 17, fontFamily: FONT.bold, color: COLORS.text.primary }}
-              />
-              <SummaryRow
-                label="Amount Paid"
-                value={formatCurrency((sale as any).accumulatedAmountPaid ?? (sale.amount_paid > 0 ? sale.amount_paid : sale.total_amount))}
-                labelStyle={{ color: COLORS.success, fontFamily: FONT.medium }}
-                valueStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
-              />
-              {sale.amount_owed > 0 ? (
+            </View>
+            <SummaryRow
+              label="Total Paid (All-time)"
+              value={formatCurrency((sale as any).accumulatedAmountPaid ?? sale.amount_paid)}
+              labelStyle={{ color: COLORS.text.muted }}
+              valueStyle={{ color: COLORS.text.secondary }}
+            />
+            <SummaryRow
+              label={sale.amount_owed > 0 && !isForgiven ? 'Remaining Balance' : 'Payment Status'}
+              value={sale.amount_owed > 0 && !isForgiven ? formatCurrency(sale.amount_owed) : isForgiven ? 'DEBT FORGIVEN' : 'FULLY SETTLED'}
+              labelStyle={{ color: sale.amount_owed > 0 && !isForgiven ? COLORS.danger : COLORS.success, fontFamily: FONT.medium }}
+              valueStyle={{ color: sale.amount_owed > 0 && !isForgiven ? COLORS.danger : COLORS.success, fontFamily: FONT.bold }}
+            />
+          </>
+        ) : (
+          <>
+            <View
+              style={{
+                backgroundColor: '#F8FAFC',
+                borderRadius: RADIUS.md,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: '#E2E8F0',
+                marginVertical: 2,
+              }}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                  Total
+                </Text>
+                <Text style={{ fontSize: 19, fontFamily: FONT.bold, color: COLORS.ink }}>
+                  {formatCurrency(effectiveTotal)}
+                </Text>
+              </View>
+            </View>
+
+            <SummaryRow
+              label="Amount Paid"
+              value={formatCurrency(effectiveAmountPaid)}
+              labelStyle={{ color: COLORS.text.secondary, fontFamily: FONT.medium }}
+              valueStyle={{ color: COLORS.success, fontFamily: FONT.bold }}
+            />
+
+            {!hasHigherPayment && !isForgiven && sale.amount_owed > 0 ? (
+              <View
+                style={{
+                  backgroundColor: '#FEF2F2',
+                  borderRadius: RADIUS.md,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: '#FECACA',
+                }}
+              >
                 <SummaryRow
                   label="Balance Owed"
                   value={formatCurrency(sale.amount_owed)}
-                  labelStyle={{ color: COLORS.danger, fontFamily: FONT.medium }}
+                  labelStyle={{ color: COLORS.danger, fontFamily: FONT.bold }}
                   valueStyle={{ color: COLORS.danger, fontFamily: FONT.bold }}
                 />
-              ) : null}
-            </>
-          )}
-          <SummaryRow
-            label="Payment Method"
-            value={
-              sale.bank_name
-                ? `${sale.payment_method.replace('_', ' ').toUpperCase()} (${sale.bank_name})`
-                : sale.payment_method.replace('_', ' ').toUpperCase()
-            }
-            labelStyle={{ fontSize: 11 }}
-            valueStyle={{ fontSize: 11 }}
-          />
-          {sale.payment_method === 'mixed' ? (
-            <>
-              <SummaryRow
-                label="  • Cash"
-                value={formatCurrency(getPaymentBreakdown(sale).cash)}
-                labelStyle={{ fontSize: 11, color: COLORS.text.muted, paddingLeft: 8 }}
-                valueStyle={{ fontSize: 11, color: COLORS.text.secondary }}
-              />
-              <SummaryRow
-                label="  • Transfer"
-                value={`${formatCurrency(getPaymentBreakdown(sale).transfer)}${sale.bank_name ? ` (${sale.bank_name})` : ''}`}
-                labelStyle={{ fontSize: 11, color: COLORS.text.muted, paddingLeft: 8 }}
-                valueStyle={{ fontSize: 11, color: COLORS.text.secondary }}
-              />
-            </>
-          ) : null}
+              </View>
+            ) : isForgiven ? (
+              <View
+                style={{
+                  backgroundColor: '#F0F9FF',
+                  borderRadius: RADIUS.md,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: '#BAE6FD',
+                }}
+              >
+                <SummaryRow
+                  label="Debt Status"
+                  value="FORGIVEN (₦0 DUE)"
+                  labelStyle={{ color: COLORS.navy, fontFamily: FONT.bold }}
+                  valueStyle={{ color: COLORS.navy, fontFamily: FONT.bold }}
+                />
+              </View>
+            ) : null}
+          </>
+        )}
+
+        <View style={{ height: 4 }} />
+
+        {/* Payment Method Badge */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: 8,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: '#F1F5F9',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Feather name="credit-card" size={13} color={COLORS.text.muted} />
+            <Text style={{ fontSize: 11.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+              Payment Method
+            </Text>
+          </View>
+          <Text style={{ fontSize: 11.5, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+            {sale.bank_name
+              ? `${sale.payment_method.replace('_', ' ').toUpperCase()} (${sale.bank_name})`
+              : sale.payment_method.replace('_', ' ').toUpperCase()}
+          </Text>
         </View>
+
+        {sale.payment_method === 'mixed' ? (
+          <View style={{ gap: 4, paddingLeft: 18 }}>
+            <SummaryRow
+              label="• Cash"
+              value={formatCurrency(getPaymentBreakdown(sale).cash)}
+              labelStyle={{ fontSize: 11, color: COLORS.text.muted }}
+              valueStyle={{ fontSize: 11, color: COLORS.text.secondary }}
+            />
+            <SummaryRow
+              label={`• Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}`}
+              value={formatCurrency(getPaymentBreakdown(sale).transfer)}
+              labelStyle={{ fontSize: 11, color: COLORS.text.muted }}
+              valueStyle={{ fontSize: 11, color: COLORS.text.secondary }}
+            />
+          </View>
+        ) : null}
       </View>
 
+      {/* ── Footer & Stylized Barcode ── */}
       <View
         style={{
-          backgroundColor: `${statusColor}18`,
-          borderTopWidth: 1,
-          borderTopColor: '#D8CEB7',
-          paddingVertical: 14,
+          backgroundColor: '#F8FAFC',
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: '#E2E8F0',
+          paddingHorizontal: 20,
+          paddingVertical: 18,
           alignItems: 'center',
         }}
       >
-        <Text
-          style={{
-            fontSize: 12,
-            fontFamily: FONT.bold,
-            color: statusColor,
-            letterSpacing: 1,
-          }}
-        >
-          {sale.payment_status === 'paid'
-            ? 'PAID IN FULL'
-            : sale.payment_status === 'partial'
-              ? 'PARTIALLY PAID'
-              : 'CREDIT / UNPAID'}
-        </Text>
-      </View>
-
-      <View style={{ paddingHorizontal: 24, paddingVertical: 18, alignItems: 'center' }}>
-        <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-          Thank you for your business.
+        <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+          Thank you for your business!
         </Text>
         {sale.notes ? (
-          <Text
+          <View
             style={{
-              fontSize: 11,
-              fontFamily: FONT.regular,
-              color: COLORS.text.secondary,
-              textAlign: 'center',
-              marginTop: 6,
+              backgroundColor: '#FFFFFF',
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: '#E2E8F0',
+              borderRadius: RADIUS.sm,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              marginTop: 8,
+              maxWidth: '90%',
             }}
           >
-            "{sale.notes}"
-          </Text>
+            <Text
+              style={{
+                fontSize: 11,
+                fontFamily: FONT.regular,
+                color: COLORS.text.secondary,
+                textAlign: 'center',
+                fontStyle: 'italic',
+              }}
+            >
+              "{sale.notes}"
+            </Text>
+          </View>
         ) : null}
-        <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 10 }}>
-          Powered by <Text style={{ fontStyle: 'italic' }}>Record Am</Text> · {format(new Date(sale.created_at), 'yyyy')}
+
+        {/* Clean Stylized Barcode Graphic */}
+        <View style={{ alignItems: 'center', marginTop: 14 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', height: 24, gap: 2 }}>
+            {[2, 1, 3, 1, 2, 4, 1, 3, 2, 1, 4, 2, 1, 3, 1, 2, 3, 1, 2, 4, 1, 2, 1, 3, 2, 1, 3, 2, 1, 4, 2].map((w, idx) => (
+              <View
+                key={idx}
+                style={{
+                  width: w,
+                  height: 24,
+                  backgroundColor: idx % 2 === 0 ? COLORS.text.primary : 'transparent',
+                }}
+              />
+            ))}
+          </View>
+          <Text style={{ fontSize: 9.5, fontFamily: FONT.medium, color: COLORS.text.muted, letterSpacing: 2, marginTop: 4 }}>
+            {sale.sale_number}
+          </Text>
+        </View>
+
+        <Text style={{ fontSize: 9.5, fontFamily: FONT.bold, color: COLORS.text.muted, letterSpacing: 1, marginTop: 12 }}>
+          POWERED BY RECORD AM
         </Text>
       </View>
     </View>
@@ -576,8 +815,8 @@ function SummaryRow({
   valueStyle?: object;
 }) {
   return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-      <Text style={[{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }, labelStyle]}>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+      <Text style={[{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.secondary }, labelStyle]}>
         {label}
       </Text>
       <Text style={[{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, textAlign: 'right' }, valueStyle]}>

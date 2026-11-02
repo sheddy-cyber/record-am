@@ -141,7 +141,7 @@ const BUTTON_COLORS: Record<
   primary: { bg: COLORS.ink, text: COLORS.text.inverse },
   secondary: { bg: COLORS.card, border: COLORS.border, text: COLORS.text.primary },
   danger: { bg: COLORS.danger, text: '#FFFFFF' },
-  accent: { bg: COLORS.accent, text: '#FFFFFF' },
+  accent: { bg: COLORS.accent, text: '#000000' },
   success: { bg: COLORS.success, text: '#FFFFFF' },
 };
 
@@ -168,6 +168,7 @@ export function ConfirmationModal({
   const [internalLoading, setInternalLoading] = useState(false);
   const scaleAnim = useRef(new Animated.Value(0.94)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
+  const iconScaleAnim = useRef(new Animated.Value(0.5)).current;
 
   const isSubmitting = loading || internalLoading;
   const config = TYPE_CONFIG[type] || TYPE_CONFIG.info;
@@ -199,6 +200,7 @@ export function ConfirmationModal({
 
   useEffect(() => {
     if (visible) {
+      iconScaleAnim.setValue(0.5);
       Animated.parallel([
         Animated.timing(opacityAnim, {
           toValue: 1,
@@ -211,13 +213,23 @@ export function ConfirmationModal({
           friction: 8,
           useNativeDriver: true,
         }),
+        Animated.sequence([
+          Animated.delay(40),
+          Animated.spring(iconScaleAnim, {
+            toValue: 1,
+            friction: 4,
+            tension: 90,
+            useNativeDriver: true,
+          }),
+        ]),
       ]).start();
     } else {
       scaleAnim.setValue(0.94);
       opacityAnim.setValue(0);
+      iconScaleAnim.setValue(0.5);
       setInternalLoading(false);
     }
-  }, [visible, opacityAnim, scaleAnim]);
+  }, [visible, opacityAnim, scaleAnim, iconScaleAnim]);
 
   const handleConfirm = async () => {
     if (isSubmitting || disabled) return;
@@ -680,12 +692,13 @@ export function ConfirmationModal({
           {/* Prevent inner clicks from triggering backdrop dismissal */}
           <Pressable style={styles.cardContent} onPress={(e) => e.stopPropagation()}>
             {/* Semantic Icon Badge */}
-            <View
+            <Animated.View
               style={[
                 styles.iconBadge,
                 {
                   backgroundColor: config.bg,
                   borderColor: config.border,
+                  transform: [{ scale: iconScaleAnim }],
                 },
               ]}
             >
@@ -694,7 +707,7 @@ export function ConfirmationModal({
               ) : (
                 <Feather name={resolvedIconName} size={26} color={config.iconColor} />
               )}
-            </View>
+            </Animated.View>
 
             {/* Title */}
             <Text style={styles.title}>{title}</Text>
@@ -733,7 +746,7 @@ const styles = StyleSheet.create({
     maxWidth: 356,
     backgroundColor: COLORS.card,
     borderRadius: RADIUS.xl,
-    borderWidth: 1.5,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     padding: 24,
     shadowColor: '#002040',
@@ -750,7 +763,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    borderWidth: 1.5,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -795,7 +808,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   buttonInRow: {
     flex: 1,

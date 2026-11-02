@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -69,7 +69,7 @@ export default function AboutScreen() {
           <View
             style={{
               marginTop: 14,
-              backgroundColor: COLORS.ink,
+              backgroundColor: COLORS.navy,
               paddingHorizontal: 14,
               paddingVertical: 5,
               borderRadius: RADIUS.full,
@@ -82,7 +82,7 @@ export default function AboutScreen() {
         </View>
 
         {/* Divider */}
-        <View style={{ height: 1, backgroundColor: COLORS.border, marginBottom: 32 }} />
+        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginBottom: 32 }} />
 
         {/* Mission Statement */}
         <View style={{ marginBottom: 36 }}>
@@ -90,7 +90,7 @@ export default function AboutScreen() {
             style={{
               fontSize: 12,
               fontFamily: FONT.bold,
-              color: COLORS.accent,
+              color: COLORS.accentDark,
               textTransform: 'uppercase',
               letterSpacing: 1,
               marginBottom: 8,
@@ -115,7 +115,7 @@ export default function AboutScreen() {
           style={{
             fontSize: 12,
             fontFamily: FONT.bold,
-            color: COLORS.accent,
+            color: COLORS.accentDark,
             textTransform: 'uppercase',
             letterSpacing: 1,
             marginBottom: 20,
@@ -168,8 +168,8 @@ export default function AboutScreen() {
           style={{
             alignItems: 'center',
             paddingTop: 24,
-            borderTopWidth: 1,
-            borderTopColor: COLORS.border,
+            borderTopWidth: StyleSheet.hairlineWidth,
+            borderTopColor: COLORS.borderSubtle,
           }}
         >
           <Text

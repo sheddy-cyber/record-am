@@ -99,12 +99,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const nextSales = Number((currentStats.today_sales + amountPaid).toFixed(2));
     const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
     const nextDebts = Number(Math.max(0, currentStats.outstanding_debts + debtAmount).toFixed(2));
+    const nextCount = (currentStats.today_sales_count ?? 0) + 1;
     set({
       stats: {
         ...currentStats,
         today_sales: nextSales,
         today_profit: nextProfit,
         outstanding_debts: nextDebts,
+        today_sales_count: nextCount,
       },
     });
   },
@@ -115,12 +117,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const nextSales = Number(Math.max(0, currentStats.today_sales - amountPaid).toFixed(2));
     const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
     const nextDebts = Number(Math.max(0, currentStats.outstanding_debts - debtAmount).toFixed(2));
+    const nextCount = Math.max(0, (currentStats.today_sales_count ?? 0) - 1);
     set({
       stats: {
         ...currentStats,
         today_sales: nextSales,
         today_profit: nextProfit,
         outstanding_debts: nextDebts,
+        today_sales_count: nextCount,
       },
     });
   },
@@ -131,12 +135,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const nextSales = Number((currentStats.today_sales + amount).toFixed(2));
     const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
     const nextDebts = Number(Math.max(0, currentStats.outstanding_debts - amount).toFixed(2));
+    const nextCount = (currentStats.today_sales_count ?? 0) + 1;
     set({
       stats: {
         ...currentStats,
         today_sales: nextSales,
         today_profit: nextProfit,
         outstanding_debts: nextDebts,
+        today_sales_count: nextCount,
       },
     });
   },
@@ -147,12 +153,14 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const nextSales = Number(Math.max(0, currentStats.today_sales - amount).toFixed(2));
     const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
     const nextDebts = Number((currentStats.outstanding_debts + amount).toFixed(2));
+    const nextCount = Math.max(0, (currentStats.today_sales_count ?? 0) - 1);
     set({
       stats: {
         ...currentStats,
         today_sales: nextSales,
         today_profit: nextProfit,
         outstanding_debts: nextDebts,
+        today_sales_count: nextCount,
       },
     });
   },
@@ -252,7 +260,11 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       const totalSales = todaySalesRes.data
         ?.filter((row) => !isDebtSettlementSale(row.notes))
         .reduce((sum, row) => sum + row.amount_paid, 0) ?? 0;
+      const salesCount = todaySalesRes.data
+        ?.filter((row) => !isDebtSettlementSale(row.notes))
+        .length ?? 0;
       const totalRepayments = todayRepaymentsRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
+      const repaymentsCount = todayRepaymentsRes.data?.length ?? 0;
       const totalExpenses = todayExpensesRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
       const totalDebts = debtsRes.data?.reduce((sum, row) => sum + row.balance, 0) ?? 0;
       const stockAlerts = await getStockAlerts(businessId, branchId);
@@ -267,6 +279,10 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       const resolvedTodaySales = Math.max(serverSalesTotal, cachedTodaySales);
       const resolvedTodayExpenses = Math.max(totalExpenses, latestCached.stats?.today_expenses ?? 0);
       const resolvedTodayProfit = resolvedTodaySales - resolvedTodayExpenses;
+
+      const serverSalesCount = salesCount + repaymentsCount;
+      const cachedTodaySalesCount = latestCached.stats?.today_sales_count ?? 0;
+      const resolvedTodaySalesCount = Math.max(serverSalesCount, cachedTodaySalesCount);
 
       // Merge debts so newly created local debts don't vanish before server sync
       const serverDebts = (debtListRes.data as CustomerDebt[]) ?? [];
@@ -289,6 +305,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         out_of_stock_count: stockAlerts.outOfStockProducts.length,
         outstanding_debts: resolvedOutstandingDebts,
         total_customers: customerCountRes.count ?? 0,
+        today_sales_count: resolvedTodaySalesCount,
       };
 
       set({

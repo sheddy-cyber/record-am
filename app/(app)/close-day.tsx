@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, Text, View, RefreshControl } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, KeyboardAvoidingView, Platform, Text, View, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { dismissScreen } from '@/lib/navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -55,17 +56,18 @@ export default function CloseDayScreen() {
     }
   }, [canViewFinancials, currentBranch, currentBusiness, fetchDailyBalance, selectedDate, summary]);
 
+  const initializedDateRef = useRef<string | null>(null);
+
   useEffect(() => {
     if (!summary) return;
+    if (initializedDateRef.current === selectedDate) return;
 
-    if (actualCash === '') {
-      setActualCash((summary.cash_in_hand_actual ?? summary.cash_in_hand_expected).toFixed(0));
-    }
-
-    if (closeNotes === '' && summary.notes) {
+    setActualCash((summary.cash_in_hand_actual ?? summary.cash_in_hand_expected).toFixed(0));
+    if (summary.notes) {
       setCloseNotes(summary.notes);
     }
-  }, [actualCash, closeNotes, summary]);
+    initializedDateRef.current = selectedDate;
+  }, [selectedDate, summary]);
 
   const repaymentEntries = useMemo(
     () => entries.filter((entry) => entry.type === 'debt_repayment'),
@@ -159,9 +161,9 @@ export default function CloseDayScreen() {
           />
         }
       >
-          <Card style={{ backgroundColor: '#F0F9FF', marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary, marginBottom: 12 }}>
-              Day Summary
+          <Card style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+              Day Financial Summary
             </Text>
             {[
               { label: 'Total Revenue', value: formatCurrency(totalRevenue), color: COLORS.success },
@@ -174,74 +176,118 @@ export default function CloseDayScreen() {
                 value: formatCurrency(summary.net_profit ?? 0),
                 color: (summary.net_profit ?? 0) >= 0 ? COLORS.success : COLORS.danger,
               },
-              { label: 'Expected Cash in Hand', value: formatCurrency(summary.cash_in_hand_expected ?? 0), color: COLORS.accent },
-            ].map((item) => (
-              <View key={item.label} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              { label: 'Expected Cash in Hand', value: formatCurrency(summary.cash_in_hand_expected ?? 0), color: COLORS.accentDark },
+            ].map((item, idx, arr) => (
+              <View
+                key={item.label}
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  paddingVertical: 10,
+                  borderBottomWidth: idx === arr.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                  borderBottomColor: COLORS.borderSubtle,
+                }}
+              >
                 <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>{item.label}</Text>
-                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: item.color }}>{item.value}</Text>
+                <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: item.color }}>{item.value}</Text>
               </View>
             ))}
           </Card>
 
-          <InputField
-            label="Actual Cash Counted"
-            value={actualCash}
-            onChangeText={setActualCash}
-            placeholder="0"
-            keyboardType="numeric"
-            prefix={CURRENCY_SYMBOL}
-            isAmount={true}
-            hint="Count your cash and enter the actual amount on hand."
-            required
-          />
+          <Card style={{ padding: 18, gap: 14 }}>
+            <InputField
+              label="Actual Cash Counted"
+              value={actualCash}
+              onChangeText={setActualCash}
+              placeholder="0"
+              keyboardType="numeric"
+              prefix={CURRENCY_SYMBOL}
+              isAmount={true}
+              hint="Count physical cash in your drawer/register and enter the amount."
+              required
+              containerStyle={{ marginBottom: 0 }}
+            />
 
-          {actualCash !== '' ? (
-            <View
-              style={{
-                backgroundColor:
-                  parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
-                    ? '#ECFDF3'
+            {actualCash !== '' && !Number.isNaN(parseFloat(actualCash)) ? (
+              <View
+                style={{
+                  backgroundColor:
+                    parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
+                      ? COLORS.successLight
+                      : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
+                        ? COLORS.infoLight
+                        : COLORS.dangerLight,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderRadius: RADIUS.md,
+                  borderColor:
+                    parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
+                      ? COLORS.success
+                      : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
+                        ? COLORS.info
+                        : COLORS.danger,
+                  padding: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <Feather
+                  name={
+                    parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
+                      ? 'check-circle'
+                      : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
+                        ? 'trending-up'
+                        : 'alert-triangle'
+                  }
+                  size={18}
+                  color={
+                    parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
+                      ? COLORS.success
+                      : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
+                        ? COLORS.info
+                        : COLORS.danger
+                  }
+                />
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontFamily: FONT.medium,
+                    color:
+                      parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
+                        ? COLORS.success
+                        : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
+                          ? COLORS.info
+                          : COLORS.danger,
+                    flex: 1,
+                  }}
+                >
+                  {parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
+                    ? 'Balance is exact. Zero cash discrepancy.'
                     : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
-                      ? '#EEF4FF'
-                      : '#FEF3F2',
-                borderWidth: 1,
-                borderRadius: RADIUS.md,
-                borderColor:
-                  parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
-                    ? '#BFD9CA'
-                    : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
-                      ? '#B7CADB'
-                      : '#DDAEA6',
-                padding: 14,
-                marginBottom: 16,
-              }}
-            >
-              <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                {parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
-                  ? 'Balance is exact.'
-                  : parseFloat(actualCash) > (summary.cash_in_hand_expected ?? 0)
-                    ? `Surplus: ${CURRENCY_SYMBOL}${(parseFloat(actualCash) - (summary.cash_in_hand_expected ?? 0)).toLocaleString()} extra`
-                    : `Shortage: ${CURRENCY_SYMBOL}${((summary.cash_in_hand_expected ?? 0) - parseFloat(actualCash)).toLocaleString()} missing`}
-              </Text>
-            </View>
-          ) : null}
+                      ? `Surplus: ${CURRENCY_SYMBOL}${(parseFloat(actualCash) - (summary.cash_in_hand_expected ?? 0)).toLocaleString()} extra cash in register`
+                      : `Shortage: ${CURRENCY_SYMBOL}${((summary.cash_in_hand_expected ?? 0) - parseFloat(actualCash)).toLocaleString()} missing from register`}
+                </Text>
+              </View>
+            ) : null}
 
-          <InputField
-            label="Notes (optional)"
-            value={closeNotes}
-            onChangeText={setCloseNotes}
-            placeholder="Any notes about today's operations..."
-            multiline
-            numberOfLines={3}
-          />
+            <InputField
+              label="Notes (optional)"
+              value={closeNotes}
+              onChangeText={setCloseNotes}
+              placeholder="Any operational notes or reasons for discrepancy..."
+              multiline
+              numberOfLines={2}
+              containerStyle={{ marginBottom: 4 }}
+            />
 
-          <Button
-            title="Confirm and Close Day"
-            onPress={handleCloseDay}
-            loading={isSaving}
-            size="lg"
-            style={{ marginTop: 8 }}
-          />
+            <Button
+              title="Confirm and Close Day"
+              onPress={handleCloseDay}
+              loading={isSaving}
+              size="lg"
+            />
+          </Card>
         </KeyboardAwareScrollView>
       </ScreenShell>
   );

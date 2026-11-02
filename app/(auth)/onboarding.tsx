@@ -109,7 +109,7 @@ export default function OnboardingScreen() {
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
+      <View style={{ backgroundColor: COLORS.navy, paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
           <BrandWordmark invert size={24} />
           {step === 0 && (
@@ -237,7 +237,7 @@ export default function OnboardingScreen() {
                 {step === 0 ? (
                   <TouchableOpacity onPress={() => router.push('/(auth)/join-business')} style={{ alignItems: 'center', paddingVertical: 16 }}>
                     <Text style={{ color: COLORS.text.secondary, fontSize: 14, fontFamily: FONT.medium }}>
-                      Have a Business ID? <Text style={{ color: COLORS.accent, fontFamily: FONT.bold }}>Join Business</Text>
+                      Have a Business ID? <Text style={{ color: COLORS.accentDark, fontFamily: FONT.bold }}>Join Business</Text>
                     </Text>
                   </TouchableOpacity>
                 ) : null}

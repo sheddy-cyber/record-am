@@ -67,7 +67,7 @@ export default function JoinBusinessScreen() {
 
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
+      <View style={{ backgroundColor: COLORS.navy, paddingTop: insets.top + 16, paddingHorizontal: SP.xl, paddingBottom: SP.xl, gap: 18 }}>
         <BrandWordmark invert size={24} />
         <View>
           <Text style={{ ...TYPE.h1, color: COLORS.text.inverse, marginTop: 8 }}>

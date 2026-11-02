@@ -1,13 +1,86 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, ActivityIndicator, ViewStyle, TextStyle, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ActivityIndicator, ViewStyle, TextStyle, Modal, StyleSheet, Animated, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP, TYPE } from '@/constants';
 
 export * from './RoleGate';
 export * from './PermissionDenied';
 export * from './GlobalDialog';
 export * from './ConfirmationModal';
 export { confirmModal, showAlertDialog, useConfirmModal } from '@/store/alertStore';
+
+// ─── PressableScale (Tactile Spring Physics) ─────────────────────────────────
+
+export interface PressableScaleProps {
+  children: React.ReactNode;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  activeScale?: number;
+  activeOpacity?: number;
+  disabled?: boolean;
+  style?: ViewStyle | ViewStyle[];
+  containerStyle?: ViewStyle | ViewStyle[];
+}
+
+export const PressableScale: React.FC<PressableScaleProps> = ({
+  children,
+  onPress,
+  onLongPress,
+  activeScale = 0.95,
+  activeOpacity = 0.82,
+  disabled = false,
+  style,
+  containerStyle,
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.timing(scale, {
+      toValue: activeScale,
+      duration: 70,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      speed: 40,
+      bounciness: 6,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const flatStyle = StyleSheet.flatten(style) || {};
+  const hasFlex = flatStyle.flex !== undefined;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressIn={disabled ? undefined : handlePressIn}
+      onPressOut={disabled ? undefined : handlePressOut}
+      disabled={disabled}
+      activeOpacity={activeOpacity}
+      delayPressIn={0}
+      style={[
+        hasFlex && { flex: flatStyle.flex },
+        containerStyle,
+      ]}
+    >
+      <Animated.View
+        style={[
+          style,
+          hasFlex && { width: '100%' },
+          { transform: [{ scale }] },
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </TouchableOpacity>
+  );
+};
+
 type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'success' | 'accent';
 
 interface ButtonProps {
@@ -35,50 +108,82 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const containers: Record<ButtonVariant, ViewStyle> = {
     primary:   { backgroundColor: COLORS.ink },
-    secondary: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.border },
+    secondary: { backgroundColor: COLORS.card, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border },
     danger:    { backgroundColor: COLORS.danger },
-    ghost:     { backgroundColor: 'transparent', borderWidth: 1, borderColor: COLORS.border },
+    ghost:     { backgroundColor: 'transparent', borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border },
     success:   { backgroundColor: COLORS.success },
     accent:    { backgroundColor: COLORS.accent },
   };
   const textColors: Record<ButtonVariant, string> = {
-    primary:   COLORS.text.inverse,
+    primary:   '#FFFFFF',
     secondary: COLORS.text.primary,
-    danger:    COLORS.text.inverse,
+    danger:    '#FFFFFF',
     ghost:     COLORS.text.secondary,
-    success:   COLORS.text.inverse,
-    accent:    '#FFFFFF',
+    success:   '#FFFFFF',
+    accent:    '#000000',
   };
   const heights = { sm: 38, md: 46, lg: 52 };
-  const paddings = { sm: 14, md: 18, lg: 22 };
-  const fontSizes = { sm: 13, md: 14, lg: 15 };
+  const paddings = { sm: 14, md: 20, lg: 24 };
+  const fontSizes = { sm: 13, md: 14.5, lg: 15.5 };
+
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.timing(scale, {
+      toValue: 0.96,
+      duration: 70,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scale, {
+      toValue: 1,
+      speed: 40,
+      bounciness: 6,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const flatStyle = StyleSheet.flatten(style) || {};
+  const hasFlex = flatStyle.flex !== undefined;
 
   return (
     <TouchableOpacity
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 8,
-          borderRadius: RADIUS.md,
-          minHeight: heights[size],
-          paddingHorizontal: paddings[size],
-          opacity: disabled || loading ? 0.45 : 1,
-        },
-        containers[variant],
-        style,
-      ]}
       onPress={onPress}
+      onPressIn={disabled || loading ? undefined : handlePressIn}
+      onPressOut={disabled || loading ? undefined : handlePressOut}
       disabled={disabled || loading}
-      activeOpacity={0.7}
+      activeOpacity={0.82}
       delayPressIn={0}
+      style={[
+        hasFlex && { flex: flatStyle.flex },
+      ]}
     >
-      {loading ? <ActivityIndicator color={textColors[variant]} size="small" /> : null}
-      {!loading && icon ? <Feather name={icon} size={fontSizes[size] + 1} color={textColors[variant]} /> : null}
-      <Text style={[{ fontSize: fontSizes[size], fontFamily: FONT.medium, color: textColors[variant], includeFontPadding: false, letterSpacing: 0 }, textStyle]}>
-        {title}
-      </Text>
+      <Animated.View
+        style={[
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            borderRadius: RADIUS.md,
+            minHeight: heights[size],
+            paddingHorizontal: paddings[size],
+            opacity: disabled || loading ? 0.45 : 1,
+            transform: [{ scale }],
+          },
+          containers[variant],
+          style,
+          hasFlex && { width: '100%' },
+        ]}
+      >
+        {loading ? <ActivityIndicator color={textColors[variant]} size="small" /> : null}
+        {!loading && icon ? <Feather name={icon} size={fontSizes[size] + 1} color={textColors[variant]} /> : null}
+        <Text style={[{ fontSize: fontSizes[size], fontFamily: FONT.medium, color: textColors[variant], includeFontPadding: false, letterSpacing: -0.2 }, textStyle]}>
+          {title}
+        </Text>
+      </Animated.View>
     </TouchableOpacity>
   );
 };
@@ -89,7 +194,7 @@ interface CardProps {
   children: React.ReactNode;
   style?: ViewStyle | ViewStyle[];
   onPress?: () => void;
-  variant?: 'default' | 'muted';
+  variant?: 'default' | 'muted' | 'flat' | 'interactive';
 }
 
 export const Card: React.FC<CardProps> = ({ children, style, onPress, variant = 'default' }) => {
@@ -97,15 +202,46 @@ export const Card: React.FC<CardProps> = ({ children, style, onPress, variant = 
   const baseStyle: ViewStyle = {
     backgroundColor: bg,
     borderRadius: RADIUS.lg,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     padding: SP.card,
   };
 
+  const scale = useRef(new Animated.Value(1)).current;
+
   if (onPress) {
+    const handlePressIn = () => {
+      Animated.timing(scale, {
+        toValue: 0.985,
+        duration: 70,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const handlePressOut = () => {
+      Animated.spring(scale, {
+        toValue: 1,
+        speed: 40,
+        bounciness: 6,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const flatStyle = StyleSheet.flatten(style) || {};
+    const hasFlex = flatStyle.flex !== undefined;
+
     return (
-      <TouchableOpacity style={[baseStyle, style]} onPress={onPress} activeOpacity={0.7} delayPressIn={0}>
-        {children}
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        activeOpacity={0.88}
+        delayPressIn={0}
+        style={[hasFlex && { flex: flatStyle.flex }]}
+      >
+        <Animated.View style={[baseStyle, style, hasFlex && { width: '100%' }, { transform: [{ scale }] }]}>
+          {children}
+        </Animated.View>
       </TouchableOpacity>
     );
   }
@@ -142,12 +278,24 @@ export const StatCard: React.FC<StatCardProps> = ({
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
       <View style={{ flex: 1, marginRight: 8 }}>
         <Text style={{ ...TYPE.overline, color: COLORS.text.muted, marginBottom: 6 }}>{label}</Text>
-        <Text style={{ ...TYPE.stat, color: COLORS.text.primary }}>{value}</Text>
-        {subtext ? <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>{subtext}</Text> : null}
+        <Text style={{ ...TYPE.stat, color: COLORS.text.primary }} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
+        {subtext ? <Text style={{ fontSize: 11.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 }}>{subtext}</Text> : null}
         {trend !== undefined ? (
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 }}>
-            <Feather name={trend >= 0 ? 'trending-up' : 'trending-down'} size={12} color={trend >= 0 ? COLORS.success : COLORS.danger} />
-            <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: trend >= 0 ? COLORS.success : COLORS.danger }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginTop: 8,
+              gap: 4,
+              alignSelf: 'flex-start',
+              paddingHorizontal: 7,
+              paddingVertical: 2.5,
+              borderRadius: RADIUS.full,
+              backgroundColor: trend >= 0 ? COLORS.successLight : COLORS.dangerLight,
+            }}
+          >
+            <Feather name={trend >= 0 ? 'trending-up' : 'trending-down'} size={11} color={trend >= 0 ? COLORS.success : COLORS.danger} />
+            <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: trend >= 0 ? COLORS.success : COLORS.danger }}>
               {Math.abs(trend).toFixed(1)}%
             </Text>
           </View>
@@ -155,19 +303,121 @@ export const StatCard: React.FC<StatCardProps> = ({
       </View>
       <View
         style={{
-          width: 36,
-          height: 36,
+          width: 38,
+          height: 38,
           borderRadius: RADIUS.md,
           backgroundColor: iconBg,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Feather name={icon} size={16} color={iconColor} />
+        <Feather name={icon} size={17} color={iconColor} />
       </View>
     </View>
   </Card>
 );
+
+// ─── Smart Chip / Micro Tag (Upwork-Style) ──────────────────────────────────
+
+export type SmartChipVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent' | 'primary';
+
+const chipThemes: Record<SmartChipVariant, { bg: string; text: string; border: string; dot: string }> = {
+  neutral: { bg: COLORS.surface2, text: COLORS.text.secondary, border: COLORS.border, dot: COLORS.text.muted },
+  success: { bg: COLORS.successLight, text: '#059669', border: '#a7f3d0', dot: COLORS.success },
+  warning: { bg: COLORS.warningLight, text: '#d97706', border: '#fde68a', dot: COLORS.warning },
+  danger:  { bg: COLORS.dangerLight, text: '#dc2626', border: '#fecaca', dot: COLORS.danger },
+  info:    { bg: COLORS.infoLight, text: '#0284c7', border: '#bae6fd', dot: COLORS.info },
+  accent:  { bg: COLORS.accentLight, text: COLORS.accentDark, border: '#FDE047', dot: COLORS.accent },
+  primary: { bg: COLORS.navyLight, text: COLORS.ink, border: '#bae6fd', dot: COLORS.ink },
+};
+
+// Deep solid backgrounds with crisp white text for status pills
+const dotChipThemes: Record<SmartChipVariant, { bg: string; text: string; border: string; dot: string }> = {
+  neutral: { bg: '#374151', text: '#FFFFFF', border: '#4B5563', dot: '#FFFFFF' },
+  success: { bg: '#15803D', text: '#FFFFFF', border: '#166534', dot: '#FFFFFF' },
+  warning: { bg: '#B45309', text: '#FFFFFF', border: '#92400E', dot: '#FFFFFF' },
+  danger:  { bg: '#B91C1C', text: '#FFFFFF', border: '#991B1B', dot: '#FFFFFF' },
+  info:    { bg: '#0369A1', text: '#FFFFFF', border: '#075985', dot: '#FFFFFF' },
+  accent:  { bg: '#EAB308', text: '#002744', border: '#CA8A04', dot: '#002744' },
+  primary: { bg: '#004E89', text: '#FFFFFF', border: '#003B68', dot: '#FFFFFF' },
+};
+
+export interface SmartChipProps {
+  label: string;
+  dot?: boolean;
+  deep?: boolean;
+  dotColor?: string;
+  icon?: keyof typeof Feather.glyphMap;
+  variant?: SmartChipVariant;
+  size?: 'xs' | 'sm' | 'md';
+  style?: ViewStyle;
+  textStyle?: TextStyle;
+}
+
+export const SmartChip: React.FC<SmartChipProps> = ({
+  label,
+  dot = false,
+  deep = false,
+  dotColor,
+  icon,
+  variant = 'neutral',
+  size = 'sm',
+  style,
+  textStyle,
+}) => {
+  const isDeep =
+    deep ||
+    dot ||
+    (!icon &&
+      (variant === 'danger' ||
+        variant === 'success' ||
+        variant === 'warning' ||
+        variant === 'primary' ||
+        variant === 'accent'));
+  const t = isDeep ? dotChipThemes[variant] : chipThemes[variant];
+  const isXs = size === 'xs';
+  const isSm = size === 'sm';
+
+  const textSize = isXs ? 10 : isSm ? 11 : 12;
+  const paddingH = isXs ? 7 : isSm ? 9 : 11;
+  const paddingV = isXs ? 2 : isSm ? 3 : 4;
+
+  return (
+    <View
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          backgroundColor: t.bg,
+          borderRadius: RADIUS.full,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: t.border,
+          paddingHorizontal: paddingH,
+          paddingVertical: paddingV,
+          gap: isXs ? 4 : 5,
+          alignSelf: 'flex-start',
+        },
+        style,
+      ]}
+    >
+      {icon ? <Feather name={icon} size={textSize + 1} color={t.text} /> : null}
+      <Text
+        style={[
+          {
+            fontSize: textSize,
+            fontFamily: isDeep ? FONT.semiBold : FONT.medium,
+            color: t.text,
+            letterSpacing: 0.1,
+            includeFontPadding: false,
+          },
+          textStyle,
+        ]}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+};
 
 // ─── Badge ──────────────────────────────────────────────────────────────────
 
@@ -175,30 +425,31 @@ type BadgeVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'acc
 
 const badgeColors: Record<BadgeVariant, { bg: string; text: string; border: string }> = {
   neutral: { bg: COLORS.surface2, text: COLORS.text.secondary, border: COLORS.border },
-  success: { bg: COLORS.successLight, text: '#3D6948', border: '#C2DBCA' },
-  warning: { bg: COLORS.warningLight, text: '#7A5230', border: '#E8D4BF' },
-  danger:  { bg: COLORS.dangerLight, text: '#8B1A22', border: '#F2C4C8' },
-  info:    { bg: COLORS.infoLight, text: '#3D5A63', border: '#C8D8DD' },
-  accent:  { bg: COLORS.accentLight, text: COLORS.accentMuted, border: '#E8E0A0' },
-  primary: { bg: COLORS.ink, text: COLORS.text.inverse, border: COLORS.ink },
+  success: { bg: COLORS.successLight, text: '#059669', border: '#a7f3d0' },
+  warning: { bg: COLORS.warningLight, text: '#d97706', border: '#fde68a' },
+  danger:  { bg: COLORS.dangerLight, text: '#dc2626', border: '#fecaca' },
+  info:    { bg: COLORS.infoLight, text: '#0284c7', border: '#bae6fd' },
+  accent:  { bg: COLORS.accentLight, text: COLORS.accentDark, border: '#FDE047' },
+  primary: { bg: COLORS.ink, text: '#FFFFFF', border: COLORS.ink },
 };
 
-export const Badge: React.FC<{ label: string; variant?: BadgeVariant }> = ({ label, variant = 'neutral' }) => {
+export const Badge: React.FC<{ label: string; variant?: BadgeVariant; size?: 'sm' | 'md' }> = ({ label, variant = 'neutral', size = 'md' }) => {
   const c = badgeColors[variant];
+  const isSm = size === 'sm';
 
   return (
     <View
       style={{
         backgroundColor: c.bg,
-        borderRadius: RADIUS.sm,
-        borderWidth: 1,
+        borderRadius: RADIUS.full,
+        borderWidth: StyleSheet.hairlineWidth,
         borderColor: c.border,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
+        paddingHorizontal: isSm ? 7 : 9,
+        paddingVertical: isSm ? 2 : 3,
         alignSelf: 'flex-start',
       }}
     >
-      <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: c.text }}>{label}</Text>
+      <Text style={{ fontSize: isSm ? 10 : 11, fontFamily: FONT.bold, color: c.text, letterSpacing: 0.1 }}>{label}</Text>
     </View>
   );
 };
@@ -206,7 +457,7 @@ export const Badge: React.FC<{ label: string; variant?: BadgeVariant }> = ({ lab
 // ─── Divider ────────────────────────────────────────────────────────────────
 
 export const Divider: React.FC<{ style?: ViewStyle }> = ({ style }) => (
-  <View style={[{ height: 1, backgroundColor: COLORS.border }, style]} />
+  <View style={[{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle }, style]} />
 );
 
 // ─── Empty State ────────────────────────────────────────────────────────────
@@ -217,27 +468,29 @@ export const EmptyState: React.FC<{
   description?: string;
   action?: { label: string; onPress: () => void };
 }> = ({ icon, title, description, action }) => (
-  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+  <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 44, paddingHorizontal: 28 }}>
     <View
       style={{
-        width: 56,
-        height: 56,
+        width: 60,
+        height: 60,
         borderRadius: RADIUS.full,
         backgroundColor: COLORS.surface2,
+        borderWidth: 1,
+        borderColor: COLORS.border,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 18,
+        marginBottom: 16,
       }}
     >
       <Feather name={icon} size={24} color={COLORS.text.muted} />
     </View>
-    <Text style={{ ...TYPE.h3, color: COLORS.text.primary, textAlign: 'center', marginBottom: 8 }}>{title}</Text>
+    <Text style={{ ...TYPE.h3, color: COLORS.text.primary, textAlign: 'center', marginBottom: 6 }}>{title}</Text>
     {description ? (
-      <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center', marginBottom: 24, lineHeight: 20 }}>
+      <Text style={{ fontSize: 13.5, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center', marginBottom: action ? 20 : 0, lineHeight: 20 }}>
         {description}
       </Text>
     ) : null}
-    {action ? <Button title={action.label} onPress={action.onPress} size="sm" /> : null}
+    {action ? <Button title={action.label} onPress={action.onPress} size="sm" variant="primary" /> : null}
   </View>
 );
 
@@ -247,7 +500,7 @@ export const LoadingScreen: React.FC<{ message?: string }> = ({ message }) => (
   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface }}>
     <ActivityIndicator size="large" color={COLORS.accent} />
     {message ? (
-      <Text style={{ marginTop: 12, color: COLORS.text.muted, fontSize: 14, fontFamily: FONT.regular }}>{message}</Text>
+      <Text style={{ marginTop: 14, color: COLORS.text.muted, fontSize: 13.5, fontFamily: FONT.medium }}>{message}</Text>
     ) : null}
   </View>
 );
@@ -257,21 +510,23 @@ export const LoadingScreen: React.FC<{ message?: string }> = ({ message }) => (
 export const SectionHeader: React.FC<{
   title: string;
   action?: { label: string; onPress: () => void };
+  rightAction?: React.ReactNode;
   color?: string;
   style?: TextStyle;
 }> = ({
   title,
   action,
+  rightAction,
   color,
   style,
 }) => (
-  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12 }}>
+  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingHorizontal: 2 }}>
     <Text style={[{ ...TYPE.overline, color: color || COLORS.text.muted }, style]}>{title}</Text>
-    {action ? (
-      <TouchableOpacity onPress={action.onPress} activeOpacity={0.7}>
-        <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.accent }}>{action.label}</Text>
+    {rightAction || (action ? (
+      <TouchableOpacity onPress={action.onPress} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Text style={{ fontSize: 12.5, fontFamily: FONT.bold, color: COLORS.accentDark }}>{action.label}</Text>
       </TouchableOpacity>
-    ) : null}
+    ) : null)}
   </View>
 );
 
@@ -294,9 +549,9 @@ export const ListRow: React.FC<{
   >
     {left}
     <View style={{ flex: 1 }}>
-      <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary }}>{title}</Text>
+      <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary, letterSpacing: -0.2 }}>{title}</Text>
       {subtitle ? (
-        <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}>{subtitle}</Text>
+        <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2, lineHeight: 17 }}>{subtitle}</Text>
       ) : null}
     </View>
     {right}
@@ -311,11 +566,11 @@ export const IconBox: React.FC<{
   color?: string;
   bg?: string;
   size?: number;
-}> = ({ icon, color = COLORS.text.secondary, bg = COLORS.surface2, size = 16 }) => (
+}> = ({ icon, color = '#FFFFFF', bg = COLORS.navy, size = 16 }) => (
   <View
     style={{
-      width: 40,
-      height: 40,
+      width: 38,
+      height: 38,
       borderRadius: RADIUS.md,
       backgroundColor: bg,
       alignItems: 'center',

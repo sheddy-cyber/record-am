@@ -1,14 +1,14 @@
 import React, { useCallback, useDeferredValue, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
-import { Badge, EmptyState, PermissionDenied } from '@/components/ui';
+import { EmptyState, PermissionDenied, SmartChip } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from '@/constants';
 import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
 import { canManagePurchases, hasPermission } from '@/lib/permissions';
 
@@ -105,18 +105,30 @@ export default function SuppliersScreen() {
             gap: 10,
           }}
         >
-          <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 9, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, paddingHorizontal: 13 }}>
+          <View
+            style={{
+              height: 48,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderRadius: RADIUS.lg,
+              borderColor: COLORS.border,
+              backgroundColor: COLORS.card,
+              paddingHorizontal: 14,
+            }}
+          >
             <Feather name="search" size={16} color={COLORS.text.muted} />
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder="Search supplier or phone"
+              placeholder="Search supplier by name or phone..."
               placeholderTextColor={COLORS.text.muted}
               underlineColorAndroid="transparent"
               selectionColor={COLORS.accent}
               cursorColor={COLORS.accent}
               importantForAutofill="no"
-              style={{ flex: 1, fontFamily: FONT.regular, color: COLORS.text.primary, fontSize: 14, paddingVertical: 9 }}
+              style={{ flex: 1, fontFamily: FONT.regular, color: COLORS.text.primary, fontSize: 14, paddingVertical: 10 }}
             />
             {search ? (
               <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
@@ -128,19 +140,56 @@ export default function SuppliersScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <TouchableOpacity
               onPress={() => setSupplierView('all')}
-              activeOpacity={0.8}
-              style={{ minHeight: 34, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.full, borderColor: supplierView === 'all' ? COLORS.ink : COLORS.border, backgroundColor: supplierView === 'all' ? COLORS.ink : COLORS.card }}
+              activeOpacity={0.7}
+              style={{
+                height: 34,
+                justifyContent: 'center',
+                paddingHorizontal: 14,
+                borderWidth: 1,
+                borderRadius: RADIUS.full,
+                borderColor: supplierView === 'all' ? COLORS.navy : COLORS.border,
+                backgroundColor: supplierView === 'all' ? COLORS.navy : COLORS.card,
+              }}
             >
-              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: supplierView === 'all' ? COLORS.text.inverse : COLORS.text.secondary }}>All</Text>
+              <Text
+                style={{
+                  fontFamily: FONT.medium,
+                  fontSize: 12,
+                  color: supplierView === 'all' ? '#ffffff' : COLORS.text.secondary,
+                }}
+              >
+                All Suppliers ({suppliers.length})
+              </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
               onPress={() => setSupplierView('owing')}
-              activeOpacity={0.8}
-              style={{ minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 5, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.full, borderColor: supplierView === 'owing' ? COLORS.danger : COLORS.border, backgroundColor: supplierView === 'owing' ? '#FEF3F2' : COLORS.card }}
+              activeOpacity={0.7}
+              style={{
+                height: 34,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                justifyContent: 'center',
+                paddingHorizontal: 14,
+                borderWidth: 1,
+                borderRadius: RADIUS.full,
+                borderColor: supplierView === 'owing' ? COLORS.danger : COLORS.border,
+                backgroundColor: supplierView === 'owing' ? COLORS.dangerLight : COLORS.card,
+              }}
             >
               <Feather name="alert-circle" size={13} color={supplierView === 'owing' ? COLORS.danger : COLORS.text.muted} />
-              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: supplierView === 'owing' ? COLORS.danger : COLORS.text.secondary }}>We owe</Text>
+              <Text
+                style={{
+                  fontFamily: FONT.medium,
+                  fontSize: 12,
+                  color: supplierView === 'owing' ? COLORS.danger : COLORS.text.secondary,
+                }}
+              >
+                We Owe
+              </Text>
             </TouchableOpacity>
+
             <View style={{ flex: 1 }} />
             {hasActiveFilter ? (
               <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
@@ -152,10 +201,10 @@ export default function SuppliersScreen() {
 
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 }}>
             <Text numberOfLines={1} style={{ flex: 1, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
-              {filtered.length} shown · <Text style={{ fontFamily: FONT.medium, color: COLORS.accent }}>{formatSummaryCurrency(shownPurchases)} purchased</Text>
+              {filtered.length} suppliers · <Text style={{ fontFamily: FONT.semiBold, color: COLORS.navy }}>{formatSummaryCurrency(shownPurchases)} purchased</Text>
             </Text>
-            <Text numberOfLines={1} style={{ marginLeft: 8, fontFamily: FONT.bold, fontSize: 13, color: shownDebt > 0 ? COLORS.danger : COLORS.text.muted }}>
-              {shownDebt > 0 ? `Owe ${formatSummaryCurrency(shownDebt)}` : 'All clear'}
+            <Text numberOfLines={1} style={{ marginLeft: 8, fontFamily: FONT.semiBold, fontSize: 13, color: shownDebt > 0 ? COLORS.danger : COLORS.text.muted }}>
+              {shownDebt > 0 ? `We Owe: ${formatSummaryCurrency(shownDebt)}` : 'No balances owed'}
             </Text>
           </View>
         </View>
@@ -187,7 +236,7 @@ export default function SuppliersScreen() {
           <FlashList
             data={filtered}
             keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 }}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -197,71 +246,98 @@ export default function SuppliersScreen() {
               />
             }
             
-            renderItem={({ item, index }) => (
-              <Pressable
-                onPress={() => {
-                  setSelectedSupplier(item);
-                  router.push({ pathname: '/(app)/supplier-detail', params: { supplierId: item.id } });
-                }}
-              >
-                <View
+            renderItem={({ item }) => {
+              const initials = (item.name || 'S').charAt(0).toUpperCase();
+
+              return (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setSelectedSupplier(item);
+                    router.push({ pathname: '/(app)/supplier-detail', params: { supplierId: item.id } });
+                  }}
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                    paddingVertical: 16,
-                    borderBottomWidth: index === filtered.length - 1 ? 0 : 1,
-                    borderBottomColor: COLORS.border,
+                    backgroundColor: COLORS.card,
+                    borderRadius: RADIUS.lg,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: COLORS.border,
+                    padding: 15,
+                    marginBottom: 8,
+                    gap: 10,
                   }}
                 >
-                  <View
-                    style={{
-                      width: 48,
-                      height: 48,
-                      backgroundColor: COLORS.ink + '18',
-                      borderWidth: 1,
-                      borderRadius: RADIUS.md,
-                      borderColor: COLORS.border,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="truck" size={20} color={COLORS.ink} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                      {item.name}
-                    </Text>
-                    {item.phone ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                        <Feather name="phone" size={12} color={COLORS.text.muted} />
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.muted }}>
-                          {item.phone}
+                  {/* ── Top Bar: Avatar, Supplier Name & Total Purchased ── */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                      <View
+                        style={{
+                          width: 38,
+                          height: 38,
+                          backgroundColor: COLORS.navyLight,
+                          borderRadius: RADIUS.full,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.ink }}>
+                          {initials}
                         </Text>
                       </View>
-                    ) : null}
-                    <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary }}>
-                        {item.total_orders} order{item.total_orders !== 1 ? 's' : ''}
-                      </Text>
-                      {item.last_order ? (
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
-                          Last: {format(new Date(item.last_order), 'MMM d')}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
+                          {item.name}
                         </Text>
-                      ) : null}
+                        {item.phone ? (
+                          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
+                            {item.phone}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    <View style={{ alignItems: 'flex-end' }}>
+                      <Text style={{ fontSize: 15.5, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }}>
+                        {formatCurrency(item.total_purchased)}
+                      </Text>
+                      <Text style={{ fontSize: 10.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                        total supplied
+                      </Text>
                     </View>
                   </View>
-                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                    <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.accent }}>
-                      {formatCurrency(item.total_purchased)}
-                    </Text>
-                    {item.outstanding_debt > 0 ? (
-                      <Badge label={`Owe ${formatCurrency(item.outstanding_debt)}`} variant="danger" />
-                    ) : null}
+
+                  {/* ── Bottom Bar: Smart Micro-Chips & Drill-Down Affordance ── */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, marginRight: 8 }}>
+                      <SmartChip
+                        label={`${item.total_orders} ${item.total_orders === 1 ? 'order' : 'orders'}`}
+                        icon="truck"
+                        variant="neutral"
+                        size="xs"
+                      />
+
+                      {item.last_order ? (
+                        <SmartChip
+                          label={`Last: ${format(new Date(item.last_order), 'MMM d')}`}
+                          variant="neutral"
+                          size="xs"
+                        />
+                      ) : null}
+
+                      {item.outstanding_debt > 0 ? (
+                        <SmartChip
+                          label={`Owe ${formatCurrency(item.outstanding_debt)}`}
+                          dot
+                          variant="danger"
+                          size="xs"
+                        />
+                      ) : null}
+                    </View>
+
+                    <Feather name="chevron-right" size={15} color={COLORS.text.muted} />
                   </View>
-                </View>
-              </Pressable>
-            )}
+                </TouchableOpacity>
+              );
+            }}
           />
         )}
       </View>

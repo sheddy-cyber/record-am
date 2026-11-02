@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card, Divider, SectionHeader } from '@/components/ui';
 import { InputField, SelectField } from '@/components/forms';
@@ -67,6 +67,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
   onSubmitSale,
 }) => {
   const effectivePaid = amountPaid === '' ? cartTotal : (parseFloat(amountPaid) || 0);
+  const buttonAmount = effectivePaid > cartTotal ? effectivePaid : cartTotal;
   const parsedCash = parseFloat(cashAmount) || 0;
   const parsedTransfer = parseFloat(transferAmount) || 0;
   const splitSum = Number((parsedCash + parsedTransfer).toFixed(2));
@@ -83,53 +84,70 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
 
   return (
     <View>
-      <SectionHeader title="Checkout" />
-      <Card style={{ gap: 12 }}>
-        <View style={{ gap: 8 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+      <SectionHeader title="Payment & Checkout" />
+      <Card style={{ gap: 14 }}>
+        <View
+          style={{
+            backgroundColor: COLORS.surface,
+            borderRadius: RADIUS.lg,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: COLORS.border,
+            padding: 14,
+            gap: 10,
+          }}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>Subtotal</Text>
-            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.primary }}>{formatCurrency(subtotal)}</Text>
+            <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>{formatCurrency(subtotal)}</Text>
           </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>Discount</Text>
-            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.primary }}>- {formatCurrency(totalDiscount)}</Text>
-          </View>
-          <Divider />
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>Total</Text>
-            <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.accent }}>{formatCurrency(cartTotal)}</Text>
+          {totalDiscount > 0 && (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary }}>Discount</Text>
+              <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.danger }}>- {formatCurrency(totalDiscount)}</Text>
+            </View>
+          )}
+          <Divider style={{ marginVertical: 2 }} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={{ fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>Total Due</Text>
+            <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.accent }}>{formatCurrency(cartTotal)}</Text>
           </View>
         </View>
 
-        <InputField
-          label="Customer Name"
-          value={customerName}
-          onChangeText={onCustomerNameChange}
-          placeholder="Leave blank for walk-in"
-          containerStyle={{ marginBottom: 0 }}
-        />
-        <InputField
-          label="Customer Phone"
-          value={customerPhone}
-          onChangeText={onCustomerPhoneChange}
-          placeholder="08012345678"
-          keyboardType="phone-pad"
-          containerStyle={{ marginBottom: 0 }}
-        />
-        <InputField
-          label="Amount Paid"
-          value={amountPaid}
-          onChangeText={onAmountPaidChange}
-          onBlur={onAmountPaidBlur}
-          placeholder="0"
-          keyboardType="numeric"
-          prefix={CURRENCY_SYMBOL}
-          isAmount={true}
-          containerStyle={{ marginBottom: 0 }}
-        />
+        <View style={{ gap: 12 }}>
+          <InputField
+            label="Customer Name"
+            value={customerName}
+            onChangeText={onCustomerNameChange}
+            placeholder="Walk-in customer (optional)"
+            containerStyle={{ marginBottom: 0 }}
+          />
+          <InputField
+            label="Customer Phone"
+            value={customerPhone}
+            onChangeText={onCustomerPhoneChange}
+            placeholder="08012345678"
+            keyboardType="phone-pad"
+            containerStyle={{ marginBottom: 0 }}
+          />
+          <InputField
+            label="Amount Paid"
+            value={amountPaid}
+            onChangeText={onAmountPaidChange}
+            onBlur={onAmountPaidBlur}
+            placeholder="0"
+            keyboardType="numeric"
+            prefix={CURRENCY_SYMBOL}
+            isAmount={true}
+            containerStyle={{ marginBottom: 0 }}
+          />
+        </View>
+
         {amountOwed > 0 ? (
           <View
             style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
               borderWidth: 1,
               borderRadius: RADIUS.md,
               borderColor: COLORS.warning,
@@ -137,11 +155,13 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
               padding: 12,
             }}
           >
-            <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.warning }}>
-              Outstanding balance: {formatCurrency(amountOwed)}. You can also add a discount to reconcile this difference.
+            <Feather name="alert-triangle" size={16} color={COLORS.warning} />
+            <Text style={{ flex: 1, fontSize: 12, fontFamily: FONT.medium, color: COLORS.warning, lineHeight: 18 }}>
+              Outstanding balance: <Text style={{ fontFamily: FONT.bold }}>{formatCurrency(amountOwed)}</Text>. Will be recorded as customer debt.
             </Text>
           </View>
         ) : null}
+
         <SelectField
           label="Payment Method"
           value={paymentMethod}
@@ -152,7 +172,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
 
         {(isTransfer || isPos) ? (
           relevantAccounts.length > 0 ? (
-            <View style={{ gap: 4 }}>
+            <View style={{ gap: 6 }}>
               <SelectField
                 label={accountLabel}
                 value={paymentAccountId || ''}
@@ -175,7 +195,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                   activeOpacity={0.7}
                   style={{ alignSelf: 'flex-start', paddingVertical: 2, paddingHorizontal: 4 }}
                 >
-                  <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.accent }}>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accent }}>
                     + Add new {isPos ? 'POS terminal' : 'bank account'}
                   </Text>
                 </TouchableOpacity>
@@ -190,20 +210,31 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: 12,
-                backgroundColor: '#EBF3FB',
+                backgroundColor: COLORS.surface,
                 borderRadius: RADIUS.md,
-                borderWidth: 1,
-                borderColor: '#B8CFDF',
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: COLORS.border,
               }}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                <Feather name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: COLORS.surface2,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Feather name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
+                </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.navy }}>
-                    No {isPos ? 'POS terminals' : 'bank accounts'} saved yet.
+                  <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
+                    No {isPos ? 'POS terminals' : 'bank accounts'} saved yet
                   </Text>
-                  <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                    Tap to add so you can track payments by {isPos ? 'terminal' : 'bank'}.
+                  <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}>
+                    Add one to track payments by {isPos ? 'terminal' : 'bank'}.
                   </Text>
                 </View>
               </View>
@@ -216,19 +247,19 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
           <View
             style={{
               padding: 14,
-              backgroundColor: '#F5F0E4',
+              backgroundColor: COLORS.surface,
               borderRadius: RADIUS.md,
-              borderWidth: 1,
-              borderColor: '#D8CEB7',
-              gap: 10,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: COLORS.border,
+              gap: 12,
             }}
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+              <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
                 Mixed Payment Split
               </Text>
-              <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                Total: {formatCurrency(effectivePaid)}
+              <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
+                Target: {formatCurrency(effectivePaid)}
               </Text>
             </View>
 
@@ -285,10 +316,10 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: 10,
-                  backgroundColor: '#FFFDF8',
+                  backgroundColor: COLORS.card,
                   borderRadius: RADIUS.sm,
                   borderWidth: 1,
-                  borderColor: '#D8CEB7',
+                  borderColor: COLORS.border,
                 }}
               >
                 <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
@@ -299,33 +330,35 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
             ) : null}
 
             {isSplitMismatch ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.dangerLight, padding: 8, borderRadius: RADIUS.sm }}>
                 <Feather name="alert-circle" size={14} color={COLORS.danger} />
-                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.danger }}>
-                  Split ({formatCurrency(splitSum)}) does not match amount paid ({formatCurrency(effectivePaid)})
+                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.danger, flex: 1 }}>
+                  Split sum ({formatCurrency(splitSum)}) does not match amount paid ({formatCurrency(effectivePaid)})
                 </Text>
               </View>
             ) : (
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                Cash: {formatCurrency(parsedCash)} · Transfer: {formatCurrency(parsedTransfer)}
+              <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.success }}>
+                ✓ Split balanced: Cash {formatCurrency(parsedCash)} + Transfer {formatCurrency(parsedTransfer)}
               </Text>
             )}
           </View>
         ) : null}
+
         <InputField
           label="Notes"
           value={saleNotes}
           onChangeText={onSaleNotesChange}
-          placeholder="Optional note for this sale"
+          placeholder="Optional notes or reference number..."
           multiline
-          numberOfLines={3}
-          containerStyle={{ marginBottom: 0 }}
+          numberOfLines={2}
+          containerStyle={{ marginBottom: 4 }}
         />
+
         <Button
           title={
             savingSale
-              ? (isEditing ? 'Updating...' : 'Recording...')
-              : `${isEditing ? 'Update Sale' : 'Confirm Sale'} \u00B7 ${formatCurrency(cartTotal)}`
+              ? (isEditing ? 'Updating Sale...' : 'Recording Sale...')
+              : `${isEditing ? 'Update Sale' : 'Complete Sale'} \u00B7 ${formatCurrency(buttonAmount)}`
           }
           onPress={onSubmitSale}
           loading={savingSale}

@@ -120,7 +120,7 @@ export default function RegisterScreen() {
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: COLORS.surface }}>
-        <View style={{ backgroundColor: COLORS.ink, paddingTop: insets.top + 16, paddingHorizontal: 28, paddingBottom: 28, gap: 18 }}>
+        <View style={{ backgroundColor: COLORS.navy, paddingTop: insets.top + 16, paddingHorizontal: 28, paddingBottom: 28, gap: 18 }}>
           <AuthBackButton onPress={handleBack} />
           {activeStep === 0 ? <BrandMark size={60} badge /> : null}
           <AuthProgress step={activeStep} total={STEPS.length} />

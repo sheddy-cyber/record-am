@@ -177,17 +177,17 @@ export function ScreenHeader({
   const insets = useSafeAreaInsets();
   const isDark = theme === "dark";
   const bg = isDark ? COLORS.ink : COLORS.card;
-  const titleColor = isDark ? COLORS.text.inverse : COLORS.text.primary;
-  const subtitleColor = isDark ? "rgba(250,250,248,0.5)" : COLORS.text.muted;
+  const titleColor = isDark ? '#FFFFFF' : COLORS.text.primary;
+  const subtitleColor = isDark ? "rgba(255, 255, 255, 0.65)" : COLORS.text.muted;
   const statusBarStyle: StatusBarMode = isDark ? "light" : "dark";
   return (
     <View
       style={[
         {
           backgroundColor: bg,
-          paddingTop: insets.top + 14,
+          paddingTop: insets.top + 12,
           paddingHorizontal: SP.page,
-          paddingBottom: 18,
+          paddingBottom: 16,
           borderBottomWidth: isDark ? 0 : 1,
           borderBottomColor: COLORS.border,
         },
@@ -203,11 +203,11 @@ export function ScreenHeader({
           gap: 12,
         }}
       >
-        {left ? <View style={{ minWidth: 40 }}>{left}</View> : null}
-        <View style={{ flex: 1 }}>
+        {left ? <View style={{ minWidth: 38 }}>{left}</View> : null}
+        <View style={{ flex: 1, justifyContent: 'center' }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
             <Text 
-              style={[{ ...TYPE.h2, color: titleColor }, titleStyle]}
+              style={[{ ...TYPE.h2, color: titleColor, letterSpacing: -0.3 }, titleStyle]}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
@@ -217,18 +217,19 @@ export function ScreenHeader({
           {subtitle ? (
             <Text
               style={{
-                fontSize: 13,
+                fontSize: 12.5,
                 fontFamily: FONT.regular,
                 color: subtitleColor,
-                marginTop: 3,
+                marginTop: 2,
               }}
+              numberOfLines={1}
             >
               {subtitle}
             </Text>
           ) : null}
         </View>
         {right ? (
-          <View style={{ minWidth: 40, alignItems: "flex-end" }}>{right}</View>
+          <View style={{ minWidth: 38, alignItems: "flex-end" }}>{right}</View>
         ) : null}
       </View>
     </View>
@@ -252,14 +253,16 @@ export function HeaderAction({
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={0.75}
       delayPressIn={0}
       style={{
-        minHeight: 38,
-        minWidth: 38,
-        paddingHorizontal: label ? 14 : 8,
-        borderRadius: RADIUS.md,
-        backgroundColor: isDark ? "rgba(250,250,248,0.1)" : COLORS.surface2,
+        minHeight: 36,
+        minWidth: 36,
+        paddingHorizontal: label ? 14 : 10,
+        borderRadius: RADIUS.full,
+        backgroundColor: isDark ? "rgba(255, 255, 255, 0.12)" : COLORS.surface2,
+        borderWidth: 1,
+        borderColor: isDark ? "rgba(255, 255, 255, 0.18)" : COLORS.border,
         alignItems: "center",
         justifyContent: "center",
         flexDirection: "row",
@@ -269,16 +272,17 @@ export function HeaderAction({
       {icon ? (
         <Feather
           name={icon}
-          size={16}
-          color={isDark ? COLORS.text.inverse : COLORS.text.primary}
+          size={15}
+          color={isDark ? '#FFFFFF' : COLORS.text.primary}
         />
       ) : null}
       {label ? (
         <Text
           style={{
-            fontSize: 13,
+            fontSize: 12.5,
             fontFamily: FONT.medium,
-            color: isDark ? COLORS.text.inverse : COLORS.text.primary,
+            color: isDark ? '#FFFFFF' : COLORS.text.primary,
+            letterSpacing: -0.1,
           }}
         >
           {label}

@@ -32,7 +32,7 @@ import {
   getSaleUnitOption,
   usesCustomBundleSize,
 } from '@/lib/records';
-import { Button, LoadingScreen } from '@/components/ui';
+import { Button, EmptyState, LoadingScreen } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import {
@@ -41,7 +41,7 @@ import {
   SaleProductPicker,
 } from '@/components/sales';
 import { COLORS, CURRENCY_SYMBOL, FONT } from '@/constants';
-import { CartItem, PaymentMethod, Product, Sale, SaleItem } from '@/types';
+import { CartItem, PaymentMethod, PaymentStatus, Product, Sale, SaleItem } from '@/types';
 import { dismissScreen } from '@/lib/navigation';
 
 const MAX_VISIBLE_PRODUCTS = 5;
@@ -721,6 +721,40 @@ export default function RecordSaleScreen() {
       finalTransferAmount = roundAmount(parsedTransfer);
     }
 
+    const hasHigherPayment = paidAmount > cartTotal && cartTotal > 0;
+    const effectiveTotalAmount = hasHigherPayment ? roundAmount(paidAmount) : roundAmount(cartTotal);
+    const effectiveAmountPaid = roundAmount(paidAmount);
+    const effectiveAmountOwed = hasHigherPayment ? 0 : roundAmount(amountOwed);
+    const effectiveSubtotal = hasHigherPayment ? effectiveTotalAmount : roundAmount(subtotal);
+    const effectiveDiscount = hasHigherPayment ? 0 : roundAmount(totalDiscount);
+    const effectivePaymentStatus: PaymentStatus = hasHigherPayment ? 'paid' : paymentStatus;
+
+    let adjustedCart = cart;
+    if (hasHigherPayment && cart.length > 0) {
+      const totalQuantity = cart.reduce((sum, item) => sum + item.quantity, 0);
+      let remainingTotal = effectiveTotalAmount;
+      adjustedCart = cart.map((item, index) => {
+        const isLast = index === cart.length - 1;
+        let itemTotal: number;
+        if (isLast) {
+          itemTotal = remainingTotal;
+        } else if (cartTotal > 0) {
+          itemTotal = roundAmount((item.total_price / cartTotal) * effectiveTotalAmount);
+          remainingTotal = roundAmount(remainingTotal - itemTotal);
+        } else {
+          itemTotal = roundAmount((item.quantity / (totalQuantity || 1)) * effectiveTotalAmount);
+          remainingTotal = roundAmount(remainingTotal - itemTotal);
+        }
+        const unitPrice = item.quantity > 0 ? roundAmount(itemTotal / item.quantity) : item.unit_price;
+        return {
+          ...item,
+          unit_price: unitPrice,
+          total_price: itemTotal,
+          discount_amount: 0,
+        };
+      });
+    }
+
     if (isEditing && saleId) {
       setSavingSale(true);
       try {
@@ -729,7 +763,7 @@ export default function RecordSaleScreen() {
           businessId: currentBusiness.id,
           branchId: currentBranch.id,
           userId: user.id,
-          cart,
+          cart: adjustedCart,
           customerName: customerName.trim() || undefined,
           customerPhone: customerPhone.trim() || undefined,
           paymentMethod,
@@ -738,12 +772,12 @@ export default function RecordSaleScreen() {
           paymentAccountId: paymentAccountId || undefined,
           bankName: bankName.trim() || undefined,
           notes: saleNotes.trim() || undefined,
-          subtotal: roundAmount(subtotal),
-          discountAmount: roundAmount(totalDiscount),
-          totalAmount: roundAmount(cartTotal),
-          amountPaid: roundAmount(paidAmount),
-          amountOwed: roundAmount(amountOwed),
-          paymentStatus,
+          subtotal: effectiveSubtotal,
+          discountAmount: effectiveDiscount,
+          totalAmount: effectiveTotalAmount,
+          amountPaid: effectiveAmountPaid,
+          amountOwed: effectiveAmountOwed,
+          paymentStatus: effectivePaymentStatus,
         });
 
         await Promise.all([
@@ -778,8 +812,8 @@ export default function RecordSaleScreen() {
     try {
       const saleNumber = `OFF-${Date.now().toString(36).toUpperCase()}`;
 
-      if (roundAmount(paidAmount) > 0 || roundAmount(amountOwed) > 0) {
-        useDashboardStore.getState().incrementTodaySales(roundAmount(paidAmount), roundAmount(amountOwed));
+      if (effectiveAmountPaid > 0 || effectiveAmountOwed > 0) {
+        useDashboardStore.getState().incrementTodaySales(effectiveAmountPaid, effectiveAmountOwed);
       }
 
       await recordSaleOffline({
@@ -787,7 +821,7 @@ export default function RecordSaleScreen() {
         branchId: currentBranch.id,
         userId: user.id,
         soldByName: profile?.full_name || user.user_metadata?.full_name || undefined,
-        cart,
+        cart: adjustedCart,
         customerName,
         customerPhone,
         paymentMethod,
@@ -796,12 +830,12 @@ export default function RecordSaleScreen() {
         paymentAccountId: paymentAccountId || undefined,
         bankName: bankName.trim() || undefined,
         notes: saleNotes.trim() || undefined,
-        subtotal: roundAmount(subtotal),
-        discountAmount: roundAmount(totalDiscount),
-        totalAmount: roundAmount(cartTotal),
-        amountPaid: roundAmount(paidAmount),
-        amountOwed: roundAmount(amountOwed),
-        paymentStatus,
+        subtotal: effectiveSubtotal,
+        discountAmount: effectiveDiscount,
+        totalAmount: effectiveTotalAmount,
+        amountPaid: effectiveAmountPaid,
+        amountOwed: effectiveAmountOwed,
+        paymentStatus: effectivePaymentStatus,
         saleNumber,
       });
 
@@ -816,7 +850,7 @@ export default function RecordSaleScreen() {
       Toast.show({
         type: 'success',
         text1: 'Sale recorded',
-        text2: `${saleNumber} · ${CURRENCY_SYMBOL}${cartTotal.toLocaleString('en-NG')} recorded`,
+        text2: `${saleNumber} · ${CURRENCY_SYMBOL}${effectiveTotalAmount.toLocaleString('en-NG')} recorded`,
       });
       closeScreen();
 
@@ -863,36 +897,26 @@ export default function RecordSaleScreen() {
         }
       >
         {searchableProducts.length === 0 ? (
-          <View style={{ paddingVertical: 40, alignItems: 'center', gap: 12 }}>
-            <Feather name="box" size={48} color={COLORS.border} />
-            <Text style={{ fontSize: 16, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-              No products available
-            </Text>
-            <Text
-              style={{
-                fontSize: 14,
-                fontFamily: FONT.regular,
-                color: COLORS.text.muted,
-                textAlign: 'center',
-                paddingHorizontal: 32,
-              }}
-            >
-              {products.length === 0
+          <EmptyState
+            icon="box"
+            title="No products available"
+            description={
+              products.length === 0
                 ? "You haven't added any products to your inventory yet. Add products before recording a sale."
-                : 'All your products are currently marked as inactive.'}
-            </Text>
-            {products.length === 0 && (
-              <View style={{ marginTop: 12, minWidth: 200 }}>
-                <Button
-                  title="Go to Inventory"
-                  onPress={() => {
-                    useTabStore.getState().setActiveTab('inventory');
-                    closeScreen();
-                  }}
-                />
-              </View>
-            )}
-          </View>
+                : 'All your products are currently marked as inactive.'
+            }
+            action={
+              products.length === 0
+                ? {
+                    label: 'Go to Inventory',
+                    onPress: () => {
+                      useTabStore.getState().setActiveTab('inventory');
+                      closeScreen();
+                    },
+                  }
+                : undefined
+            }
+          />
         ) : (
           <View style={{ flex: 1 }}>
             <SaleProductPicker

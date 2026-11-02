@@ -740,6 +740,7 @@ export async function incrementPersistedDashboardSales(
     today_sales: nextSales,
     today_profit: nextProfit,
     outstanding_debts: nextDebts,
+    today_sales_count: (baseStats.today_sales_count ?? 0) + 1,
   };
 
   await writePersistedDashboardStats(businessId, branchId, {
@@ -770,6 +771,7 @@ export async function decrementPersistedDashboardSales(
     today_sales: nextSales,
     today_profit: nextProfit,
     outstanding_debts: nextDebts,
+    today_sales_count: Math.max(0, (cached.stats.today_sales_count ?? 0) - 1),
   };
 
   await writePersistedDashboardStats(businessId, branchId, {
@@ -869,12 +871,18 @@ export async function buildCachedDashboardData(
     ? (totalOutstandingDebts > 0 ? totalOutstandingDebts : persistedStatsEntry.stats.outstanding_debts)
     : totalOutstandingDebts;
 
+  const persistedTodaySalesCount = hasValidTodayStats ? (persistedStatsEntry.stats.today_sales_count ?? 0) : 0;
+  const effectiveTodaySalesCount = hasValidTodayStats
+    ? Math.max(persistedTodaySalesCount, todayActivities.length)
+    : todayActivities.length;
+
   // Reconcile persisted stats with current cached reality so stale accumulators don't linger
   if (
     hasValidTodayStats &&
     (persistedStatsEntry.stats.today_sales !== effectiveTodaySales ||
       persistedStatsEntry.stats.today_expenses !== effectiveTodayExpenses ||
-      persistedStatsEntry.stats.outstanding_debts !== effectiveOutstandingDebts)
+      persistedStatsEntry.stats.outstanding_debts !== effectiveOutstandingDebts ||
+      persistedStatsEntry.stats.today_sales_count !== effectiveTodaySalesCount)
   ) {
     void writePersistedDashboardStats(businessId, branchId, {
       date: todayDate,
@@ -884,6 +892,7 @@ export async function buildCachedDashboardData(
         today_expenses: effectiveTodayExpenses,
         today_profit: effectiveTodayProfit,
         outstanding_debts: effectiveOutstandingDebts,
+        today_sales_count: effectiveTodaySalesCount,
       },
     });
   }
@@ -898,6 +907,7 @@ export async function buildCachedDashboardData(
       out_of_stock_count: stockCounts.outOfStock,
       outstanding_debts: effectiveOutstandingDebts,
       total_customers: new Set(openDebts.map((debt) => debt.customer_name.toLowerCase())).size,
+      today_sales_count: effectiveTodaySalesCount,
     },
     recentActivities: activities.slice(0, 5),
     recentDebts: sortByFreshness(openDebts).slice(0, 3),

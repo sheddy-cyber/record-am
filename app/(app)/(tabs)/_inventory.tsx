@@ -10,6 +10,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  StyleSheet,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Feather } from '@expo/vector-icons';
@@ -22,13 +23,13 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { deleteProductRecord } from '@/lib/recordDeletion';
 import { removeCachedProduct } from '@/lib/offlineStore';
 import { printInventoryStock, shareInventoryStockPDF } from '@/lib/reports';
-import { Badge, Button, EmptyState } from '@/components/ui';
+import { Badge, Button, EmptyState, SmartChip } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP } from '@/constants';
 import { Product } from '@/types';
 import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
-import { canViewFinancialData } from '@/lib/permissions';
+import { canViewFinancialData, hasPermission } from '@/lib/permissions';
 
 type StockFilter = 'all' | 'low_stock' | 'out_of_stock';
 
@@ -55,12 +56,15 @@ function InventoryScreen() {
   const userRole = useAuthStore((s) => s.userRole);
   const canViewCosts = canViewFinancialData(userRole);
   const products = useBusinessStore((s) => s.products);
+  const businessCategories = useBusinessStore((s) => s.categories);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
+  const fetchCategories = useBusinessStore((s) => s.fetchCategories);
   const deleteProduct = useBusinessStore((s) => s.deleteProduct);
 
   const [search, setSearch] = useState('');
   const [stockFilter, setStockFilter] = useState<StockFilter>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [printModalVisible, setPrintModalVisible] = useState(false);
   const [printFilterType, setPrintFilterType] = useState<'all' | 'low_and_out'>('all');
@@ -69,14 +73,23 @@ function InventoryScreen() {
 
   const openCreateProduct = () => router.push('/(app)/add-stock');
 
+  const handleSelectCategory = (categoryName: string) => {
+    setSelectedCategory(categoryName);
+    setStockFilter('all');
+    setCategoryModalOpen(false);
+  };
+
   const load = useCallback(async () => {
     if (!businessId) {
       setRefreshing(false);
       return;
     }
-    await fetchProducts(businessId, canViewCosts);
+    await Promise.all([
+      fetchProducts(businessId, canViewCosts),
+      fetchCategories(businessId),
+    ]);
     setRefreshing(false);
-  }, [businessId, canViewCosts, fetchProducts]);
+  }, [businessId, canViewCosts, fetchCategories, fetchProducts]);
 
   useRealtimeRefresh({
     channelName: `inventory-screen-${branchId ?? 'unknown'}`,
@@ -98,12 +111,40 @@ function InventoryScreen() {
     [branchId],
   );
 
-  // Executive inventory stats
+  // Unique categories
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    businessCategories.forEach((c) => {
+      if (c.name?.trim()) set.add(c.name.trim());
+    });
+    products.forEach((p) => {
+      if (p.category?.name?.trim()) {
+        set.add(p.category.name.trim());
+      }
+    });
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b));
+    const hasUncategorized = products.some((p) => !p.category?.name?.trim());
+    if (hasUncategorized && list.length > 0) {
+      list.push('General');
+    }
+    return list;
+  }, [businessCategories, products]);
+
+  // Products filtered by selected category (scope for counts and status filters)
+  const categoryProducts = useMemo(() => {
+    if (selectedCategory === 'all') return products;
+    return products.filter((p) => {
+      const prodCat = p.category?.name?.trim() || 'General';
+      return prodCat.toLowerCase() === selectedCategory.toLowerCase();
+    });
+  }, [products, selectedCategory]);
+
+  // Executive inventory stats scoped to selected category
   const stats = useMemo(() => {
     let lowStockCount = 0;
     let outOfStockCount = 0;
 
-    for (const p of products) {
+    for (const p of categoryProducts) {
       if (p.is_service) continue;
       const stock = getProductStock(p);
       if (stock <= 0) {
@@ -114,28 +155,17 @@ function InventoryScreen() {
     }
 
     return {
-      totalProducts: products.length,
+      totalProducts: categoryProducts.length,
       lowStockCount,
       outOfStockCount,
     };
-  }, [products, getProductStock]);
+  }, [categoryProducts, getProductStock]);
 
-  // Unique categories
-  const categories = useMemo(() => {
-    const set = new Set<string>();
-    products.forEach((p) => {
-      if (p.category?.name) {
-        set.add(p.category.name);
-      }
-    });
-    return Array.from(set).sort();
-  }, [products]);
-
-  // Filtered products
+  // Filtered products (applies search query and stock status filter on categoryProducts)
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return products.filter((product) => {
+    return categoryProducts.filter((product) => {
       // 1. Search filter
       const nameMatch = product.name.toLowerCase().includes(query);
       const catMatch = (product.category?.name ?? '').toLowerCase().includes(query);
@@ -144,14 +174,7 @@ function InventoryScreen() {
 
       if (!matchesSearch) return false;
 
-      // 2. Category filter
-      if (selectedCategory !== 'all') {
-        if ((product.category?.name ?? 'General') !== selectedCategory) {
-          return false;
-        }
-      }
-
-      // 3. Stock status filter
+      // 2. Stock status filter
       const stock = getProductStock(product);
       if (stockFilter === 'low_stock') {
         return !product.is_service && stock > 0 && stock <= product.reorder_level;
@@ -162,7 +185,7 @@ function InventoryScreen() {
 
       return true;
     });
-  }, [products, search, selectedCategory, stockFilter, getProductStock]);
+  }, [categoryProducts, search, stockFilter, getProductStock]);
 
   // Handle product actions menu (delete or update)
   const handleProductActions = (product: Product) => {
@@ -174,6 +197,13 @@ function InventoryScreen() {
         onPress: () =>
           router.push({ pathname: '/(app)/update-stock', params: { productId: product.id, restock: '1' } }),
       });
+      if (hasPermission(userRole, 'inventory.manage')) {
+        options.push({
+          text: 'Record Damaged Stock',
+          onPress: () =>
+            router.push({ pathname: '/(app)/record-damage', params: { productId: product.id } }),
+        });
+      }
     }
 
     options.push(
@@ -228,18 +258,35 @@ function InventoryScreen() {
     );
   };
 
-  const physicalProductsCount = useMemo(() => {
-    return products.filter((p) => !p.is_service).length;
-  }, [products]);
+  // Overall physical stock counts for the Print Inventory sheet
+  const printStockStats = useMemo(() => {
+    const physicalProducts = products.filter((p) => !p.is_service);
+    let lowCount = 0;
+    let outCount = 0;
+    for (const p of physicalProducts) {
+      const stock = getProductStock(p);
+      if (stock <= 0) {
+        outCount++;
+      } else if (stock <= p.reorder_level) {
+        lowCount++;
+      }
+    }
+    return {
+      physicalProducts,
+      totalCount: physicalProducts.length,
+      lowCount,
+      outCount,
+      lowAndOutCount: lowCount + outCount,
+    };
+  }, [products, getProductStock]);
 
-  const lowAndOutCount = useMemo(() => {
-    return stats.lowStockCount + stats.outOfStockCount;
-  }, [stats.lowStockCount, stats.outOfStockCount]);
+  const physicalProductsCount = printStockStats.totalCount;
+  const lowAndOutCount = printStockStats.lowAndOutCount;
 
   const handlePrintInventory = async (action: 'print' | 'share') => {
     if (!currentBusiness || !currentBranch) return;
 
-    const physicalProducts = products.filter((p) => !p.is_service);
+    const physicalProducts = printStockStats.physicalProducts;
     const targetProducts =
       printFilterType === 'all'
         ? physicalProducts
@@ -274,8 +321,8 @@ function InventoryScreen() {
       filterType: printFilterType,
       items: printItems,
       totalProducts: physicalProducts.length,
-      lowStockCount: stats.lowStockCount,
-      outOfStockCount: stats.outOfStockCount,
+      lowStockCount: printStockStats.lowCount,
+      outOfStockCount: printStockStats.outCount,
     };
 
     if (action === 'print') {
@@ -334,25 +381,25 @@ function InventoryScreen() {
               gap: 8,
             }}
           >
-            {/* Search Input */}
+            {/* Combined Search & Category Selector Bar */}
             <View
               style={{
-                borderWidth: 1,
-                borderColor: COLORS.border,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: selectedCategory !== 'all' ? COLORS.navy : COLORS.border,
                 borderRadius: RADIUS.md,
                 backgroundColor: COLORS.card,
-                paddingHorizontal: 12,
-                height: 38,
+                paddingLeft: 12,
+                paddingRight: 6,
+                height: 40,
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: 8,
               }}
             >
               <Feather name="search" size={15} color={COLORS.text.muted} />
               <TextInput
                 value={search}
                 onChangeText={setSearch}
-                placeholder="Search products by name or category..."
+                placeholder={selectedCategory === 'all' ? 'Search products...' : `Search in ${selectedCategory}...`}
                 placeholderTextColor={COLORS.text.muted}
                 underlineColorAndroid="transparent"
                 selectionColor={COLORS.accent}
@@ -360,9 +407,10 @@ function InventoryScreen() {
                 importantForAutofill="no"
                 style={{
                   flex: 1,
-                  fontSize: 13.5,
+                  fontSize: 13,
                   fontFamily: FONT.regular,
                   color: COLORS.text.primary,
+                  paddingHorizontal: 8,
                   paddingVertical: 0,
                 }}
               />
@@ -370,20 +418,70 @@ function InventoryScreen() {
                 <TouchableOpacity
                   onPress={() => setSearch('')}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={{ paddingRight: 4 }}
                 >
-                  <Feather name="x" size={15} color={COLORS.text.muted} />
+                  <Feather name="x" size={14} color={COLORS.text.muted} />
                 </TouchableOpacity>
               ) : null}
+
+              {/* Vertical Divider */}
+              <View
+                style={{
+                  width: StyleSheet.hairlineWidth,
+                  height: 20,
+                  backgroundColor: COLORS.border,
+                  marginHorizontal: 4,
+                }}
+              />
+
+              {/* Category Selector Pill */}
+              <TouchableOpacity
+                onPress={() => setCategoryModalOpen(true)}
+                activeOpacity={0.75}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                  paddingHorizontal: 8,
+                  paddingVertical: 4.5,
+                  borderRadius: RADIUS.sm,
+                  backgroundColor: selectedCategory !== 'all' ? 'rgba(0, 78, 137, 0.1)' : COLORS.surface2,
+                }}
+              >
+                <Feather
+                  name="tag"
+                  size={12}
+                  color={selectedCategory !== 'all' ? COLORS.navy : COLORS.text.muted}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    maxWidth: 95,
+                    fontSize: 12,
+                    fontFamily: selectedCategory !== 'all' ? FONT.semiBold : FONT.medium,
+                    color: selectedCategory !== 'all' ? COLORS.navy : COLORS.text.secondary,
+                  }}
+                >
+                  {selectedCategory === 'all' ? 'Category' : selectedCategory}
+                </Text>
+                <Feather
+                  name="chevron-down"
+                  size={12}
+                  color={selectedCategory !== 'all' ? COLORS.navy : COLORS.text.muted}
+                />
+              </TouchableOpacity>
             </View>
 
-            {/* Status Segmented Pills */}
+            {/* Status Segmented Pills (Clean Apple/Linear style) */}
             <View
               style={{
                 flexDirection: 'row',
-                backgroundColor: COLORS.accent,
+                backgroundColor: COLORS.surface2,
                 borderRadius: RADIUS.md,
                 padding: 3,
-                gap: 3,
+                gap: 4,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: COLORS.border,
               }}
             >
               {/* All Segment */}
@@ -392,23 +490,19 @@ function InventoryScreen() {
                 activeOpacity={0.8}
                 style={{
                   flex: 1,
-                  paddingVertical: 6,
+                  paddingVertical: 7,
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: RADIUS.sm,
-                  backgroundColor: stockFilter === 'all' ? COLORS.card : 'transparent',
-                  shadowColor: stockFilter === 'all' ? '#000' : 'transparent',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: stockFilter === 'all' ? 0.12 : 0,
-                  shadowRadius: 2,
-                  elevation: stockFilter === 'all' ? 2 : 0,
+                  backgroundColor: stockFilter === 'all' ? COLORS.navy : 'transparent',
+                  ...(stockFilter === 'all' ? SHADOW.sm : {}),
                 }}
               >
                 <Text
                   style={{
                     fontFamily: stockFilter === 'all' ? FONT.bold : FONT.medium,
                     fontSize: 12,
-                    color: stockFilter === 'all' ? COLORS.accent : '#FFFFFF',
+                    color: stockFilter === 'all' ? '#FFFFFF' : COLORS.text.muted,
                   }}
                 >
                   All ({stats.totalProducts})
@@ -423,34 +517,20 @@ function InventoryScreen() {
                 activeOpacity={0.8}
                 style={{
                   flex: 1,
-                  paddingVertical: 6,
+                  paddingVertical: 7,
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: RADIUS.sm,
-                  backgroundColor: stockFilter === 'low_stock' ? COLORS.card : 'transparent',
-                  shadowColor: stockFilter === 'low_stock' ? '#000' : 'transparent',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: stockFilter === 'low_stock' ? 0.12 : 0,
-                  shadowRadius: 2,
-                  elevation: stockFilter === 'low_stock' ? 2 : 0,
+                  backgroundColor: stockFilter === 'low_stock' ? '#B45309' : 'transparent',
+                  ...(stockFilter === 'low_stock' ? SHADOW.sm : {}),
                 }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  {stats.lowStockCount > 0 ? (
-                    <View
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: stockFilter === 'low_stock' ? COLORS.warning : '#FFFFFF',
-                      }}
-                    />
-                  ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <Text
                     style={{
                       fontFamily: stockFilter === 'low_stock' ? FONT.bold : FONT.medium,
                       fontSize: 12,
-                      color: stockFilter === 'low_stock' ? COLORS.warning : '#FFFFFF',
+                      color: stockFilter === 'low_stock' ? '#FFFFFF' : COLORS.text.muted,
                     }}
                   >
                     Low ({stats.lowStockCount})
@@ -466,34 +546,20 @@ function InventoryScreen() {
                 activeOpacity={0.8}
                 style={{
                   flex: 1,
-                  paddingVertical: 6,
+                  paddingVertical: 7,
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: RADIUS.sm,
-                  backgroundColor: stockFilter === 'out_of_stock' ? COLORS.card : 'transparent',
-                  shadowColor: stockFilter === 'out_of_stock' ? '#000' : 'transparent',
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: stockFilter === 'out_of_stock' ? 0.12 : 0,
-                  shadowRadius: 2,
-                  elevation: stockFilter === 'out_of_stock' ? 2 : 0,
+                  backgroundColor: stockFilter === 'out_of_stock' ? '#B91C1C' : 'transparent',
+                  ...(stockFilter === 'out_of_stock' ? SHADOW.sm : {}),
                 }}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  {stats.outOfStockCount > 0 ? (
-                    <View
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: stockFilter === 'out_of_stock' ? COLORS.danger : '#FFFFFF',
-                      }}
-                    />
-                  ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <Text
                     style={{
                       fontFamily: stockFilter === 'out_of_stock' ? FONT.bold : FONT.medium,
                       fontSize: 12,
-                      color: stockFilter === 'out_of_stock' ? COLORS.danger : '#FFFFFF',
+                      color: stockFilter === 'out_of_stock' ? '#FFFFFF' : COLORS.text.muted,
                     }}
                   >
                     Out ({stats.outOfStockCount})
@@ -501,68 +567,6 @@ function InventoryScreen() {
                 </View>
               </TouchableOpacity>
             </View>
-
-            {/* Category Filter Chips */}
-            {categories.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 6 }}
-              >
-                <TouchableOpacity
-                  onPress={() => setSelectedCategory('all')}
-                  activeOpacity={0.8}
-                  style={{
-                    paddingHorizontal: 10,
-                    paddingVertical: 4,
-                    borderRadius: RADIUS.full,
-                    borderWidth: 1,
-                    borderColor: selectedCategory === 'all' ? COLORS.ink : COLORS.border,
-                    backgroundColor: selectedCategory === 'all' ? COLORS.ink : COLORS.card,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 11.5,
-                      fontFamily: selectedCategory === 'all' ? FONT.bold : FONT.medium,
-                      color:
-                        selectedCategory === 'all' ? COLORS.text.inverse : COLORS.text.secondary,
-                    }}
-                  >
-                    All
-                  </Text>
-                </TouchableOpacity>
-
-                {categories.map((catName) => {
-                  const isSelected = selectedCategory === catName;
-                  return (
-                    <TouchableOpacity
-                      key={catName}
-                      onPress={() => setSelectedCategory(isSelected ? 'all' : catName)}
-                      activeOpacity={0.8}
-                      style={{
-                        paddingHorizontal: 10,
-                        paddingVertical: 4,
-                        borderRadius: RADIUS.full,
-                        borderWidth: 1,
-                        borderColor: isSelected ? COLORS.ink : COLORS.border,
-                        backgroundColor: isSelected ? COLORS.ink : COLORS.card,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11.5,
-                          fontFamily: isSelected ? FONT.bold : FONT.medium,
-                          color: isSelected ? COLORS.text.inverse : COLORS.text.secondary,
-                        }}
-                      >
-                        {catName}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : null}
           </View>
 
           {/* ── Scrollable Products List ──────────────────────────────────── */}
@@ -613,6 +617,36 @@ function InventoryScreen() {
                         }
                   }
                 />
+
+                {search.trim() ? (
+                  <TouchableOpacity
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(app)/market-list',
+                        params: { addItem: '1', itemName: search.trim() },
+                      })
+                    }
+                    activeOpacity={0.8}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      marginTop: 14,
+                      paddingVertical: 10,
+                      paddingHorizontal: 16,
+                      backgroundColor: 'rgba(0, 78, 137, 0.08)',
+                      borderRadius: RADIUS.md,
+                      borderWidth: StyleSheet.hairlineWidth,
+                      borderColor: 'rgba(0, 78, 137, 0.2)',
+                    }}
+                  >
+                    <Feather name="shopping-cart" size={14} color={COLORS.navy} />
+                    <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.navy }}>
+                      Customer asked for this? Add to Market List
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             }
             renderItem={({ item }) => {
@@ -620,231 +654,133 @@ function InventoryScreen() {
               const isOutOfStock = !item.is_service && stock <= 0;
               const isLowStock = !item.is_service && stock > 0 && stock <= item.reorder_level;
 
-              const iconBg = item.is_service
-                ? 'rgba(59, 130, 246, 0.1)'
-                : isOutOfStock
-                ? 'rgba(239, 68, 68, 0.1)'
-                : isLowStock
-                ? 'rgba(245, 158, 11, 0.1)'
-                : 'rgba(16, 185, 129, 0.1)';
-
-              const iconColor = item.is_service
-                ? '#3B82F6'
-                : isOutOfStock
-                ? COLORS.danger
-                : isLowStock
-                ? COLORS.warning
-                : COLORS.success;
-
-              const iconName: keyof typeof Feather.glyphMap = item.is_service
-                ? 'tool'
-                : isOutOfStock
-                ? 'alert-circle'
-                : isLowStock
-                ? 'alert-triangle'
-                : 'package';
-
               return (
-                <View
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  delayLongPress={300}
+                  onLongPress={() => {
+                    if (userRole === 'owner' || userRole === 'manager') {
+                      handleProductActions(item);
+                    }
+                  }}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(app)/update-stock',
+                      params: {
+                        productId: item.id,
+                        ...(userRole !== 'owner' && userRole !== 'manager' ? { restock: '1' } : {}),
+                      },
+                    })
+                  }
                   style={{
                     backgroundColor: COLORS.card,
-                    borderRadius: RADIUS.md,
-                    borderWidth: 1,
+                    borderRadius: RADIUS.lg,
+                    borderWidth: StyleSheet.hairlineWidth,
                     borderColor: COLORS.border,
-                    padding: 12,
+                    padding: 15,
                     marginBottom: 8,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
+                    gap: 10,
                   }}
                 >
-                  <TouchableOpacity
-                    activeOpacity={0.7}
-                    delayLongPress={300}
-                    onLongPress={() => {
-                      if (userRole === 'owner' || userRole === 'manager') {
-                        handleProductActions(item);
-                      }
-                    }}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/(app)/update-stock',
-                        params: { productId: item.id },
-                      })
-                    }
-                    style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 }}
-                  >
-                    {/* Status / Category Icon Box */}
-                    <View
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: RADIUS.md,
-                        backgroundColor: iconBg,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Feather name={iconName} size={19} color={iconColor} />
-                    </View>
-
-                    {/* Core Product Information */}
-                    <View style={{ flex: 1, gap: 2 }}>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontFamily: FONT.bold,
-                        color: COLORS.text.primary,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {item.name}
-                    </Text>
-
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 12,
-                        color: COLORS.text.muted,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {item.category?.name ?? 'General'} · {item.unit}
-                    </Text>
-
-                    {/* Stock Status Indicator */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 1 }}>
-                      {item.is_service ? (
-                        <Badge label="Service" variant="primary" />
-                      ) : isOutOfStock ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <View
-                            style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: 3,
-                              backgroundColor: COLORS.danger,
-                            }}
-                          />
-                          <Text
-                            style={{
-                              fontFamily: FONT.bold,
-                              fontSize: 12,
-                              color: COLORS.danger,
-                            }}
-                          >
-                            Out of Stock
-                          </Text>
-                        </View>
-                      ) : isLowStock ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <View
-                            style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: 3,
-                              backgroundColor: COLORS.warning,
-                            }}
-                          />
-                          <Text
-                            style={{
-                              fontFamily: FONT.bold,
-                              fontSize: 12,
-                              color: COLORS.warning,
-                            }}
-                          >
-                            Low: {formatCount(stock)} {item.unit} left
-                          </Text>
-                        </View>
-                      ) : (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                          <View
-                            style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: 3,
-                              backgroundColor: COLORS.success,
-                            }}
-                          />
-                          <Text
-                            style={{
-                              fontFamily: FONT.medium,
-                              fontSize: 12,
-                              color: COLORS.success,
-                            }}
-                          >
-                            {formatCount(stock)} {item.unit} in stock
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    </View>
-                  </TouchableOpacity>
-
-                  {/* Pricing & Valuation */}
-                  <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                    <Text
-                      style={{
-                        fontSize: 15,
-                        fontFamily: FONT.bold,
-                        color: COLORS.text.primary,
-                      }}
-                    >
-                      {formatCurrency(item.selling_price)}
-                    </Text>
-
-                    {!item.is_service &&
-                    stock > 0 &&
-                    (userRole === 'owner' || userRole === 'manager') ? (
-                      <Text
+                  {/* ── Top Bar: Category pill & Smart Stock Status Chip ── */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, marginRight: 8 }}>
+                      <View
                         style={{
-                          fontFamily: FONT.regular,
-                          fontSize: 11,
-                          color: COLORS.text.muted,
+                          backgroundColor: COLORS.surface2,
+                          paddingHorizontal: 7,
+                          paddingVertical: 2,
+                          borderRadius: RADIUS.xs,
                         }}
                       >
-                        Val: {formatCurrency(item.selling_price * stock)}
+                        <Text style={{ fontSize: 10, fontFamily: FONT.bold, color: COLORS.text.secondary, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                          {item.category?.name ?? 'General'}
+                        </Text>
+                      </View>
+                      {item.barcode ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                          <Feather name="maximize" size={10} color={COLORS.text.muted} />
+                          <Text style={{ fontSize: 10, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                            {item.barcode}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+
+                    {item.is_service ? (
+                      <SmartChip label="Service" icon="tool" variant="primary" size="xs" />
+                    ) : isOutOfStock ? (
+                      <SmartChip label="Out of stock" deep variant="danger" size="xs" />
+                    ) : isLowStock ? (
+                      <SmartChip label={`Low: ${formatCount(stock)} left`} deep variant="warning" size="xs" />
+                    ) : (
+                      <SmartChip label={`${formatCount(stock)} in stock`} deep variant="success" size="xs" />
+                    )}
+                  </View>
+
+                  {/* ── Product Title ── */}
+                  <Text
+                    style={{
+                      fontSize: 15.5,
+                      fontFamily: FONT.bold,
+                      color: COLORS.text.primary,
+                      letterSpacing: -0.2,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {item.name}
+                  </Text>
+
+                  {/* ── Bottom Contextual Row: Price, Valuation, and Restock Pill ── */}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 2 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                      <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.3 }}>
+                        {formatCurrency(item.selling_price)}
                       </Text>
-                    ) : null}
+                      <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                        /{item.unit}
+                      </Text>
+                      {!item.is_service && stock > 0 && (userRole === 'owner' || userRole === 'manager') ? (
+                        <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginLeft: 6 }}>
+                          · Val: {formatCurrency(item.selling_price * stock)}
+                        </Text>
+                      ) : null}
+                    </View>
 
                     {!item.is_service ? (
                       <TouchableOpacity
                         accessibilityRole="button"
                         accessibilityLabel={`Restock ${item.name}`}
                         activeOpacity={0.75}
-                        onPress={() =>
+                        onPress={(e) => {
+                          e.stopPropagation();
                           router.push({
                             pathname: '/(app)/update-stock',
                             params: { productId: item.id, restock: '1' },
-                          })
-                        }
+                          });
+                        }}
                         style={{
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 4,
-                          marginTop: 3,
-                          paddingHorizontal: 8,
+                          paddingHorizontal: 10,
                           paddingVertical: 5,
-                          borderRadius: RADIUS.sm,
+                          borderRadius: RADIUS.full,
                           backgroundColor: COLORS.accentLight,
+                          borderWidth: 1,
+                          borderColor: '#fed7aa',
                         }}
                       >
                         <Feather name="plus" size={12} color={COLORS.accentMuted} />
-                        <Text
-                          style={{
-                            fontFamily: FONT.bold,
-                            fontSize: 11,
-                            color: COLORS.accentMuted,
-                          }}
-                        >
+                        <Text style={{ fontFamily: FONT.bold, fontSize: 11, color: COLORS.accentMuted }}>
                           Restock
                         </Text>
                       </TouchableOpacity>
                     ) : (
-                      <Feather name="chevron-right" size={14} color={COLORS.border} />
+                      <Feather name="chevron-right" size={15} color={COLORS.text.muted} />
                     )}
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             }}
             />
@@ -879,7 +815,7 @@ function InventoryScreen() {
                 width: '100%',
                 maxWidth: 420,
                 padding: 20,
-                borderWidth: 1,
+                borderWidth: StyleSheet.hairlineWidth,
                 borderColor: COLORS.border,
                 shadowColor: '#000',
                 shadowOffset: { width: 0, height: 8 },
@@ -904,12 +840,12 @@ function InventoryScreen() {
                       width: 38,
                       height: 38,
                       borderRadius: RADIUS.md,
-                      backgroundColor: 'rgba(255, 107, 53, 0.1)',
+                      backgroundColor: COLORS.accentLight,
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}
                   >
-                    <Feather name="printer" size={18} color={COLORS.accent} />
+                    <Feather name="printer" size={18} color={COLORS.accentDark} />
                   </View>
                   <View>
                     <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>
@@ -951,7 +887,7 @@ function InventoryScreen() {
                   borderRadius: RADIUS.md,
                   borderWidth: 1.5,
                   borderColor: printFilterType === 'all' ? COLORS.accent : COLORS.border,
-                  backgroundColor: printFilterType === 'all' ? 'rgba(255, 107, 53, 0.05)' : COLORS.surface,
+                  backgroundColor: printFilterType === 'all' ? COLORS.accentLight : COLORS.surface,
                   marginBottom: 10,
                   gap: 12,
                 }}
@@ -1000,7 +936,7 @@ function InventoryScreen() {
                   borderRadius: RADIUS.md,
                   borderWidth: 1.5,
                   borderColor: printFilterType === 'low_and_out' ? COLORS.accent : COLORS.border,
-                  backgroundColor: printFilterType === 'low_and_out' ? 'rgba(255, 107, 53, 0.05)' : COLORS.surface,
+                  backgroundColor: printFilterType === 'low_and_out' ? COLORS.accentLight : COLORS.surface,
                   marginBottom: 14,
                   gap: 12,
                 }}
@@ -1078,6 +1014,241 @@ function InventoryScreen() {
                   onPress={() => handlePrintInventory('share')}
                 />
               </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+
+        {/* ── Category Filter Modal ────────────────────────────────────── */}
+        <Modal
+          visible={categoryModalOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCategoryModalOpen(false)}
+        >
+          <Pressable
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(15, 23, 42, 0.55)',
+              justifyContent: 'center',
+              paddingHorizontal: SP.lg,
+              paddingVertical: 32,
+            }}
+            onPress={() => setCategoryModalOpen(false)}
+          >
+            <Pressable
+              style={{
+                backgroundColor: '#FFFFFF',
+                borderRadius: RADIUS.xl,
+                maxHeight: 460,
+                overflow: 'hidden',
+                borderWidth: 1,
+                borderColor: COLORS.border,
+                padding: 18,
+                gap: 12,
+              }}
+              onPress={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingBottom: 4,
+                }}
+              >
+                <View>
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontFamily: FONT.bold,
+                      color: COLORS.text.primary,
+                      letterSpacing: -0.2,
+                    }}
+                  >
+                    Filter by Category
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: FONT.regular,
+                      color: COLORS.text.muted,
+                      marginTop: 2,
+                    }}
+                  >
+                    Choose a category to filter your inventory
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setCategoryModalOpen(false)}
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: COLORS.surface2,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={17} color={COLORS.text.muted} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Category Options List */}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ paddingBottom: 10, gap: 4 }}
+              >
+                {/* All Categories Option */}
+                <TouchableOpacity
+                  onPress={() => handleSelectCategory('all')}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingVertical: 12,
+                    paddingHorizontal: 12,
+                    borderRadius: RADIUS.md,
+                    backgroundColor:
+                      selectedCategory === 'all' ? 'rgba(0, 78, 137, 0.08)' : 'transparent',
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <View
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: RADIUS.md,
+                        backgroundColor:
+                          selectedCategory === 'all' ? 'rgba(0, 78, 137, 0.15)' : COLORS.surface2,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Feather
+                        name="grid"
+                        size={15}
+                        color={selectedCategory === 'all' ? COLORS.navy : COLORS.text.muted}
+                      />
+                    </View>
+                    <View>
+                      <Text
+                        style={{
+                          fontSize: 14,
+                          fontFamily: selectedCategory === 'all' ? FONT.bold : FONT.medium,
+                          color: selectedCategory === 'all' ? COLORS.navy : COLORS.text.primary,
+                        }}
+                      >
+                        All Categories
+                      </Text>
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontFamily: FONT.regular,
+                          color: COLORS.text.muted,
+                          marginTop: 1,
+                        }}
+                      >
+                        {products.length} total product{products.length === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                  </View>
+                  {selectedCategory === 'all' ? (
+                    <Feather name="check" size={18} color={COLORS.navy} />
+                  ) : null}
+                </TouchableOpacity>
+
+                {/* Each Category */}
+                {categories.map((catName) => {
+                  const isSelected = selectedCategory.toLowerCase() === catName.toLowerCase();
+                  const count = products.filter((p) => {
+                    const c = p.category?.name?.trim() || 'General';
+                    return c.toLowerCase() === catName.toLowerCase();
+                  }).length;
+
+                  return (
+                    <TouchableOpacity
+                      key={catName}
+                      onPress={() => handleSelectCategory(catName)}
+                      activeOpacity={0.7}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingVertical: 12,
+                        paddingHorizontal: 12,
+                        borderRadius: RADIUS.md,
+                        backgroundColor: isSelected ? 'rgba(0, 78, 137, 0.08)' : 'transparent',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: RADIUS.md,
+                            backgroundColor: isSelected
+                              ? 'rgba(0, 78, 137, 0.15)'
+                              : COLORS.surface2,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Feather
+                            name={catName === 'General' ? 'folder' : 'tag'}
+                            size={15}
+                            color={isSelected ? COLORS.navy : COLORS.text.secondary}
+                          />
+                        </View>
+                        <View>
+                          <Text
+                            style={{
+                              fontSize: 14,
+                              fontFamily: isSelected ? FONT.bold : FONT.medium,
+                              color: isSelected ? COLORS.navy : COLORS.text.primary,
+                            }}
+                          >
+                            {catName}
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontFamily: FONT.regular,
+                              color: COLORS.text.muted,
+                              marginTop: 1,
+                            }}
+                          >
+                            {count} product{count === 1 ? '' : 's'}
+                          </Text>
+                        </View>
+                      </View>
+                      {isSelected ? <Feather name="check" size={18} color={COLORS.navy} /> : null}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {selectedCategory !== 'all' ? (
+                <TouchableOpacity
+                  onPress={() => handleSelectCategory('all')}
+                  activeOpacity={0.8}
+                  style={{
+                    paddingVertical: 10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: COLORS.surface2,
+                    borderRadius: RADIUS.md,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: COLORS.border,
+                  }}
+                >
+                  <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.navy }}>
+                    Reset to All Categories
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </Pressable>
           </Pressable>
         </Modal>

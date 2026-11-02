@@ -11,9 +11,10 @@ import {
   RefreshControl,
   TextInput,
   ScrollView,
+  StyleSheet,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -22,7 +23,7 @@ import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { Badge, Button, EmptyState, PermissionDenied } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from "@/constants";
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from "@/constants";
 import { readAltUnitNote } from '@/lib/records';
 import { printStockMovementReport } from '@/lib/reports';
 import { StockMovement } from '@/types';
@@ -41,7 +42,7 @@ const MOVEMENT_CONFIG: Record<
 > = {
   stock_in: { label: 'Stock In', color: COLORS.success, variant: 'success', icon: 'arrow-down-left' },
   stock_out: { label: 'Stock Out', color: COLORS.danger, variant: 'danger', icon: 'arrow-up-right' },
-  adjustment: { label: 'Adjustment', color: COLORS.accent, variant: 'primary', icon: 'sliders' },
+  adjustment: { label: 'Adjustment', color: COLORS.accentDark, variant: 'primary', icon: 'sliders' },
   transfer: { label: 'Transfer', color: COLORS.warning, variant: 'warning', icon: 'repeat' },
   damage: { label: 'Damaged', color: COLORS.danger, variant: 'danger', icon: 'x-octagon' },
   wastage: { label: 'Wastage', color: COLORS.warning, variant: 'warning', icon: 'trash-2' },
@@ -183,6 +184,12 @@ export default function StockHistoryScreen() {
     load();
   }, [load]);
 
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
   const filteredMovements = useMemo(() => {
     return movements.filter((movement) => {
       const productName = (movement.product as any)?.name?.toLowerCase() ?? '';
@@ -300,81 +307,147 @@ export default function StockHistoryScreen() {
       />
 
       <View style={{ padding: 16, gap: 10, paddingBottom: 8 }}>
-        <View style={{ borderWidth: 1, borderRadius: 14, borderColor: COLORS.border, backgroundColor: COLORS.card, paddingHorizontal: 14, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            borderWidth: StyleSheet.hairlineWidth,
+            borderRadius: RADIUS.lg,
+            borderColor: COLORS.border,
+            backgroundColor: COLORS.card,
+            paddingHorizontal: 14,
+            height: 48,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
           <Feather name="search" size={16} color={COLORS.text.muted} />
           <TextInput
             value={search}
             onChangeText={setSearch}
-            placeholder="Search product or reference"
+            placeholder="Search product or reference..."
             placeholderTextColor={COLORS.text.muted}
             underlineColorAndroid="transparent"
             selectionColor={COLORS.accent}
             cursorColor={COLORS.accent}
             importantForAutofill="no"
-            style={{ fontFamily: FONT.regular, flex: 1, fontSize: 14, color: COLORS.text.primary, paddingVertical: 10, backgroundColor: '#FFFFFF' }}
+            style={{
+              fontFamily: FONT.regular,
+              flex: 1,
+              fontSize: 14,
+              color: COLORS.text.primary,
+              paddingVertical: 10,
+            }}
           />
         </View>
 
         <TouchableOpacity
           onPress={() => setPeriodSheetVisible(true)}
-          activeOpacity={0.8}
-          style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
+          activeOpacity={0.7}
+          style={{
+            minHeight: 46,
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingHorizontal: 12,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderRadius: RADIUS.lg,
+            borderColor: COLORS.border,
+            backgroundColor: COLORS.card,
+          }}
         >
-          <View style={{ width: 28, height: 28, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: `${COLORS.accent}14` }}>
-            <Feather name="calendar" size={15} color={COLORS.accent} />
+          <View
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: RADIUS.md,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: COLORS.accentLight,
+            }}
+          >
+            <Feather name="calendar" size={14} color={COLORS.accent} />
           </View>
-          <View style={{ flex: 1, marginLeft: 9 }}>
-            <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>Time period</Text>
-            <Text style={{ marginTop: 1, fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>{periodLabel}</Text>
+          <View style={{ flex: 1, marginLeft: 10 }}>
+            <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.text.muted }}>Time Period</Text>
+            <Text style={{ marginTop: 1, fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>{periodLabel}</Text>
           </View>
-          <Feather name="chevron-down" size={17} color={COLORS.text.muted} />
+          <Feather name="chevron-down" size={16} color={COLORS.text.muted} />
         </TouchableOpacity>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2, marginTop: 2 }}>
           <Text style={{ flex: 1, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
-            {filteredMovements.length} listed · <Text style={{ fontFamily: FONT.medium, color: COLORS.success }}>+{totalIn} in</Text> · <Text style={{ fontFamily: FONT.medium, color: COLORS.danger }}>-{totalOut} out</Text>
+            {filteredMovements.length} movements · <Text style={{ fontFamily: FONT.semiBold, color: COLORS.success }}>+{totalIn} in</Text> · <Text style={{ fontFamily: FONT.semiBold, color: COLORS.danger }}>-{totalOut} out</Text>
           </Text>
-          <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Prints this selection</Text>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
           {[
             { key: 'all', label: 'All' },
-            { key: 'stock_in', label: 'Stock in' },
-            { key: 'stock_out', label: 'Out' },
-            { key: 'adjustment', label: 'Adjust' },
+            { key: 'stock_in', label: 'Stock In' },
+            { key: 'stock_out', label: 'Stock Out' },
             { key: 'damage', label: 'Damage' },
-            { key: 'wastage', label: 'Wastage' },
-          ].map((item) => (
-            <TouchableOpacity
-              key={item.key}
-              onPress={() => setFilter(item.key)}
-              activeOpacity={0.8}
-              style={{
-                minWidth: 86,
-                minHeight: 38,
-                paddingHorizontal: 14,
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderWidth: 1,
-                borderRadius: RADIUS.md,
-                borderColor: filter === item.key ? COLORS.ink : COLORS.border,
-                backgroundColor: filter === item.key ? COLORS.surface2 : COLORS.card,
-              }}
-            >
-              <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
+          ].map((item) => {
+            const active = filter === item.key;
+            return (
+              <TouchableOpacity
+                key={item.key}
+                onPress={() => setFilter(item.key)}
+                activeOpacity={0.7}
+                style={{
+                  minWidth: 70,
+                  height: 34,
+                  paddingHorizontal: 14,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderRadius: RADIUS.full,
+                  borderColor: active ? COLORS.navy : COLORS.border,
+                  backgroundColor: active ? COLORS.navy : COLORS.card,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontFamily: FONT.medium,
+                    color: active ? '#ffffff' : COLORS.text.secondary,
+                  }}
+                >
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
+
+        {filter === 'damage' && hasPermission(userRole, 'inventory.manage') && (
+          <TouchableOpacity
+            onPress={() => router.push('/(app)/record-damage')}
+            activeOpacity={0.8}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              height: 44,
+              backgroundColor: '#DC2626',
+              borderRadius: RADIUS.lg,
+              marginTop: 4,
+            }}
+          >
+            <Feather name="plus" size={16} color="#FFFFFF" />
+            <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: '#FFFFFF' }}>
+              Record Damaged Goods
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={{ flex: 1 }}>
         <FlashList
           data={filteredMovements}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 92, paddingTop: 8 }}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 92, paddingTop: 6 }}
           
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.ink} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={COLORS.accent} />}
           ListEmptyComponent={
             loading ? (
               <View style={{ paddingTop: 44, alignItems: 'center' }}>
@@ -382,44 +455,87 @@ export default function StockHistoryScreen() {
               </View>
             ) : (
               <EmptyState
-                icon="clipboard"
-                title="No movements found"
-                description={period === 'all' && !search && filter === 'all' ? 'Stock activity will appear here as you record sales and inventory adjustments.' : 'Try another period, activity type, or search term.'}
+                icon={filter === 'damage' ? 'alert-octagon' : 'clipboard'}
+                title={filter === 'damage' ? 'No damaged goods recorded' : 'No movements found'}
+                description={
+                  filter === 'damage'
+                    ? 'No damaged or spoiled stock has been logged for this period.'
+                    : period === 'all' && !search && filter === 'all'
+                      ? 'Stock activity will appear here as you record sales and inventory adjustments.'
+                      : 'Try another period, activity type, or search term.'
+                }
+                action={
+                  filter === 'damage' && hasPermission(userRole, 'inventory.manage')
+                    ? {
+                        label: 'Record Damaged Goods',
+                        onPress: () => router.push('/(app)/record-damage'),
+                      }
+                    : undefined
+                }
               />
             )
           }
 
-        renderItem={({ item, index }) => {
+        renderItem={({ item }) => {
           const config = MOVEMENT_CONFIG[item.type] ?? MOVEMENT_CONFIG.adjustment;
           const isIn = item.type === 'stock_in';
           const isOut = ['stock_out', 'damage', 'wastage'].includes(item.type);
           const displayUnit = readAltUnitNote(item.notes, (item.product as any)?.unit ?? '');
 
           return (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 16, borderBottomWidth: index === filteredMovements.length - 1 ? 0 : 1, borderBottomColor: COLORS.border }}>
-              <View style={{ width: 42, height: 42, backgroundColor: `${config.color}18`, borderWidth: 1, borderRadius: 14, borderColor: `${config.color}30`, alignItems: 'center', justifyContent: 'center' }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                padding: 14,
+                marginBottom: 10,
+                backgroundColor: COLORS.card,
+                borderRadius: RADIUS.lg,
+                borderWidth: StyleSheet.hairlineWidth,
+                borderColor: COLORS.border,
+              }}
+            >
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  backgroundColor: `${config.color}14`,
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderRadius: RADIUS.md,
+                  borderColor: `${config.color}25`,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <Feather name={config.icon} size={16} color={config.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>
+                <Text style={{ fontSize: 14, fontFamily: FONT.semiBold, color: COLORS.text.primary }} numberOfLines={1}>
                   {(item.product as any)?.name ?? 'Unknown Product'}
                 </Text>
-                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 2 }}>
                   {format(new Date(item.created_at), 'MMM d, yyyy \u00B7 h:mm a')}
                 </Text>
-                {item.reference ? <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 4 }}>Ref: {item.reference}</Text> : null}
+                {item.reference ? (
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
+                    Ref: {item.reference}
+                  </Text>
+                ) : null}
                 {item.notes && !item.notes.startsWith('[record-am-unit]') ? (
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.secondary, marginTop: 4 }} numberOfLines={1}>
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.secondary, marginTop: 2 }} numberOfLines={1}>
                     {item.notes}
                   </Text>
                 ) : null}
               </View>
-              <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: isIn ? COLORS.success : isOut ? COLORS.danger : COLORS.accent }}>
+              <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: isIn ? COLORS.success : isOut ? COLORS.danger : COLORS.accentDark }}>
                   {isIn ? '+' : isOut ? '-' : '±'}
                   {item.quantity} {displayUnit}
                 </Text>
-                <Badge label={config.label} variant={config.variant} />
+                {item.type !== 'stock_in' && item.type !== 'stock_out' ? (
+                  <Badge label={config.label} variant={config.variant} size="sm" />
+                ) : null}
                 {canViewCosts && item.total_cost !== undefined && item.total_cost > 0 ? (
                   <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>{formatCurrency(item.total_cost)}</Text>
                 ) : null}
@@ -512,7 +628,7 @@ export default function StockHistoryScreen() {
                     />
                     {Platform.OS === 'ios' ? (
                       <TouchableOpacity onPress={() => setDatePickerTarget(null)} style={{ alignItems: 'center', paddingVertical: 11, borderTopWidth: 1, borderTopColor: COLORS.border }}>
-                        <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.accent }}>Done</Text>
+                        <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.accentDark }}>Done</Text>
                       </TouchableOpacity>
                     ) : null}
                   </View>

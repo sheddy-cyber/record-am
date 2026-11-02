@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, RefreshControl, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { format } from 'date-fns';
@@ -278,8 +278,8 @@ export default function SupplierDetailScreen() {
             activeOpacity={0.82}
             style={{ minHeight: 46, marginTop: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: RADIUS.md, backgroundColor: COLORS.accent }}
           >
-            <Feather name="plus" size={17} color="#FFFFFF" />
-            <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: '#FFFFFF' }}>Record goods bought</Text>
+            <Feather name="plus" size={17} color="#000000" />
+            <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: '#000000' }}>Record goods bought</Text>
           </TouchableOpacity>
           ) : null}
 
@@ -288,7 +288,7 @@ export default function SupplierDetailScreen() {
               { label: 'TOTAL PURCHASED', value: formatCurrency(supplier.total_purchased ?? 0), color: COLORS.infoLight },
               { label: 'GOODS RECORDS', value: String(supplier.total_orders ?? 0), color: COLORS.successLight },
             ].map((stat) => (
-              <View key={stat.label} style={{ flex: 1, padding: 10, borderWidth: 1, borderRadius: RADIUS.md, borderColor: 'rgba(255,253,248,0.1)', backgroundColor: 'rgba(255,253,248,0.06)' }}>
+              <View key={stat.label} style={{ flex: 1, padding: 10, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: 'rgba(255,253,248,0.1)', backgroundColor: 'rgba(255,253,248,0.06)' }}>
                 <Text style={{ fontFamily: FONT.medium, fontSize: 9.5, color: 'rgba(255,253,248,0.58)', letterSpacing: 0.45 }}>{stat.label}</Text>
                 <Text style={{ marginTop: 4, fontFamily: FONT.bold, fontSize: 14, color: stat.color }} numberOfLines={1}>{stat.value}</Text>
               </View>
@@ -310,7 +310,7 @@ export default function SupplierDetailScreen() {
               </View>
             ))}
             {supplier.notes ? (
-              <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+              <View style={{ paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.borderSubtle }}>
                 <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>NOTE</Text>
                 <Text style={{ marginTop: 4, fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary, fontStyle: 'italic' }}>
                   “{supplier.notes}”
@@ -382,7 +382,7 @@ export default function SupplierDetailScreen() {
                       ) : null}
                     </View>
                   )}
-                  {index < supplierPurchases.length - 1 ? <View style={{ height: 1, marginHorizontal: 14, backgroundColor: COLORS.border }} /> : null}
+                  {index < supplierPurchases.length - 1 ? <View style={{ height: StyleSheet.hairlineWidth, marginHorizontal: 14, backgroundColor: COLORS.borderSubtle }} /> : null}
                 </View>
               ))}
             </Card>
@@ -408,7 +408,7 @@ export default function SupplierDetailScreen() {
               onPress={handlePrintStatement}
               disabled={isPrinting}
               activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isPrinting ? 0.55 : 1 }}
+              style={{ minHeight: 50, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isPrinting ? 0.55 : 1 }}
             >
               <Feather name="printer" size={16} color={COLORS.accent} />
               <View style={{ flex: 1 }}>
@@ -421,7 +421,7 @@ export default function SupplierDetailScreen() {
               onPress={handleShareStatement}
               disabled={isSharingPDF}
               activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isSharingPDF ? 0.55 : 1 }}
+              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isSharingPDF ? 0.55 : 1 }}
             >
               <Feather name="share-2" size={16} color={COLORS.accent} />
               <View style={{ flex: 1 }}>
@@ -436,7 +436,7 @@ export default function SupplierDetailScreen() {
                 openEditSupplier();
               }}
               activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
+              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
             >
               <Feather name="edit-2" size={16} color={COLORS.text.secondary} />
               <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>Edit supplier details</Text>
@@ -448,7 +448,7 @@ export default function SupplierDetailScreen() {
                 await handleDelete();
               }}
               activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: '#F5C2BA', backgroundColor: '#FEF3F2' }}
+              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: '#F5C2BA', backgroundColor: '#FEF3F2' }}
             >
               <Feather name="trash-2" size={16} color={COLORS.danger} />
               <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.danger }}>Remove supplier</Text>

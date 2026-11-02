@@ -29,6 +29,7 @@ import { CostStrategySelector } from '@/components/inventory/CostStrategySelecto
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL, ACCENTS } from '@/constants';
 import { dismissScreen } from '@/lib/navigation';
+import { Category } from '@/types';
 
 const formatCount = (value: number) =>
   Number.isInteger(value)
@@ -75,6 +76,8 @@ export default function UpdateStockScreen() {
 
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
   const currentBranch = useAuthStore((s) => s.currentBranch);
+  const userRole = useAuthStore((s) => s.userRole);
+  const isOwnerOrManager = userRole === 'owner' || userRole === 'manager';
   const products = useBusinessStore((s) => s.products);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
 
@@ -90,6 +93,8 @@ export default function UpdateStockScreen() {
   const [loading, setLoading] = useState(false);
   const [productName, setProductName] = useState('');
   const [productUnit, setProductUnit] = useState('piece');
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<Category | undefined>(undefined);
   const [costPrice, setCostPrice] = useState('');
   const [manualNewCost, setManualNewCost] = useState<number | null>(null);
   const [sellingPrice, setSellingPrice] = useState('');
@@ -263,6 +268,8 @@ export default function UpdateStockScreen() {
 
     setProductName(product.name);
     setProductUnit(product.unit);
+    setCategoryId(product.category_id ?? null);
+    setSelectedCategory(product.category);
 
     const oldCostPrice = Number(product.cost_price ?? 0);
     const hasIncomingPurchase = fromPurchase && purchasedUnitCost > 0 && (purchasedQty > 0 || effectiveStockAdjustment > 0);
@@ -304,6 +311,10 @@ export default function UpdateStockScreen() {
     const parsed = parseFloat(val);
     if (Number.isFinite(parsed) && parsed > 0 && oldCost > 0 && Math.abs(parsed - oldCost) >= 0.01) {
       setManualNewCost(parsed);
+      setSelectedCostStrategy(null);
+    } else if (Number.isFinite(parsed) && Math.abs(parsed - oldCost) < 0.01) {
+      setManualNewCost(null);
+      setSelectedCostStrategy(null);
     }
   }, [oldCost]);
 
@@ -331,20 +342,6 @@ export default function UpdateStockScreen() {
 
   const effectiveIncomingQty = fromPurchase ? incomingQty : manualAddedQty;
 
-  // Initialize selected strategy to weighted average when cost strategy selector appears
-  useEffect(() => {
-    const isStockQuantityIncreased = effectiveIncomingQty > 0 && currentStock > 0;
-    const hasCostFluctuation =
-      isStockQuantityIncreased &&
-      oldCost > 0 &&
-      effectiveNewCost > 0 &&
-      Math.abs(effectiveNewCost - oldCost) >= 0.01;
-
-    if (hasCostFluctuation && selectedCostStrategy === null) {
-      setSelectedCostStrategy('weighted');
-    }
-  }, [effectiveIncomingQty, currentStock, oldCost, effectiveNewCost, selectedCostStrategy]);
-
   const costPriceOptionsNode = useMemo(() => {
     if (isService) return null;
 
@@ -369,11 +366,6 @@ export default function UpdateStockScreen() {
         onSelectStrategy={(chosenCost, strategy) => {
           setSelectedCostStrategy(strategy);
           setCostPrice(formatCount(chosenCost));
-          if (strategy === 'new' || strategy === 'old') {
-            setManualNewCost(chosenCost);
-          } else {
-            setManualNewCost(null);
-          }
         }}
         productUnit={productUnit}
         isFromPurchase={fromPurchase}
@@ -386,6 +378,7 @@ export default function UpdateStockScreen() {
     currentStock,
     effectiveIncomingQty,
     costPrice,
+    selectedCostStrategy,
     productUnit,
     fromPurchase,
   ]);
@@ -434,6 +427,52 @@ export default function UpdateStockScreen() {
       </RoleGate>
     );
   }, [parsedSelling, parsedCost, isService, marginData]);
+
+  const damageActionNode = useMemo(() => {
+    if (!isOwnerOrManager || isService || !product) return null;
+    return (
+      <TouchableOpacity
+        onPress={() => router.push({ pathname: '/(app)/record-damage', params: { productId: product.id } })}
+        activeOpacity={0.75}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingVertical: 9,
+          paddingHorizontal: 12,
+          backgroundColor: '#FEF2F2',
+          borderRadius: RADIUS.md,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: '#FECACA',
+          marginTop: 6,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Feather name="alert-octagon" size={15} color="#DC2626" />
+          <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: '#DC2626' }}>
+            Record Damage Instead?
+          </Text>
+        </View>
+
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 2,
+            paddingVertical: 3,
+            paddingHorizontal: 8,
+            backgroundColor: '#DC2626',
+            borderRadius: RADIUS.full,
+          }}
+        >
+          <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: '#FFFFFF' }}>
+            Switch
+          </Text>
+          <Feather name="arrow-right" size={11} color="#FFFFFF" />
+        </View>
+      </TouchableOpacity>
+    );
+  }, [isOwnerOrManager, isService, product]);
 
   const handleSaveProduct = async () => {
     if (!product || !currentBusiness) return;
@@ -503,6 +542,40 @@ export default function UpdateStockScreen() {
       return;
     }
 
+    if (!isOwnerOrManager && !product.is_service) {
+      if (isService && currentStock > 0) {
+        Alert.alert(
+          'Action Not Permitted',
+          'Staff members cannot convert items with existing stock into services. Only owners and managers can reduce or clear stock.'
+        );
+        return;
+      }
+
+      if (!isRestock && parsedStockQuantity < currentStock) {
+        Alert.alert(
+          'Cannot Reduce Stock',
+          `Staff members are only permitted to increase stock quantity.\n\nCurrent on-hand stock is ${formatCount(currentStock)} ${cleanProductUnit}. To update stock, please enter ${formatCount(currentStock)} or higher.`
+        );
+        return;
+      }
+    }
+
+    const isStockQuantityIncreased = effectiveIncomingQty > 0 && currentStock > 0;
+    const hasCostFluctuation =
+      !isService &&
+      isStockQuantityIncreased &&
+      oldCost > 0 &&
+      effectiveNewCost > 0 &&
+      Math.abs(effectiveNewCost - oldCost) >= 0.01;
+
+    if (hasCostFluctuation && selectedCostStrategy === null) {
+      Alert.alert(
+        'Valuation Option Required',
+        'Cost price change detected. Please select one of the valuation options (Weighted Average, Use New Cost Price, or Stick with Old Cost Price) before saving.'
+      );
+      return;
+    }
+
     const executeSave = async (hasMismatch: boolean) => {
       setSaving(true);
       try {
@@ -511,6 +584,15 @@ export default function UpdateStockScreen() {
           : isRestock
             ? roundAmount(currentStock + parsedStockQuantity)
             : roundAmount(parsedStockQuantity);
+
+        if (!isOwnerOrManager && !product.is_service && nextQuantity < roundAmount(currentStock)) {
+          Alert.alert(
+            'Cannot Reduce Stock',
+            'Staff members are only allowed to increase stock quantity.'
+          );
+          setSaving(false);
+          return;
+        }
         const previousQuantity = roundAmount(currentStock);
         const quantityDelta = isRestock
           ? roundAmount(parsedStockQuantity)
@@ -537,6 +619,8 @@ export default function UpdateStockScreen() {
           branchId: currentBranch?.id,
           product: product,
           productPatch: {
+            category_id: categoryId || undefined,
+            category: selectedCategory,
             name: cleanProductName,
             unit: cleanProductUnit,
             cost_price: parsedCostPrice,
@@ -768,6 +852,11 @@ export default function UpdateStockScreen() {
             onProductNameChange={setProductName}
             productUnit={productUnit}
             onProductUnitChange={setProductUnit}
+            categoryId={categoryId}
+            onCategoryIdChange={(id, cat) => {
+              setCategoryId(id);
+              setSelectedCategory(cat);
+            }}
             costPrice={costPrice}
             onCostPriceChange={handleCostPriceChange}
             costPriceExtra={costPriceOptionsNode}
@@ -778,6 +867,7 @@ export default function UpdateStockScreen() {
             onReorderLevelChange={setReorderLevel}
             stockQuantity={stockQuantity}
             onStockQuantityChange={setStockQuantity}
+            stockQuantityExtra={damageActionNode}
             stockQuantityFirst={isRestock}
             stockQuantityLabel={
               isRestock
@@ -789,6 +879,10 @@ export default function UpdateStockScreen() {
                 ? parsedStockQty > 0
                   ? `Current stock: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}. New total: ${formatCount(roundAmount(currentStock + parsedStockQty))} ${productUnit.trim() || 'unit'}.`
                   : `Current stock: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}. Enter the number of units received.`
+                : !isOwnerOrManager
+                  ? parsedStockQty > 0 && parsedStockQty < currentStock
+                    ? `⚠ Staff cannot reduce stock below current quantity (${formatCount(currentStock)} ${productUnit.trim() || 'unit'}).`
+                    : `Staff can only increase stock. Current on-hand: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}.`
                 : prefilledStockQty !== null && parseFloat(stockQuantity) !== prefilledStockQty
                 ? isManualReconcile
                   ? `Changed from reconciliation value (${formatCount(prefilledStockQty)}).`
@@ -800,7 +894,16 @@ export default function UpdateStockScreen() {
                   : 'Set the quantity currently available in this branch.'
             }
             isService={isService}
-            onIsServiceChange={setIsService}
+            onIsServiceChange={(val) => {
+              if (val && !isOwnerOrManager && currentStock > 0) {
+                Alert.alert(
+                  'Action Restricted',
+                  'Staff members cannot convert items with existing stock into services. Only owners and managers can change this.'
+                );
+                return;
+              }
+              setIsService(val);
+            }}
           />
           <Button
             title={saving ? 'Saving...' : isRestock ? 'Restock Item' : 'Save Changes'}

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -191,7 +191,7 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
       style={{
         backgroundColor: 'rgba(255, 150, 0, 0.08)',
         borderColor: COLORS.warning,
-        borderWidth: 1,
+        borderWidth: StyleSheet.hairlineWidth,
         borderRadius: RADIUS.md,
         padding: 12,
         marginBottom: 14,
@@ -217,7 +217,7 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
           <View
             key={mismatch.id}
             style={{
-              borderTopWidth: 1,
+              borderTopWidth: StyleSheet.hairlineWidth,
               borderTopColor: 'rgba(247, 197, 159, 0.55)',
               paddingTop: 10,
               gap: 7,
@@ -249,11 +249,6 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
                   paddingVertical: 7,
                   borderRadius: RADIUS.sm,
                   backgroundColor: '#d97706',
-                  shadowColor: '#d97706',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.2,
-                  shadowRadius: 4,
-                  elevation: 2,
                 }}
               >
                 <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: '#FFFFFF' }}>
