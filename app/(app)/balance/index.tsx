@@ -23,18 +23,8 @@ export default function DailyBalanceScreen() {
   const { currentBusiness, currentBranch, userRole, profile, user } = useAuthStore();
   const canViewFinancials = canViewFinancialData(userRole);
 
-  // If user can view financials (owner/manager), they can toggle between owner view and staff view
-  const [viewMode, setViewMode] = useState<'owner' | 'staff'>(canViewFinancials ? 'owner' : 'staff');
-  const [staffTab, setStaffTab] = useState<'all' | 'sales' | 'repayments'>('all');
   const [showPicker, setShowPicker] = useState(false);
   const touchStartX = useRef(0);
-
-  // Synchronize view mode if permissions change
-  useEffect(() => {
-    if (!canViewFinancials) {
-      setViewMode('staff');
-    }
-  }, [canViewFinancials]);
 
   const {
     summary,
@@ -116,7 +106,7 @@ export default function DailyBalanceScreen() {
   const totalDiscounts = Math.max(summary?.total_discounts ?? 0, entryDiscounts);
   const discountedSalesCount = salesEntries.filter((entry) => Number(entry.discount_amount ?? 0) > 0).length;
 
-  // Cash collections
+  // Physical cash collected
   const totalCashSales = salesEntries.reduce((sum, e) => {
     if (e.payment_method === 'cash') return sum + e.amount;
     if (e.payment_method === 'mixed') return sum + (e.cash_amount ?? 0);
@@ -129,19 +119,6 @@ export default function DailyBalanceScreen() {
   }, 0);
   const totalCashInTill = totalCashSales + totalCashRepayments;
 
-  const totalDigital = digitalInflows?.totalDigital ?? 0;
-  const totalTransfer = digitalInflows?.totalTransfer ?? 0;
-  const totalPos = digitalInflows?.totalPos ?? 0;
-
-  // Staff activity entries (Sales & Repayments only; NO expenses!)
-  const staffEntries = entries.filter((e) => e.type === 'sale' || e.type === 'debt_repayment');
-  const filteredStaffEntries =
-    staffTab === 'sales'
-      ? salesEntries
-      : staffTab === 'repayments'
-      ? repaymentEntries
-      : staffEntries;
-
   const handleShareStaffSummary = async () => {
     if (!currentBusiness || !currentBranch) return;
     try {
@@ -152,10 +129,10 @@ export default function DailyBalanceScreen() {
         staffName: profile?.full_name || user?.user_metadata?.full_name || user?.email || undefined,
         totalSales: totalRevenue,
         totalCash: totalCashInTill,
-        totalTransfer,
-        totalPos,
+        totalTransfer: digitalInflows?.totalTransfer ?? 0,
+        totalPos: digitalInflows?.totalPos ?? 0,
         totalDiscounts,
-        totalTransactions: staffEntries.length,
+        totalTransactions: salesEntries.length + repaymentEntries.length,
         digitalBreakdown: digitalInflows
           ? {
               byBank: digitalInflows.byBank,
@@ -209,71 +186,18 @@ export default function DailyBalanceScreen() {
   const discrepancyBorder =
     discrepancy === 0 ? '#BFD9CA' : discrepancy > 0 ? '#B7CADB' : '#DDAEA6';
 
-  const isStaffView = viewMode === 'staff';
-
   return (
     <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
       <View style={{ flex: 1 }}>
         <ScreenHeader
-          title={isStaffView && !canViewFinancials ? 'Daily Balance' : 'Daily Balance'}
+          title="Daily Balance"
           subtitle={format(new Date(selectedDate), 'EEEE, MMMM d, yyyy')}
           theme="dark"
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
-          right={
-            isClosed ? (
-              <Badge label="Day Closed" variant="success" />
-            ) : (
-              <Badge label="Register Active" variant="info" />
-            )
-          }
+          right={isClosed ? <Badge label="Closed" variant="success" /> : undefined}
         />
 
-        <View style={{ backgroundColor: COLORS.ink, paddingHorizontal: 20, paddingBottom: 16 }}>
-          {/* Owner view mode toggle: lets management switch to preview staff register view */}
-          {canViewFinancials ? (
-            <View style={styles.modeToggleContainer}>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setViewMode('owner')}
-                style={[styles.modeToggleBtn, viewMode === 'owner' && styles.modeToggleBtnActive]}
-              >
-                <Feather
-                  name="shield"
-                  size={12}
-                  color={viewMode === 'owner' ? COLORS.ink : 'rgba(255, 255, 255, 0.75)'}
-                />
-                <Text
-                  style={[
-                    styles.modeToggleText,
-                    viewMode === 'owner' && styles.modeToggleTextActive,
-                  ]}
-                >
-                  Management View
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                activeOpacity={0.8}
-                onPress={() => setViewMode('staff')}
-                style={[styles.modeToggleBtn, viewMode === 'staff' && styles.modeToggleBtnActive]}
-              >
-                <Feather
-                  name="user-check"
-                  size={12}
-                  color={viewMode === 'staff' ? COLORS.ink : 'rgba(255, 255, 255, 0.75)'}
-                />
-                <Text
-                  style={[
-                    styles.modeToggleText,
-                    viewMode === 'staff' && styles.modeToggleTextActive,
-                  ]}
-                >
-                  Staff Shift View
-                </Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {/* Date Selector Bar */}
+        <View style={{ backgroundColor: COLORS.ink, paddingHorizontal: 20, paddingBottom: 18 }}>
           <View
             onTouchStart={(e) => {
               touchStartX.current = e.nativeEvent.pageX;
@@ -359,243 +283,196 @@ export default function DailyBalanceScreen() {
           refreshControl={<RefreshControl refreshing={isLoading} onRefresh={load} tintColor={COLORS.ink} />}
           showsVerticalScrollIndicator={false}
         >
-          {isStaffView ? (
-            /* ========================================================================= */
-            /* STAFF SHIFT VIEW (No Profit, No Expenses, No Cost Prices, Register-Centric) */
-            /* ========================================================================= */
-            <View style={{ padding: 20, gap: 18 }}>
-              {/* Register Status Banner */}
-              <Card
-                style={{
-                  backgroundColor: isClosed ? '#ECFDF3' : '#F0F9FF',
-                  borderColor: isClosed ? '#BFD9CA' : '#BAE6FD',
-                  padding: 14,
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <View
-                    style={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: 19,
-                      backgroundColor: isClosed ? '#D1FAE5' : '#E0F2FE',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather
-                      name={isClosed ? 'check-circle' : 'clock'}
-                      size={18}
-                      color={isClosed ? COLORS.success : COLORS.navy}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: COLORS.text.primary }}>
-                      {isClosed ? 'Register Closed by Management' : 'Register Active'}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 12,
-                        color: COLORS.text.secondary,
-                        marginTop: 2,
-                        lineHeight: 16,
-                      }}
-                    >
-                      {isClosed
-                        ? 'This day has been officially audited and balanced by management.'
-                        : 'Cash in drawer and digital collections update in real time as sales and debt collections occur.'}
-                    </Text>
-                  </View>
-                </View>
-              </Card>
+          <View style={{ padding: 20, gap: 20 }}>
+            <View style={{ gap: 12 }}>
+              {/* Row 1 Metrics: Total Revenue + (Total Expenses for owner / Expected Cash for staff) */}
+              <View style={{ flexDirection: 'row', gap: 12 }}>
+                <Card style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginBottom: 4 }}>
+                    Total Revenue
+                  </Text>
+                  <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.accentDark }}>
+                    {formatCurrency(totalRevenue)}
+                  </Text>
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
+                    {salesEntries.length + repaymentEntries.length} revenue entr
+                    {salesEntries.length + repaymentEntries.length === 1 ? 'y' : 'ies'}
+                  </Text>
+                </Card>
 
-              {/* 4 Register Metric Cards */}
-              <View style={{ gap: 12 }}>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <Card style={{ flex: 1, padding: 14 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Total Collections
+                {canViewFinancials ? (
+                  <Card style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginBottom: 4 }}>
+                      Total Expenses
                     </Text>
-                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.accentDark }}>
-                      {formatCurrency(totalRevenue)}
+                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.danger }}>
+                      {formatCurrency(summary?.total_expenses ?? 0)}
                     </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      {staffEntries.length} transaction{staffEntries.length === 1 ? '' : 's'}
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
+                      {expenseEntries.length} item{expenseEntries.length !== 1 ? 's' : ''}
                     </Text>
                   </Card>
-
-                  <Card style={{ flex: 1, padding: 14 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Cash in Drawer
-                    </Text>
-                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.success }}>
-                      {formatCurrency(totalCashInTill)}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      physical till cash
-                    </Text>
-                  </Card>
-                </View>
-
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <Card style={{ flex: 1, padding: 14 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Digital Collections
-                    </Text>
-                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.navy }}>
-                      {formatCurrency(totalDigital)}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      transfers & POS cards
-                    </Text>
-                  </Card>
-
-                  <Card style={{ flex: 1, padding: 14 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Discounts Given
+                ) : (
+                  <Card style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginBottom: 4 }}>
+                      Expected Cash
                     </Text>
                     <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                      {formatCurrency(totalDiscounts)}
+                      {formatCurrency(summary?.cash_in_hand_expected ?? totalCashInTill)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
+                      cash on hand
+                    </Text>
+                  </Card>
+                )}
+              </View>
+
+              {/* Row 2 Metrics: Net Profit + Expected Cash (Owner only; contains privy net profit) */}
+              {canViewFinancials ? (
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <Card style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginBottom: 4 }}>
+                      Net Profit
                     </Text>
                     <Text
                       style={{
-                        fontFamily: FONT.regular,
+                        fontSize: 20,
+                        fontFamily: FONT.bold,
+                        color: (summary?.net_profit ?? 0) >= 0 ? COLORS.success : COLORS.danger,
+                      }}
+                    >
+                      {formatCurrency(summary?.net_profit ?? 0)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
+                      after capital & expenses
+                    </Text>
+                  </Card>
+                  <Card style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginBottom: 4 }}>
+                      Expected Cash
+                    </Text>
+                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                      {formatCurrency(summary?.cash_in_hand_expected ?? 0)}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2 }}>
+                      cash on hand
+                    </Text>
+                  </Card>
+                </View>
+              ) : null}
+
+              {/* Discounts Card */}
+              <Card style={{ padding: 14 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, marginRight: 8 }}>
+                    <View
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 17,
+                        backgroundColor: COLORS.warningLight,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Feather name="tag" size={16} color={COLORS.accentDark} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
+                        Total Discounts Given
+                      </Text>
+                      <Text style={{ fontSize: 18, fontFamily: FONT.bold, color: COLORS.text.primary, marginTop: 1 }}>
+                        {formatCurrency(totalDiscounts)}
+                      </Text>
+                    </View>
+                  </View>
+                  <View
+                    style={{
+                      backgroundColor: totalDiscounts > 0 ? COLORS.warningLight : 'rgba(0,0,0,0.04)',
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: RADIUS.full,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: FONT.medium,
                         fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
+                        color: totalDiscounts > 0 ? COLORS.accentDark : COLORS.text.muted,
                       }}
                     >
                       {discountedSalesCount} discounted sale{discountedSalesCount === 1 ? '' : 's'}
                     </Text>
-                  </Card>
-                </View>
-              </View>
-
-              {/* Physical Cash in Drawer Breakdown Card */}
-              <Card style={{ padding: 16 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <View
-                    style={{
-                      width: 34,
-                      height: 34,
-                      borderRadius: 17,
-                      backgroundColor: '#ECFDF5',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="inbox" size={16} color={COLORS.success} />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: COLORS.text.primary }}>
-                      Physical Cash Breakdown
-                    </Text>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
-                      Physical currency in drawer to be handed over
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={{ gap: 8 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>
-                      Cash from Direct Sales
-                    </Text>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.primary }}>
-                      {formatCurrency(totalCashSales)}
-                    </Text>
-                  </View>
-
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>
-                      Cash from Debt Repayments
-                    </Text>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.primary }}>
-                      {formatCurrency(totalCashRepayments)}
-                    </Text>
-                  </View>
-
-                  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginVertical: 4 }} />
-
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: COLORS.text.primary }}>
-                      Total Cash in Drawer
-                    </Text>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.success }}>
-                      {formatCurrency(totalCashInTill)}
-                    </Text>
-                  </View>
-                </View>
-
-                <View
-                  style={{
-                    marginTop: 14,
-                    padding: 10,
-                    backgroundColor: COLORS.surface2,
-                    borderRadius: RADIUS.sm,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <Feather name="info" size={13} color={COLORS.text.muted} />
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.secondary, flex: 1 }}>
-                    Count physical notes and coins in the register. Your physical cash must match this total at shift handover.
-                  </Text>
                 </View>
               </Card>
 
-              {/* Digital Collections Breakdown Card */}
+              {/* Cash Reconciliation Card (Owner only, when closed) */}
+              {canViewFinancials && isClosed && summary?.cash_in_hand_actual !== undefined ? (
+                <Card style={{ backgroundColor: discrepancyBg, borderColor: discrepancyBorder }}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      gap: 16,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontFamily: FONT.regular,
+                          fontSize: 12,
+                          color: COLORS.text.muted,
+                          marginBottom: 8,
+                        }}
+                      >
+                        Cash Reconciliation
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 16 }}>
+                        <View>
+                          <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted }}>
+                            Expected
+                          </Text>
+                          <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                            {formatCurrency(summary.cash_in_hand_expected)}
+                          </Text>
+                        </View>
+                        <View>
+                          <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted }}>
+                            Actual
+                          </Text>
+                          <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+                            {formatCurrency(summary.cash_in_hand_actual)}
+                          </Text>
+                        </View>
+                        <View>
+                          <Text style={{ fontFamily: FONT.regular, fontSize: 10, color: COLORS.text.muted }}>
+                            Difference
+                          </Text>
+                          <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: discrepancyTone }}>
+                            {discrepancy > 0 ? '+' : ''}
+                            {formatCurrency(discrepancy)}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                    <Feather
+                      name={
+                        discrepancy === 0
+                          ? 'check-circle'
+                          : discrepancy > 0
+                          ? 'trending-up'
+                          : 'alert-triangle'
+                      }
+                      size={20}
+                      color={discrepancyTone}
+                    />
+                  </View>
+                </Card>
+              ) : null}
+
+              {/* Digital & Bank Inflows Card */}
               {Boolean(digitalInflows && digitalInflows.totalDigital > 0) ? (
                 <Card style={{ padding: 14 }}>
                   <View
@@ -779,910 +656,263 @@ export default function DailyBalanceScreen() {
                   ) : null}
                 </Card>
               ) : null}
+            </View>
 
-              {/* Shift Activity Section with Filter Tabs */}
+            {/* Sales Breakdown Section (Identical for owner & staff) */}
+            {salesEntries.length > 0 ? (
               <View>
-                <SectionHeader title="Shift Collections Log" />
-
-                {/* Filter Tabs */}
-                <View style={styles.filterTabsContainer}>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => setStaffTab('all')}
-                    style={[styles.filterTab, staffTab === 'all' && styles.filterTabActive]}
-                  >
-                    <Text style={[styles.filterTabText, staffTab === 'all' && styles.filterTabTextActive]}>
-                      All ({staffEntries.length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => setStaffTab('sales')}
-                    style={[styles.filterTab, staffTab === 'sales' && styles.filterTabActive]}
-                  >
-                    <Text style={[styles.filterTabText, staffTab === 'sales' && styles.filterTabTextActive]}>
-                      Sales ({salesEntries.length})
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => setStaffTab('repayments')}
-                    style={[styles.filterTab, staffTab === 'repayments' && styles.filterTabActive]}
-                  >
-                    <Text style={[styles.filterTabText, staffTab === 'repayments' && styles.filterTabTextActive]}>
-                      Debt Collections ({repaymentEntries.length})
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Activity List */}
-                {filteredStaffEntries.length > 0 ? (
-                  <Card style={{ padding: 0, overflow: 'hidden', marginTop: 10 }}>
-                    {filteredStaffEntries.map((entry, index) => (
-                      <View key={entry.id}>
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: 14,
-                            gap: 12,
-                          }}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                                {entry.description}
-                              </Text>
-                              {Boolean(entry.discount_amount && entry.discount_amount > 0) && (
-                                <View
-                                  style={{
-                                    backgroundColor: COLORS.warningLight,
-                                    paddingHorizontal: 6,
-                                    paddingVertical: 1,
-                                    borderRadius: RADIUS.xs,
-                                  }}
-                                >
-                                  <Text style={{ fontSize: 10, fontFamily: FONT.bold, color: COLORS.accentDark }}>
-                                    -{formatCurrency(entry.discount_amount!)} OFF
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                            <Text
-                              style={{
-                                fontFamily: FONT.regular,
-                                fontSize: 12,
-                                color: COLORS.text.muted,
-                                marginTop: 2,
-                              }}
-                            >
-                              {format(new Date(entry.time), 'h:mm a')}
-                              {' \u00B7 '}
-                              {entry.payment_method === 'mixed' && entry.cash_amount != null
-                                ? `MIXED (${formatCurrency(entry.cash_amount)} Cash · ${formatCurrency(entry.transfer_amount ?? 0)} Transfer${entry.bank_name ? ` [${entry.bank_name}]` : ''})`
-                                : entry.bank_name
-                                ? `${entry.payment_method.toUpperCase()} \u00B7 ${entry.bank_name}`
-                                : entry.payment_method.toUpperCase()}
+                <SectionHeader title={`Sales (${salesEntries.length})`} />
+                <Card style={{ padding: 0, overflow: 'hidden' }}>
+                  {salesEntries.map((entry, index) => (
+                    <View key={entry.id}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: 14,
+                          gap: 12,
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                              {entry.description}
                             </Text>
+                            {Boolean(entry.discount_amount && entry.discount_amount > 0) && (
+                              <View
+                                style={{
+                                  backgroundColor: COLORS.warningLight,
+                                  paddingHorizontal: 6,
+                                  paddingVertical: 1,
+                                  borderRadius: RADIUS.xs,
+                                }}
+                              >
+                                <Text style={{ fontSize: 10, fontFamily: FONT.bold, color: COLORS.accentDark }}>
+                                  -{formatCurrency(entry.discount_amount!)} OFF
+                                </Text>
+                              </View>
+                            )}
                           </View>
                           <Text
                             style={{
-                              fontSize: 15,
-                              fontFamily: FONT.bold,
-                              color: entry.type === 'sale' ? COLORS.success : COLORS.accentDark,
+                              fontFamily: FONT.regular,
+                              fontSize: 12,
+                              color: COLORS.text.muted,
+                              marginTop: 2,
                             }}
                           >
-                            +{formatCurrency(entry.amount)}
+                            {format(new Date(entry.time), 'h:mm a')}
+                            {' \u00B7 '}
+                            {entry.payment_method === 'mixed' && entry.cash_amount != null
+                              ? `MIXED (${formatCurrency(entry.cash_amount)} Cash · ${formatCurrency(entry.transfer_amount ?? 0)} Transfer${entry.bank_name ? ` [${entry.bank_name}]` : ''})`
+                              : entry.bank_name
+                              ? `${entry.payment_method.toUpperCase()} \u00B7 ${entry.bank_name}`
+                              : entry.payment_method.toUpperCase()}
                           </Text>
                         </View>
-                        {index < filteredStaffEntries.length - 1 ? (
-                          <View
-                            style={{
-                              height: StyleSheet.hairlineWidth,
-                              backgroundColor: COLORS.borderSubtle,
-                              marginHorizontal: 14,
-                            }}
-                          />
-                        ) : null}
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.success }}>
+                          +{formatCurrency(entry.amount)}
+                        </Text>
                       </View>
-                    ))}
-                  </Card>
-                ) : (
-                  <EmptyState
-                    icon="inbox"
-                    title="No transactions yet"
-                    description={
-                      staffTab === 'sales'
-                        ? 'No sales have been recorded for this day.'
-                        : staffTab === 'repayments'
-                        ? 'No debt payments have been collected for this day.'
-                        : 'No sales or debt collections have been recorded for this day.'
-                    }
-                  />
-                )}
-              </View>
-
-              {/* Day Closing Notes from Management */}
-              {isClosed && summary?.notes ? (
-                <Card style={{ backgroundColor: '#F9FAFB' }}>
-                  <Text
-                    style={{
-                      fontFamily: FONT.regular,
-                      fontSize: 12,
-                      color: COLORS.text.muted,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Management Closing Notes
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: FONT.regular,
-                      fontSize: 14,
-                      color: COLORS.text.secondary,
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    "{summary.notes}"
-                  </Text>
+                      {index < salesEntries.length - 1 ? (
+                        <View
+                          style={{
+                            height: StyleSheet.hairlineWidth,
+                            backgroundColor: COLORS.borderSubtle,
+                            marginHorizontal: 14,
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  ))}
                 </Card>
-              ) : null}
+              </View>
+            ) : null}
 
-              {/* Shift Handover Actions */}
-              <View style={{ gap: 10, marginTop: 4 }}>
-                <Button
-                  title="Share Shift Summary"
-                  icon="share-2"
-                  onPress={handleShareStaffSummary}
-                  size="lg"
-                  variant="primary"
-                />
+            {/* Debt Payments Received Section (Identical for owner & staff) */}
+            {repaymentEntries.length > 0 ? (
+              <View>
+                <SectionHeader title={`Debt Payments Received (${repaymentEntries.length})`} />
+                <Card style={{ padding: 0, overflow: 'hidden' }}>
+                  {repaymentEntries.map((entry, index) => (
+                    <View key={entry.id}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: 14,
+                          gap: 12,
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                            {entry.description}
+                          </Text>
+                          <Text
+                            style={{
+                              fontFamily: FONT.regular,
+                              fontSize: 12,
+                              color: COLORS.text.muted,
+                              marginTop: 2,
+                            }}
+                          >
+                            {format(new Date(entry.time), 'h:mm a')}
+                            {' \u00B7 '}
+                            {entry.payment_method === 'mixed' && entry.cash_amount != null
+                              ? `MIXED (${formatCurrency(entry.cash_amount)} Cash · ${formatCurrency(entry.transfer_amount ?? 0)} Transfer${entry.bank_name ? ` [${entry.bank_name}]` : ''})`
+                              : entry.bank_name
+                              ? `${entry.payment_method.toUpperCase()} \u00B7 ${entry.bank_name}`
+                              : entry.payment_method.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accentDark }}>
+                          +{formatCurrency(entry.amount)}
+                        </Text>
+                      </View>
+                      {index < repaymentEntries.length - 1 ? (
+                        <View
+                          style={{
+                            height: StyleSheet.hairlineWidth,
+                            backgroundColor: COLORS.borderSubtle,
+                            marginHorizontal: 14,
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  ))}
+                </Card>
+              </View>
+            ) : null}
+
+            {/* Expenses Section (Privy to Owner only) */}
+            {canViewFinancials && expenseEntries.length > 0 ? (
+              <View>
+                <SectionHeader title={`Expenses (${expenseEntries.length})`} />
+                <Card style={{ padding: 0, overflow: 'hidden' }}>
+                  {expenseEntries.map((entry, index) => (
+                    <View key={entry.id}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: 14,
+                          gap: 12,
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+                            {entry.description}
+                          </Text>
+                          <Text
+                            style={{
+                              fontFamily: FONT.regular,
+                              fontSize: 12,
+                              color: COLORS.text.muted,
+                              marginTop: 2,
+                            }}
+                          >
+                            {format(new Date(entry.time), 'h:mm a')}
+                            {' · '}
+                            {entry.payment_method.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger }}>
+                          -{formatCurrency(Math.abs(entry.amount))}
+                        </Text>
+                      </View>
+                      {index < expenseEntries.length - 1 ? (
+                        <View
+                          style={{
+                            height: StyleSheet.hairlineWidth,
+                            backgroundColor: COLORS.borderSubtle,
+                            marginHorizontal: 14,
+                          }}
+                        />
+                      ) : null}
+                    </View>
+                  ))}
+                </Card>
+              </View>
+            ) : null}
+
+            {/* Empty State */}
+            {(canViewFinancials ? entries.length === 0 : salesEntries.length === 0 && repaymentEntries.length === 0) ? (
+              <EmptyState
+                icon="inbox"
+                title="No activity yet"
+                description={
+                  canViewFinancials
+                    ? 'No sales, expenses, or debt payments were recorded for this day.'
+                    : 'No sales or debt payments were recorded for this day.'
+                }
+              />
+            ) : null}
+
+            {/* Close Day Button (Available to BOTH staff and owner when day is open) */}
+            {!isClosed ? (
+              <Button
+                title={isToday ? 'Close and Balance Today' : 'Close and Balance Day'}
+                icon="check-square"
+                onPress={() => router.push('/(app)/close-day')}
+                size="lg"
+                variant="primary"
+              />
+            ) : null}
+
+            {/* Reopen Balance Button (Owner only when closed) */}
+            {canViewFinancials && isClosed ? (
+              <Button
+                title="Reopen Balance"
+                icon="rotate-ccw"
+                onPress={handleReopenDay}
+                loading={isSaving}
+                size="lg"
+                variant="secondary"
+              />
+            ) : null}
+
+            {/* Share Report Button */}
+            {summary ? (
+              <Button
+                title={canViewFinancials ? 'Share Daily Report' : 'Share Shift Summary'}
+                icon="share-2"
+                onPress={canViewFinancials ? handleShareOwnerReport : handleShareStaffSummary}
+                variant="secondary"
+                size="lg"
+              />
+            ) : null}
+
+            {/* Day Closing Notes */}
+            {isClosed && summary?.notes ? (
+              <Card style={{ backgroundColor: '#F9FAFB' }}>
                 <Text
                   style={{
                     fontFamily: FONT.regular,
                     fontSize: 12,
                     color: COLORS.text.muted,
-                    textAlign: 'center',
-                    paddingHorizontal: 16,
+                    marginBottom: 4,
                   }}
                 >
-                  Share this verified register shift summary with the business owner or shift manager.
+                  Day Closing Notes
                 </Text>
-              </View>
+                <Text
+                  style={{
+                    fontFamily: FONT.regular,
+                    fontSize: 14,
+                    color: COLORS.text.secondary,
+                    fontStyle: 'italic',
+                  }}
+                >
+                  "{summary.notes}"
+                </Text>
+              </Card>
+            ) : null}
 
-              <View style={{ height: 20 }} />
-            </View>
-          ) : (
-            /* ========================================================================= */
-            /* OWNER / MANAGEMENT VIEW (Full Financial Reconciliation, Net Profit, P&L)   */
-            /* ========================================================================= */
-            <View style={{ padding: 20, gap: 20 }}>
-              <View style={{ gap: 12 }}>
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <Card style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Total Revenue
-                    </Text>
-                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.accentDark }}>
-                      {formatCurrency(totalRevenue)}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      {salesEntries.length + repaymentEntries.length} revenue entr
-                      {salesEntries.length + repaymentEntries.length === 1 ? 'y' : 'ies'}
-                    </Text>
-                  </Card>
-                  <Card style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Total Expenses
-                    </Text>
-                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.danger }}>
-                      {formatCurrency(summary?.total_expenses ?? 0)}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      {expenseEntries.length} item{expenseEntries.length !== 1 ? 's' : ''}
-                    </Text>
-                  </Card>
-                </View>
-
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <Card style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Net Profit
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 20,
-                        fontFamily: FONT.bold,
-                        color: (summary?.net_profit ?? 0) >= 0 ? COLORS.success : COLORS.danger,
-                      }}
-                    >
-                      {formatCurrency(summary?.net_profit ?? 0)}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      after capital & expenses
-                    </Text>
-                  </Card>
-                  <Card style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginBottom: 4,
-                      }}
-                    >
-                      Expected Cash
-                    </Text>
-                    <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                      {formatCurrency(summary?.cash_in_hand_expected ?? 0)}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: FONT.regular,
-                        fontSize: 11,
-                        color: COLORS.text.muted,
-                        marginTop: 2,
-                      }}
-                    >
-                      cash on hand
-                    </Text>
-                  </Card>
-                </View>
-
-                <Card style={{ padding: 14 }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 10,
-                        flex: 1,
-                        marginRight: 8,
-                      }}
-                    >
-                      <View
-                        style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 17,
-                          backgroundColor: COLORS.warningLight,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Feather name="tag" size={16} color={COLORS.accentDark} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={{
-                            fontFamily: FONT.regular,
-                            fontSize: 11,
-                            color: COLORS.text.muted,
-                          }}
-                        >
-                          Total Discounts Given
-                        </Text>
-                        <Text
-                          style={{
-                            fontSize: 18,
-                            fontFamily: FONT.bold,
-                            color: COLORS.text.primary,
-                            marginTop: 1,
-                          }}
-                        >
-                          {formatCurrency(totalDiscounts)}
-                        </Text>
-                      </View>
-                    </View>
-                    <View
-                      style={{
-                        backgroundColor:
-                          totalDiscounts > 0 ? COLORS.warningLight : 'rgba(0,0,0,0.04)',
-                        paddingHorizontal: 8,
-                        paddingVertical: 3,
-                        borderRadius: RADIUS.full,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontFamily: FONT.medium,
-                          fontSize: 11,
-                          color: totalDiscounts > 0 ? COLORS.accentDark : COLORS.text.muted,
-                        }}
-                      >
-                        {discountedSalesCount} discounted sale
-                        {discountedSalesCount === 1 ? '' : 's'}
-                      </Text>
-                    </View>
-                  </View>
-                </Card>
-
-                {isClosed && summary?.cash_in_hand_actual !== undefined ? (
-                  <Card style={{ backgroundColor: discrepancyBg, borderColor: discrepancyBorder }}>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        gap: 16,
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text
-                          style={{
-                            fontFamily: FONT.regular,
-                            fontSize: 12,
-                            color: COLORS.text.muted,
-                            marginBottom: 8,
-                          }}
-                        >
-                          Cash Reconciliation
-                        </Text>
-                        <View style={{ flexDirection: 'row', gap: 16 }}>
-                          <View>
-                            <Text
-                              style={{
-                                fontFamily: FONT.regular,
-                                fontSize: 10,
-                                color: COLORS.text.muted,
-                              }}
-                            >
-                              Expected
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: 14,
-                                fontFamily: FONT.bold,
-                                color: COLORS.text.primary,
-                              }}
-                            >
-                              {formatCurrency(summary.cash_in_hand_expected)}
-                            </Text>
-                          </View>
-                          <View>
-                            <Text
-                              style={{
-                                fontFamily: FONT.regular,
-                                fontSize: 10,
-                                color: COLORS.text.muted,
-                              }}
-                            >
-                              Actual
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: 14,
-                                fontFamily: FONT.bold,
-                                color: COLORS.text.primary,
-                              }}
-                            >
-                              {formatCurrency(summary.cash_in_hand_actual)}
-                            </Text>
-                          </View>
-                          <View>
-                            <Text
-                              style={{
-                                fontFamily: FONT.regular,
-                                fontSize: 10,
-                                color: COLORS.text.muted,
-                              }}
-                            >
-                              Difference
-                            </Text>
-                            <Text
-                              style={{
-                                fontSize: 14,
-                                fontFamily: FONT.bold,
-                                color: discrepancyTone,
-                              }}
-                            >
-                              {discrepancy > 0 ? '+' : ''}
-                              {formatCurrency(discrepancy)}
-                            </Text>
-                          </View>
-                        </View>
-                      </View>
-                      <Feather
-                        name={
-                          discrepancy === 0
-                            ? 'check-circle'
-                            : discrepancy > 0
-                            ? 'trending-up'
-                            : 'alert-triangle'
-                        }
-                        size={20}
-                        color={discrepancyTone}
-                      />
-                    </View>
-                  </Card>
-                ) : null}
-
-                {Boolean(digitalInflows && digitalInflows.totalDigital > 0) ? (
-                  <Card style={{ padding: 14 }}>
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: 12,
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <View
-                          style={{
-                            width: 34,
-                            height: 34,
-                            borderRadius: 17,
-                            backgroundColor: COLORS.infoLight,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <Feather name="globe" size={16} color={COLORS.navy} />
-                        </View>
-                        <View>
-                          <Text
-                            style={{
-                              fontFamily: FONT.regular,
-                              fontSize: 11,
-                              color: COLORS.text.muted,
-                            }}
-                          >
-                            Digital & Bank Inflows
-                          </Text>
-                          <Text
-                            style={{
-                              fontSize: 18,
-                              fontFamily: FONT.bold,
-                              color: COLORS.text.primary,
-                              marginTop: 1,
-                            }}
-                          >
-                            {formatCurrency(digitalInflows!.totalDigital)}
-                          </Text>
-                        </View>
-                      </View>
-                      <View
-                        style={{
-                          backgroundColor: COLORS.infoLight,
-                          paddingHorizontal: 8,
-                          paddingVertical: 3,
-                          borderRadius: RADIUS.full,
-                        }}
-                      >
-                        <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.navy }}>
-                          {digitalInflows!.byBank.length + digitalInflows!.byPos.length} channel
-                          {digitalInflows!.byBank.length + digitalInflows!.byPos.length === 1 ? '' : 's'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {digitalInflows!.byBank.length > 0 ? (
-                      <View style={{ marginBottom: digitalInflows!.byPos.length > 0 ? 10 : 0 }}>
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontFamily: FONT.bold,
-                            color: COLORS.text.secondary,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            marginBottom: 6,
-                          }}
-                        >
-                          Bank Transfers ({formatCurrency(digitalInflows!.totalTransfer)})
-                        </Text>
-                        <View style={{ gap: 6 }}>
-                          {digitalInflows!.byBank.map((item) => (
-                            <View
-                              key={item.bankName}
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                paddingVertical: 6,
-                                paddingHorizontal: 10,
-                                backgroundColor: COLORS.surface,
-                                borderRadius: RADIUS.sm,
-                              }}
-                            >
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Feather name="send" size={12} color={COLORS.navy} />
-                                <Text
-                                  style={{
-                                    fontSize: 13,
-                                    fontFamily: FONT.medium,
-                                    color: COLORS.text.primary,
-                                  }}
-                                >
-                                  {item.bankName}
-                                </Text>
-                                <Text
-                                  style={{
-                                    fontSize: 11,
-                                    fontFamily: FONT.regular,
-                                    color: COLORS.text.muted,
-                                  }}
-                                >
-                                  ({item.count} payment{item.count === 1 ? '' : 's'})
-                                </Text>
-                              </View>
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  fontFamily: FONT.bold,
-                                  color: COLORS.text.primary,
-                                }}
-                              >
-                                {formatCurrency(item.total)}
-                              </Text>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    ) : null}
-
-                    {digitalInflows!.byPos.length > 0 ? (
-                      <View>
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            fontFamily: FONT.bold,
-                            color: COLORS.accentDark,
-                            textTransform: 'uppercase',
-                            letterSpacing: 0.5,
-                            marginBottom: 6,
-                          }}
-                        >
-                          POS / Card Payments ({formatCurrency(digitalInflows!.totalPos)})
-                        </Text>
-                        <View style={{ gap: 6 }}>
-                          {digitalInflows!.byPos.map((item) => (
-                            <View
-                              key={item.bankName}
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                paddingVertical: 6,
-                                paddingHorizontal: 10,
-                                backgroundColor: COLORS.surface,
-                                borderRadius: RADIUS.sm,
-                              }}
-                            >
-                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                <Feather name="credit-card" size={12} color={COLORS.accentDark} />
-                                <Text
-                                  style={{
-                                    fontSize: 13,
-                                    fontFamily: FONT.medium,
-                                    color: COLORS.text.primary,
-                                  }}
-                                >
-                                  {item.bankName}
-                                </Text>
-                                <Text
-                                  style={{
-                                    fontSize: 11,
-                                    fontFamily: FONT.regular,
-                                    color: COLORS.text.muted,
-                                  }}
-                                >
-                                  ({item.count} payment{item.count === 1 ? '' : 's'})
-                                </Text>
-                              </View>
-                              <Text
-                                style={{
-                                  fontSize: 13,
-                                  fontFamily: FONT.bold,
-                                  color: COLORS.text.primary,
-                                }}
-                              >
-                                {formatCurrency(item.total)}
-                              </Text>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    ) : null}
-                  </Card>
-                ) : null}
-              </View>
-
-              {salesEntries.length > 0 ? (
-                <View>
-                  <SectionHeader title={`Sales (${salesEntries.length})`} />
-                  <Card style={{ padding: 0, overflow: 'hidden' }}>
-                    {salesEntries.map((entry, index) => (
-                      <View key={entry.id}>
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: 14,
-                            gap: 12,
-                          }}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                                {entry.description}
-                              </Text>
-                              {Boolean(entry.discount_amount && entry.discount_amount > 0) && (
-                                <View
-                                  style={{
-                                    backgroundColor: COLORS.warningLight,
-                                    paddingHorizontal: 6,
-                                    paddingVertical: 1,
-                                    borderRadius: RADIUS.xs,
-                                  }}
-                                >
-                                  <Text style={{ fontSize: 10, fontFamily: FONT.bold, color: COLORS.accentDark }}>
-                                    -{formatCurrency(entry.discount_amount!)} OFF
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                            <Text
-                              style={{
-                                fontFamily: FONT.regular,
-                                fontSize: 12,
-                                color: COLORS.text.muted,
-                                marginTop: 2,
-                              }}
-                            >
-                              {format(new Date(entry.time), 'h:mm a')}
-                              {' \u00B7 '}
-                              {entry.payment_method === 'mixed' && entry.cash_amount != null
-                                ? `MIXED (${formatCurrency(entry.cash_amount)} Cash · ${formatCurrency(entry.transfer_amount ?? 0)} Transfer${entry.bank_name ? ` [${entry.bank_name}]` : ''})`
-                                : entry.bank_name
-                                ? `${entry.payment_method.toUpperCase()} \u00B7 ${entry.bank_name}`
-                                : entry.payment_method.toUpperCase()}
-                            </Text>
-                          </View>
-                          <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.success }}>
-                            +{formatCurrency(entry.amount)}
-                          </Text>
-                        </View>
-                        {index < salesEntries.length - 1 ? (
-                          <View
-                            style={{
-                              height: StyleSheet.hairlineWidth,
-                              backgroundColor: COLORS.borderSubtle,
-                              marginHorizontal: 14,
-                            }}
-                          />
-                        ) : null}
-                      </View>
-                    ))}
-                  </Card>
-                </View>
-              ) : null}
-
-              {repaymentEntries.length > 0 ? (
-                <View>
-                  <SectionHeader title={`Debt Payments Received (${repaymentEntries.length})`} />
-                  <Card style={{ padding: 0, overflow: 'hidden' }}>
-                    {repaymentEntries.map((entry, index) => (
-                      <View key={entry.id}>
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: 14,
-                            gap: 12,
-                          }}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                              {entry.description}
-                            </Text>
-                            <Text
-                              style={{
-                                fontFamily: FONT.regular,
-                                fontSize: 12,
-                                color: COLORS.text.muted,
-                                marginTop: 2,
-                              }}
-                            >
-                              {format(new Date(entry.time), 'h:mm a')}
-                              {' \u00B7 '}
-                              {entry.payment_method === 'mixed' && entry.cash_amount != null
-                                ? `MIXED (${formatCurrency(entry.cash_amount)} Cash · ${formatCurrency(entry.transfer_amount ?? 0)} Transfer${entry.bank_name ? ` [${entry.bank_name}]` : ''})`
-                                : entry.bank_name
-                                ? `${entry.payment_method.toUpperCase()} \u00B7 ${entry.bank_name}`
-                                : entry.payment_method.toUpperCase()}
-                            </Text>
-                          </View>
-                          <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.accentDark }}>
-                            +{formatCurrency(entry.amount)}
-                          </Text>
-                        </View>
-                        {index < repaymentEntries.length - 1 ? (
-                          <View
-                            style={{
-                              height: StyleSheet.hairlineWidth,
-                              backgroundColor: COLORS.borderSubtle,
-                              marginHorizontal: 14,
-                            }}
-                          />
-                        ) : null}
-                      </View>
-                    ))}
-                  </Card>
-                </View>
-              ) : null}
-
-              {expenseEntries.length > 0 ? (
-                <View>
-                  <SectionHeader title={`Expenses (${expenseEntries.length})`} />
-                  <Card style={{ padding: 0, overflow: 'hidden' }}>
-                    {expenseEntries.map((entry, index) => (
-                      <View key={entry.id}>
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            padding: 14,
-                            gap: 12,
-                          }}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                              {entry.description}
-                            </Text>
-                            <Text
-                              style={{
-                                fontFamily: FONT.regular,
-                                fontSize: 12,
-                                color: COLORS.text.muted,
-                                marginTop: 2,
-                              }}
-                            >
-                              {format(new Date(entry.time), 'h:mm a')}
-                              {' · '}
-                              {entry.payment_method.toUpperCase()}
-                            </Text>
-                          </View>
-                          <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.danger }}>
-                            -{formatCurrency(Math.abs(entry.amount))}
-                          </Text>
-                        </View>
-                        {index < expenseEntries.length - 1 ? (
-                          <View
-                            style={{
-                              height: StyleSheet.hairlineWidth,
-                              backgroundColor: COLORS.borderSubtle,
-                              marginHorizontal: 14,
-                            }}
-                          />
-                        ) : null}
-                      </View>
-                    ))}
-                  </Card>
-                </View>
-              ) : null}
-
-              {entries.length === 0 ? (
-                <EmptyState
-                  icon="inbox"
-                  title="No activity yet"
-                  description="No sales, expenses, or debt payments were recorded for this day."
-                />
-              ) : null}
-
-              {!isClosed ? (
-                <Button
-                  title={isToday ? 'Close and Balance Today' : 'Close and Balance Day'}
-                  icon="check-square"
-                  onPress={() => router.push('/(app)/close-day')}
-                  size="lg"
-                  variant="primary"
-                />
-              ) : null}
-
-              {isClosed ? (
-                <Button
-                  title="Reopen Balance"
-                  icon="rotate-ccw"
-                  onPress={handleReopenDay}
-                  loading={isSaving}
-                  size="lg"
-                  variant="secondary"
-                />
-              ) : null}
-
-              {summary ? (
-                <Button
-                  title="Share Daily Report"
-                  icon="share-2"
-                  onPress={handleShareOwnerReport}
-                  variant="secondary"
-                  size="lg"
-                />
-              ) : null}
-
-              {isClosed && summary?.notes ? (
-                <Card style={{ backgroundColor: '#F9FAFB' }}>
-                  <Text
-                    style={{
-                      fontFamily: FONT.regular,
-                      fontSize: 12,
-                      color: COLORS.text.muted,
-                      marginBottom: 4,
-                    }}
-                  >
-                    Day Closing Notes
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: FONT.regular,
-                      fontSize: 14,
-                      color: COLORS.text.secondary,
-                      fontStyle: 'italic',
-                    }}
-                  >
-                    "{summary.notes}"
-                  </Text>
-                </Card>
-              ) : null}
-
-              <View style={{ height: 20 }} />
-            </View>
-          )}
+            <View style={{ height: 20 }} />
+          </View>
         </ScrollView>
 
         {showPicker && (
@@ -1703,65 +933,3 @@ export default function DailyBalanceScreen() {
     </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  modeToggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    borderRadius: RADIUS.md,
-    padding: 3,
-    marginBottom: 12,
-  },
-  modeToggleBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 7,
-    borderRadius: RADIUS.sm,
-  },
-  modeToggleBtnActive: {
-    backgroundColor: '#ffffff',
-  },
-  modeToggleText: {
-    fontFamily: FONT.medium,
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.75)',
-  },
-  modeToggleTextActive: {
-    fontFamily: FONT.bold,
-    color: COLORS.ink,
-  },
-  filterTabsContainer: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface2,
-    borderRadius: RADIUS.md,
-    padding: 3,
-    gap: 4,
-    marginTop: 8,
-  },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 7,
-    alignItems: 'center',
-    borderRadius: RADIUS.sm,
-  },
-  filterTabActive: {
-    backgroundColor: '#ffffff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  filterTabText: {
-    fontFamily: FONT.medium,
-    fontSize: 12,
-    color: COLORS.text.muted,
-  },
-  filterTabTextActive: {
-    fontFamily: FONT.bold,
-    color: COLORS.navy,
-  },
-});

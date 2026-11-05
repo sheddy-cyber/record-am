@@ -9,7 +9,7 @@ import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { useNotificationStore } from '@/store/notificationStore';
-import { Button, Card, EmptyState, LoadingScreen, PermissionDenied } from '@/components/ui';
+import { Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
 import { canViewFinancialData } from '@/lib/permissions';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -51,10 +51,10 @@ export default function CloseDayScreen() {
   }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate]);
 
   useEffect(() => {
-    if (canViewFinancials && !summary && currentBusiness && currentBranch) {
+    if (!summary && currentBusiness && currentBranch) {
       fetchDailyBalance(currentBusiness.id, currentBranch.id, selectedDate);
     }
-  }, [canViewFinancials, currentBranch, currentBusiness, fetchDailyBalance, selectedDate, summary]);
+  }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate, summary]);
 
   const initializedDateRef = useRef<string | null>(null);
 
@@ -106,22 +106,6 @@ export default function CloseDayScreen() {
   };
 
 
-  if (!canViewFinancials) {
-    return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-        <ScreenHeader
-          title="Close and Balance Day"
-          theme="dark"
-          left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
-        />
-        <PermissionDenied
-          title="Day closing is restricted"
-          description="Only roles with financial access can view cash reconciliation and close the business day."
-        />
-      </ScreenShell>
-    );
-  }
-
   if (!summary) {
     return (
       <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
@@ -163,19 +147,23 @@ export default function CloseDayScreen() {
       >
           <Card style={{ marginBottom: 20 }}>
             <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
-              Day Financial Summary
+              {canViewFinancials ? 'Day Financial Summary' : 'Day Summary'}
             </Text>
             {[
               { label: 'Total Revenue', value: formatCurrency(totalRevenue), color: COLORS.success },
               ...(summary.total_discounts && summary.total_discounts > 0
-                ? [{ label: 'Total Discounts Given', value: formatCurrency(summary.total_discounts), color: COLORS.warning }]
+                ? [{ label: 'Total Discounts Given', value: formatCurrency(summary.total_discounts), color: COLORS.accentDark }]
                 : []),
-              { label: 'Total Expenses', value: formatCurrency(summary.total_expenses ?? 0), color: COLORS.danger },
-              {
-                label: 'Net Profit',
-                value: formatCurrency(summary.net_profit ?? 0),
-                color: (summary.net_profit ?? 0) >= 0 ? COLORS.success : COLORS.danger,
-              },
+              ...(canViewFinancials
+                ? [
+                    { label: 'Total Expenses', value: formatCurrency(summary.total_expenses ?? 0), color: COLORS.danger },
+                    {
+                      label: 'Net Profit',
+                      value: formatCurrency(summary.net_profit ?? 0),
+                      color: (summary.net_profit ?? 0) >= 0 ? COLORS.success : COLORS.danger,
+                    },
+                  ]
+                : []),
               { label: 'Expected Cash in Hand', value: formatCurrency(summary.cash_in_hand_expected ?? 0), color: COLORS.accentDark },
             ].map((item, idx, arr) => (
               <View
