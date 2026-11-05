@@ -693,6 +693,172 @@ export async function shareDailyReport(data: DailyReportData) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// STAFF SHIFT REPORT (REGISTER & COLLECTIONS ONLY)
+// ─────────────────────────────────────────────────────────────────
+
+export interface StaffShiftReportData {
+  date: string;
+  business: Business;
+  branch: Branch;
+  staffName?: string;
+  totalSales: number;
+  totalCash: number;
+  totalTransfer: number;
+  totalPos: number;
+  totalDiscounts: number;
+  totalTransactions: number;
+  digitalBreakdown?: {
+    byBank: { bankName: string; total: number; count: number }[];
+    byPos: { bankName: string; total: number; count: number }[];
+  };
+  isClosed: boolean;
+}
+
+export function generateStaffShiftReportHTML(data: StaffShiftReportData): string {
+  const currency = data.business.currency_symbol ?? CURRENCY_SYMBOL;
+  const formatMoney = (value: number) => `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Staff Shift Summary - ${data.date}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1e293b; background: #ffffff; }
+    .header { background: #004e89; color: #ffffff; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+    .header h1 { margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { margin: 4px 0 0; opacity: 0.9; font-size: 13px; }
+    .status { margin-top: 10px; font-weight: 700; font-size: 12px; color: ${data.isClosed ? '#4ade80' : '#facc15'}; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .metric { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+    .metric .label { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric .val { font-size: 20px; font-weight: 800; color: #004e89; margin-top: 4px; }
+    .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 13px; margin: 0 0 10px; text-transform: uppercase; color: #334155; letter-spacing: 0.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; font-weight: 700; }
+    .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .row:last-child { border-bottom: none; }
+    .row .val { font-weight: 700; color: #0f172a; }
+    .footer { text-align: center; color: #94a3b8; font-size: 11px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Staff Register & Shift Summary</h1>
+    <p>${data.business.name} · ${data.branch.name}</p>
+    <p>${format(new Date(data.date), 'EEEE, MMMM d, yyyy')}${data.staffName ? ` · Prepared by ${data.staffName}` : ''}</p>
+    <div class="status">${data.isClosed ? '✓ Register Closed by Management' : '• Register Active / Open'}</div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric">
+      <div class="label">Total Collections</div>
+      <div class="val">${formatMoney(data.totalSales)}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">${data.totalTransactions} transaction${data.totalTransactions === 1 ? '' : 's'}</div>
+    </div>
+    <div class="metric">
+      <div class="label">Cash in Till / Drawer</div>
+      <div class="val" style="color:#004e89;">${formatMoney(data.totalCash)}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">Count in drawer</div>
+    </div>
+    <div class="metric">
+      <div class="label">POS Card Payments</div>
+      <div class="val" style="color:#d97706;">${formatMoney(data.totalPos)}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">Terminal slips total</div>
+    </div>
+    <div class="metric">
+      <div class="label">Bank Transfers</div>
+      <div class="val" style="color:#0284c7;">${formatMoney(data.totalTransfer)}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:2px;">Verified transfer alerts</div>
+    </div>
+  </div>
+
+  ${(data.digitalBreakdown?.byPos && data.digitalBreakdown.byPos.length > 0) ? `
+  <div class="card">
+    <h2>POS Terminals Breakdown</h2>
+    ${data.digitalBreakdown.byPos.map((pos) => `
+      <div class="row">
+        <span>${pos.bankName} (${pos.count} slip${pos.count === 1 ? '' : 's'})</span>
+        <span class="val">${formatMoney(pos.total)}</span>
+      </div>
+    `).join('')}
+  </div>` : ''}
+
+  ${(data.digitalBreakdown?.byBank && data.digitalBreakdown.byBank.length > 0) ? `
+  <div class="card">
+    <h2>Bank Transfers Breakdown</h2>
+    ${data.digitalBreakdown.byBank.map((b) => `
+      <div class="row">
+        <span>${b.bankName} (${b.count} payment${b.count === 1 ? '' : 's'})</span>
+        <span class="val">${formatMoney(b.total)}</span>
+      </div>
+    `).join('')}
+  </div>` : ''}
+
+  ${data.totalDiscounts > 0 ? `
+  <div class="card">
+    <div class="row" style="font-weight:600;">
+      <span>Total Discounts Granted on Sales</span>
+      <span class="val" style="color:#d97706;">-${formatMoney(data.totalDiscounts)}</span>
+    </div>
+  </div>` : ''}
+
+  <div class="footer">
+    <p>Generated with Record Am on ${format(new Date(), 'MMM d, yyyy h:mm a')}</p>
+    <p>Confidential Staff Shift Summary</p>
+  </div>
+</body>
+</html>`;
+}
+
+export async function shareStaffShiftReport(data: StaffShiftReportData) {
+  const currency = data.business.currency_symbol ?? CURRENCY_SYMBOL;
+  const formatMoney = (value: number) => `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
+  const reportTitle = `Staff Shift Summary - ${format(new Date(data.date), 'MMMM d, yyyy')}`;
+
+  try {
+    const html = generateStaffShiftReportHTML(data);
+    const { uri } = await Print.printToFileAsync({ html });
+
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri, {
+        mimeType: 'application/pdf',
+        dialogTitle: reportTitle,
+        UTI: 'com.adobe.pdf',
+      });
+      return;
+    }
+
+    await Share.share({
+      url: uri,
+      title: reportTitle,
+      message: reportTitle,
+    });
+  } catch (err: any) {
+    console.error('Share staff report error:', err);
+    const fallbackMessage =
+      `*STAFF SHIFT SUMMARY - ${format(new Date(data.date), 'MMMM d, yyyy')}*\n` +
+      `${data.business.name} - ${data.branch.name}\n` +
+      (data.staffName ? `Staff: ${data.staffName}\n\n` : '\n') +
+      `Total Collections: ${formatMoney(data.totalSales)} (${data.totalTransactions} transactions)\n` +
+      `Cash in Till: ${formatMoney(data.totalCash)}\n` +
+      `POS Card Payments: ${formatMoney(data.totalPos)}\n` +
+      `Bank Transfers: ${formatMoney(data.totalTransfer)}\n` +
+      (data.totalDiscounts > 0 ? `Discounts: -${formatMoney(data.totalDiscounts)}\n` : '') +
+      `\n${data.isClosed ? 'Register Closed by Management' : 'Register Active / Open'}\n` +
+      `_Generated by Record Am_`;
+
+    try {
+      await Share.share({
+        message: fallbackMessage,
+        title: reportTitle,
+      });
+    } catch (shareErr) {
+      console.error('Fallback share error:', shareErr);
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
 // INVENTORY STOCK SHEET (DOUBLE-COLUMN A4)
 // ─────────────────────────────────────────────────────────────────
 

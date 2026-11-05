@@ -367,9 +367,13 @@ export async function getDailyBalanceSnapshot(
     ]);
 
     if (salesResult.error) throw salesResult.error;
-    if (expensesResult.error) throw expensesResult.error;
     if (repaymentsResult.error) throw repaymentsResult.error;
-    if (summaryResult.error) throw summaryResult.error;
+    if (expensesResult.error && (expensesResult.error as any).code !== '42501') {
+      console.warn('[dailyBalance] expenses query warning:', expensesResult.error.message);
+    }
+    if (summaryResult.error && (summaryResult.error as any).code !== '42501') {
+      console.warn('[dailyBalance] summary query warning:', summaryResult.error.message);
+    }
 
     const serverSales = (salesResult.data ?? []) as any[];
     const serverExpenses = ((expensesResult.data ?? []) as Expense[]);

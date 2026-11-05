@@ -57,14 +57,16 @@ function MoreScreen() {
           iconBg: '#0284C7',
           iconColor: '#FFFFFF',
         }] : []),
-        ...(canViewFinancials ? [{
+        {
           icon: 'sliders' as keyof typeof Feather.glyphMap,
           label: 'Daily Balance',
-          subtitle: 'Cash reconciliation and day close',
+          subtitle: canViewFinancials
+            ? 'Cash reconciliation, profit, and day close'
+            : 'End of day register and sales reconciliation',
           onPress: () => router.push('/(app)/balance'),
           iconBg: '#15803D',
           iconColor: '#FFFFFF',
-        }] : []),
+        },
       ],
     },
     {
