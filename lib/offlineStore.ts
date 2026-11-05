@@ -3,7 +3,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { format } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { useOfflineStore } from '@/store/offlineStore';
-import { CustomerDebt, DashboardStats, Expense, Product, RevenueActivity } from '@/types';
+import { CustomerDebt, DashboardStats, Expense, Product, RevenueActivity, SaleItem } from '@/types';
 
 type Primitive = string | number | boolean | null;
 
@@ -714,6 +714,7 @@ export async function incrementPersistedDashboardSales(
   branchId: string,
   amountPaid: number,
   debtAmount = 0,
+  profitAmount?: number,
 ): Promise<DashboardStats> {
   const todayDate = format(new Date(), 'yyyy-MM-dd');
   const cached = await readPersistedDashboardStats(businessId, branchId);
@@ -732,7 +733,9 @@ export async function incrementPersistedDashboardSales(
 
   const nextSales = Number((baseStats.today_sales + amountPaid).toFixed(2));
   const nextExpenses = baseStats.today_expenses;
-  const nextProfit = Number((nextSales - nextExpenses).toFixed(2));
+  const nextProfit = profitAmount !== undefined
+    ? Number((baseStats.today_profit + profitAmount).toFixed(2))
+    : baseStats.today_profit;
   const nextDebts = Number(Math.max(0, baseStats.outstanding_debts + debtAmount).toFixed(2));
 
   const updatedStats: DashboardStats = {
@@ -756,14 +759,16 @@ export async function decrementPersistedDashboardSales(
   branchId: string,
   amountPaid: number,
   debtAmount = 0,
+  profitAmount?: number,
 ): Promise<DashboardStats | null> {
   const todayDate = format(new Date(), 'yyyy-MM-dd');
   const cached = await readPersistedDashboardStats(businessId, branchId);
   if (!cached || cached.date !== todayDate) return null;
 
   const nextSales = Number(Math.max(0, cached.stats.today_sales - amountPaid).toFixed(2));
-  const nextExpenses = cached.stats.today_expenses;
-  const nextProfit = Number((nextSales - nextExpenses).toFixed(2));
+  const nextProfit = profitAmount !== undefined
+    ? Number(Math.max(0, cached.stats.today_profit - profitAmount).toFixed(2))
+    : cached.stats.today_profit;
   const nextDebts = Number(Math.max(0, cached.stats.outstanding_debts - debtAmount).toFixed(2));
 
   const updatedStats: DashboardStats = {
@@ -792,12 +797,10 @@ export async function applyExpenseToPersistedDashboardStats(
   if (!cached || cached.date !== todayDate) return null;
 
   const nextExpenses = Number((cached.stats.today_expenses + amount).toFixed(2));
-  const nextProfit = Number((cached.stats.today_sales - nextExpenses).toFixed(2));
 
   const updatedStats: DashboardStats = {
     ...cached.stats,
     today_expenses: nextExpenses,
-    today_profit: nextProfit,
   };
 
   await writePersistedDashboardStats(businessId, branchId, {
@@ -817,12 +820,13 @@ export async function buildCachedDashboardData(
   recentDebts: CustomerDebt[];
 }> {
   const todayDate = format(new Date(), 'yyyy-MM-dd');
-  const [activities, debts, expenses, products, persistedStatsEntry] = await Promise.all([
+  const [activities, debts, expenses, products, persistedStatsEntry, cachedSaleItems] = await Promise.all([
     readCachedRevenueActivities(businessId, branchId, 300),
     readCachedCustomerDebts(businessId, branchId),
     readCachedExpenses(businessId, branchId),
     readCachedProducts(businessId),
     readPersistedDashboardStats(businessId, branchId),
+    readCachedRows<SaleItem>({ businessId, branchId }, 'sale_items'),
   ]);
 
   const todayActivities = activities.filter((activity) => sameLocalDate(activity.created_at));
@@ -852,6 +856,38 @@ export async function buildCachedDashboardData(
     { lowStock: 0, outOfStock: 0 },
   );
 
+  const productCostMap = new Map(products.map((p) => [p.id, Number(p.cost_price ?? 0)]));
+  const todaySaleItems = cachedSaleItems.filter((item) => sameLocalDate(item.created_at));
+
+  let calculatedProfit = 0;
+  let hasItemDetails = false;
+
+  if (todaySaleItems.length > 0) {
+    calculatedProfit = todaySaleItems.reduce((sum, item) => {
+      const rawCost = Number(item.cost_price ?? 0);
+      const fallbackCost = productCostMap.get(item.product_id) ?? 0;
+      const unitCost = rawCost > 0 ? rawCost : fallbackCost;
+      const itemSellingPrice = Number(item.total_price ?? ((item.unit_price ?? 0) * (item.quantity ?? 1)));
+      const itemCost = unitCost * Number(item.quantity ?? 1);
+      return sum + (itemSellingPrice - itemCost);
+    }, 0);
+    hasItemDetails = true;
+  } else {
+    const todaySales = todayActivities.filter((a) => a.kind === 'sale');
+    const salesWithItems = todaySales.filter((s) => s.items && s.items.length > 0);
+    if (salesWithItems.length > 0) {
+      calculatedProfit = salesWithItems.reduce((sum, sale) => {
+        const saleCogs = (sale.items ?? []).reduce((cogsSum, item) => {
+          const cost = productCostMap.get(item.product_id ?? '') ?? 0;
+          return cogsSum + (cost * Number(item.quantity ?? 1));
+        }, 0);
+        const saleSellingPrice = Number(sale.total_amount ?? sale.amount_paid ?? 0);
+        return sum + (saleSellingPrice - saleCogs);
+      }, 0);
+      hasItemDetails = true;
+    }
+  }
+
   const hasValidTodayStats = persistedStatsEntry && persistedStatsEntry.date === todayDate;
   const persistedTodaySales = hasValidTodayStats ? persistedStatsEntry.stats.today_sales : 0;
   // If activities exist in cache for today, activityTodaySales is the true sum of active transactions.
@@ -864,7 +900,11 @@ export async function buildCachedDashboardData(
   const effectiveTodayExpenses = todayExpenses.length > 0
     ? todayExpenseTotal
     : (hasValidTodayStats ? persistedTodayExpenses : 0);
-  const effectiveTodayProfit = effectiveTodaySales - effectiveTodayExpenses;
+
+  const persistedTodayProfit = hasValidTodayStats ? persistedStatsEntry.stats.today_profit : 0;
+  const effectiveTodayProfit = hasItemDetails
+    ? Number(calculatedProfit.toFixed(2))
+    : (persistedTodayProfit > 0 ? persistedTodayProfit : 0);
 
   const totalOutstandingDebts = openDebts.reduce((sum, debt) => sum + debt.balance, 0);
   const effectiveOutstandingDebts = hasValidTodayStats
@@ -881,6 +921,7 @@ export async function buildCachedDashboardData(
     hasValidTodayStats &&
     (persistedStatsEntry.stats.today_sales !== effectiveTodaySales ||
       persistedStatsEntry.stats.today_expenses !== effectiveTodayExpenses ||
+      persistedStatsEntry.stats.today_profit !== effectiveTodayProfit ||
       persistedStatsEntry.stats.outstanding_debts !== effectiveOutstandingDebts ||
       persistedStatsEntry.stats.today_sales_count !== effectiveTodaySalesCount)
   ) {

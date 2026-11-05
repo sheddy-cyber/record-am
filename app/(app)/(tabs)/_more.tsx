@@ -158,7 +158,7 @@ function MoreScreen() {
           subtitle: 'Brand story and app information',
           onPress: () => router.push('/(app)/about'),
           iconBg: COLORS.accent,
-          iconColor: '#002744',
+          iconColor: COLORS.onAccent,
         },
         {
           icon: 'log-out',
@@ -210,7 +210,7 @@ function MoreScreen() {
               justifyContent: 'center',
             }}
           >
-            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: '#000000' }}>
+            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.onAccent }}>
               {(profileName ?? 'U').charAt(0).toUpperCase()}
             </Text>
           </View>

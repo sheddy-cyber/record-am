@@ -3,6 +3,7 @@ import {
   Alert,
   RefreshControl,
   Text,
+  Vibration,
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -20,6 +21,7 @@ import { useTabStore } from '@/store/tabStore';
 import { usePaymentAccountStore } from '@/store/paymentAccountStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
 import { PaymentAccountModal } from '@/components/settings/PaymentAccountModal';
+import { BarcodeScannerModal, ScanFeedback } from '@/components/scanner/BarcodeScannerModal';
 import { supabase } from '@/lib/supabase';
 import { saleItemsTable } from '@/lib/dataAccess';
 import { recordSaleOffline, updateSaleOffline } from '@/lib/offlineRecords';
@@ -82,10 +84,18 @@ export default function RecordSaleScreen() {
     loadSoldProductQuantities,
   } = useSaleStore();
 
-  const { saleId, customerName: prefilledCustomerName, customerPhone: prefilledCustomerPhone } = useLocalSearchParams<{
+  const {
+    saleId,
+    customerName: prefilledCustomerName,
+    customerPhone: prefilledCustomerPhone,
+    scan,
+    barcode: prefilledBarcode,
+  } = useLocalSearchParams<{
     saleId?: string;
     customerName?: string;
     customerPhone?: string;
+    scan?: string;
+    barcode?: string;
   }>();
   const isEditing = Boolean(saleId);
   const [loadingSale, setLoadingSale] = useState(false);
@@ -98,6 +108,9 @@ export default function RecordSaleScreen() {
   const deferredSearch = useDeferredValue(search);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<ScanFeedback | null>(null);
+  const scanFeedbackTimerRef = useRef<any>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
@@ -364,8 +377,18 @@ export default function RecordSaleScreen() {
     }
 
     return searchableProducts
-      .filter((product) => product.name.toLowerCase().includes(query))
+      .filter((product) => {
+        const nameMatches = product.name.toLowerCase().includes(query);
+        const barcodeMatches = product.barcode ? product.barcode.toLowerCase().includes(query) : false;
+        const skuMatches = product.sku ? product.sku.toLowerCase().includes(query) : false;
+        return nameMatches || barcodeMatches || skuMatches;
+      })
       .sort((firstProduct, secondProduct) => {
+        const firstExact = (firstProduct.barcode?.toLowerCase() === query) || (firstProduct.sku?.toLowerCase() === query);
+        const secondExact = (secondProduct.barcode?.toLowerCase() === query) || (secondProduct.sku?.toLowerCase() === query);
+        if (firstExact && !secondExact) return -1;
+        if (!firstExact && secondExact) return 1;
+
         const firstPinnedIndex = pinnedProductIndexById[firstProduct.id];
         const secondPinnedIndex = pinnedProductIndexById[secondProduct.id];
         const firstIsPinned = firstPinnedIndex !== undefined;
@@ -479,6 +502,121 @@ export default function RecordSaleScreen() {
       }),
     );
   };
+
+  const showScannerFeedback = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    if (scanFeedbackTimerRef.current) clearTimeout(scanFeedbackTimerRef.current);
+    setScanFeedback({ message, type });
+    scanFeedbackTimerRef.current = setTimeout(() => {
+      setScanFeedback(null);
+    }, 2800);
+  }, []);
+
+  const handleBarcodeScanned = useCallback(
+    (scannedCode: string) => {
+      const cleanCode = scannedCode.trim().toLowerCase();
+      if (!cleanCode) return;
+
+      const matchedProduct = searchableProducts.find(
+        (p) =>
+          (p.barcode && p.barcode.trim().toLowerCase() === cleanCode) ||
+          (p.sku && p.sku.trim().toLowerCase() === cleanCode) ||
+          p.id.toLowerCase() === cleanCode,
+      );
+
+      if (!matchedProduct) {
+        try {
+          Vibration.vibrate([0, 80, 40, 80]);
+        } catch (_) {}
+        showScannerFeedback(`No product found for "${scannedCode.trim()}"`, 'error');
+        Toast.show({
+          type: 'error',
+          text1: 'Product Not Found',
+          text2: `Barcode: ${scannedCode.trim()}`,
+        });
+        return;
+      }
+
+      const availableStock = getProductStock(matchedProduct);
+      const existingItem = cart.find((item) => item.product.id === matchedProduct.id);
+
+      if (existingItem) {
+        const nextQuantity = existingItem.quantity + 1;
+        const unitOption = getSaleUnitOption(
+          matchedProduct,
+          existingItem.sale_unit,
+          existingItem.bundle_size,
+        );
+        const requiredStock = nextQuantity * unitOption.stockFactor;
+
+        if (!matchedProduct.is_service && requiredStock > availableStock) {
+          try {
+            Vibration.vibrate([0, 80, 40, 80]);
+          } catch (_) {}
+          showScannerFeedback(
+            `Max stock reached: only ${formatCount(availableStock)} ${matchedProduct.unit} available`,
+            'error',
+          );
+          Toast.show({
+            type: 'error',
+            text1: 'Not enough stock',
+            text2: `${matchedProduct.name} only has ${formatCount(availableStock)} ${matchedProduct.unit} available.`,
+          });
+          return;
+        }
+
+        updateCartItem(matchedProduct.id, { quantity: nextQuantity });
+        setQuantityInputs((previousInputs) => ({
+          ...previousInputs,
+          [matchedProduct.id]: String(nextQuantity),
+        }));
+        showScannerFeedback(`${matchedProduct.name} (Qty: ${nextQuantity})`, 'success');
+        Toast.show({
+          type: 'success',
+          text1: matchedProduct.name,
+          text2: `Quantity increased to ${nextQuantity}`,
+        });
+      } else {
+        if (!matchedProduct.is_service && availableStock <= 0) {
+          try {
+            Vibration.vibrate([0, 80, 40, 80]);
+          } catch (_) {}
+          showScannerFeedback(`Out of stock: ${matchedProduct.name}`, 'error');
+          Toast.show({
+            type: 'error',
+            text1: 'Out of stock',
+            text2: `${matchedProduct.name} is currently out of stock.`,
+          });
+          return;
+        }
+
+        const newItem = buildCartItem(matchedProduct, 1);
+        setCart((previousCart) => [...previousCart, newItem]);
+        setQuantityInputs((previousInputs) => ({
+          ...previousInputs,
+          [matchedProduct.id]: '1',
+        }));
+        showScannerFeedback(`Added: ${matchedProduct.name}`, 'success');
+        Toast.show({
+          type: 'success',
+          text1: `Added ${matchedProduct.name}`,
+          text2: `${CURRENCY_SYMBOL}${matchedProduct.selling_price.toLocaleString('en-NG')} \u00B7 In cart`,
+        });
+      }
+    },
+    [searchableProducts, cart, getProductStock, buildCartItem, showScannerFeedback],
+  );
+
+  useEffect(() => {
+    if (scan === '1' || scan === 'true') {
+      setScannerOpen(true);
+    }
+  }, [scan]);
+
+  useEffect(() => {
+    if (prefilledBarcode && searchableProducts.length > 0) {
+      handleBarcodeScanned(prefilledBarcode);
+    }
+  }, [prefilledBarcode, searchableProducts.length, handleBarcodeScanned]);
 
   const handleQuantityChange = (productId: string, value: string) => {
     setQuantityInputs((previousInputs) => ({
@@ -812,8 +950,15 @@ export default function RecordSaleScreen() {
     try {
       const saleNumber = `OFF-${Date.now().toString(36).toUpperCase()}`;
 
+      const saleCost = adjustedCart.reduce((sum, item) => {
+        const factor = getSaleUnitOption(item.product, item.sale_unit, item.bundle_size).stockFactor;
+        const unitCost = Number(item.product.cost_price ?? 0) * factor;
+        return sum + (unitCost * item.quantity);
+      }, 0);
+      const effectiveSaleProfit = Number(Math.max(0, effectiveTotalAmount - saleCost).toFixed(2));
+
       if (effectiveAmountPaid > 0 || effectiveAmountOwed > 0) {
-        useDashboardStore.getState().incrementTodaySales(effectiveAmountPaid, effectiveAmountOwed);
+        useDashboardStore.getState().incrementTodaySales(effectiveAmountPaid, effectiveAmountOwed, effectiveSaleProfit);
       }
 
       await recordSaleOffline({
@@ -882,6 +1027,13 @@ export default function RecordSaleScreen() {
         }
         theme="dark"
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
+        right={
+          <HeaderAction
+            icon="maximize"
+            label="Scan"
+            onPress={() => setScannerOpen(true)}
+          />
+        }
       />
       <KeyboardAwareScrollView
         style={{ flex: 1 }}
@@ -1005,6 +1157,24 @@ export default function RecordSaleScreen() {
           }}
         />
       ) : null}
+
+      <BarcodeScannerModal
+        visible={scannerOpen}
+        onClose={() => {
+          setScannerOpen(false);
+          setScanFeedback(null);
+        }}
+        onScan={handleBarcodeScanned}
+        keepOpenOnScan={true}
+        title="Scan to Sell"
+        subtitle="Point camera at any product barcode or QR code"
+        doneButtonLabel={
+          cart.length > 0
+            ? `Done · ${cart.reduce((sum, item) => sum + item.quantity, 0)} in Cart`
+            : 'Done Scanning'
+        }
+        scanFeedback={scanFeedback}
+      />
     </ScreenShell>
   );
 }

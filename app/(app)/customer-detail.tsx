@@ -8,7 +8,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { Product, Sale } from '@/types';
-import { Button, Card, EmptyState, SectionHeader, SmartChip, confirmModal } from '@/components/ui';
+import { BottomSheetModal, Button, Card, EmptyState, SectionHeader, SmartChip, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { printCounterpartyStatement, shareCounterpartyStatementPDF } from '@/lib/reports';
@@ -270,8 +270,8 @@ export default function CustomerDetailScreen() {
               backgroundColor: COLORS.accent,
             }}
           >
-            <Feather name="plus-circle" size={18} color="#000000" />
-            <Text style={{ fontFamily: FONT.semiBold, fontSize: 14, color: '#000000' }}>Record Sale for {customer.name.split(' ')[0]}</Text>
+            <Feather name="plus-circle" size={18} color={COLORS.onAccent} />
+            <Text style={{ fontFamily: FONT.semiBold, fontSize: 14, color: COLORS.onAccent }}>Record Sale for {customer.name.split(' ')[0]}</Text>
           </TouchableOpacity>
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
@@ -382,74 +382,66 @@ export default function CustomerDetailScreen() {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      <Modal
+      <BottomSheetModal
         visible={manageSheetVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setManageSheetVisible(false)}
+        onClose={() => setManageSheetVisible(false)}
+        title="Manage customer"
+        subtitle={customer.name}
       >
-        <Pressable style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,33,28,0.48)' }} onPress={() => setManageSheetVisible(false)}>
-          <Pressable onPress={(event) => event.stopPropagation()} style={{ paddingTop: 12, paddingHorizontal: 20, paddingBottom: 28, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: COLORS.surface }}>
-            <View style={{ width: 38, height: 4, alignSelf: 'center', borderRadius: 4, backgroundColor: COLORS.borderDark }} />
-            <Text style={{ marginTop: 18, fontFamily: FONT.bold, fontSize: 17, color: COLORS.text.primary }}>Manage customer</Text>
-            <Text style={{ marginTop: 3, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>{customer.name}</Text>
+        <TouchableOpacity
+          onPress={handlePrintStatement}
+          disabled={isPrinting}
+          activeOpacity={0.8}
+          style={{ minHeight: 50, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isPrinting ? 0.55 : 1 }}
+        >
+          <Feather name="printer" size={16} color={COLORS.navy} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isPrinting ? 'Preparing statement…' : 'Print customer statement'}</Text>
+            <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Balance and recent sales records</Text>
+          </View>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handlePrintStatement}
-              disabled={isPrinting}
-              activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 18, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isPrinting ? 0.55 : 1 }}
-            >
-              <Feather name="printer" size={16} color={COLORS.accent} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isPrinting ? 'Preparing statement…' : 'Print customer statement'}</Text>
-                <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Balance and recent sales records</Text>
-              </View>
-            </TouchableOpacity>
+        <TouchableOpacity
+          onPress={handleShareStatement}
+          disabled={isSharingPDF}
+          activeOpacity={0.8}
+          style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isSharingPDF ? 0.55 : 1 }}
+        >
+          <Feather name="share-2" size={16} color={COLORS.navy} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isSharingPDF ? 'Preparing PDF…' : 'Share as PDF'}</Text>
+            <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Save statement to device</Text>
+          </View>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={handleShareStatement}
-              disabled={isSharingPDF}
-              activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isSharingPDF ? 0.55 : 1 }}
-            >
-              <Feather name="share-2" size={16} color={COLORS.accent} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isSharingPDF ? 'Preparing PDF…' : 'Share as PDF'}</Text>
-                <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Save statement to device</Text>
-              </View>
-            </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            setManageSheetVisible(false);
+            openEditCustomer();
+          }}
+          activeOpacity={0.8}
+          style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
+        >
+          <Feather name="edit-2" size={16} color={COLORS.text.secondary} />
+          <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>Edit customer details</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={() => {
-                setManageSheetVisible(false);
-                openEditCustomer();
-              }}
-              activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
-            >
-              <Feather name="edit-2" size={16} color={COLORS.text.secondary} />
-              <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>Edit customer details</Text>
-            </TouchableOpacity>
+        <TouchableOpacity
+          onPress={async () => {
+            setManageSheetVisible(false);
+            await handleDelete();
+          }}
+          activeOpacity={0.8}
+          style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: '#F5C2BA', backgroundColor: '#FEF3F2' }}
+        >
+          <Feather name="trash-2" size={16} color={COLORS.danger} />
+          <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.danger }}>Remove customer</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity
-              onPress={async () => {
-                setManageSheetVisible(false);
-                await handleDelete();
-              }}
-              activeOpacity={0.8}
-              style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: '#F5C2BA', backgroundColor: '#FEF3F2' }}
-            >
-              <Feather name="trash-2" size={16} color={COLORS.danger} />
-              <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.danger }}>Remove customer</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={() => setManageSheetVisible(false)} activeOpacity={0.8} style={{ alignItems: 'center', paddingVertical: 15 }}>
-              <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.secondary }}>Cancel</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        <TouchableOpacity onPress={() => setManageSheetVisible(false)} activeOpacity={0.8} style={{ alignItems: 'center', paddingVertical: 14 }}>
+          <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.secondary }}>Cancel</Text>
+        </TouchableOpacity>
+      </BottomSheetModal>
     </ScreenShell>
   );
 }

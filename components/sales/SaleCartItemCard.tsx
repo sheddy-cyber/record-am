@@ -269,7 +269,7 @@ export const SaleCartItemCard: React.FC<SaleCartItemCardProps> = ({
         <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
           Deducts {formatCount(item.stock_quantity)} {item.product.unit} from stock
         </Text>
-        <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.accent }}>
+        <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.ink }}>
           {formatCurrency(item.total_price)}
         </Text>
       </View>

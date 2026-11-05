@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, RefreshControl } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, Text, TouchableOpacity, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -12,8 +13,9 @@ import { recordInventorySnapshotOffline } from '@/lib/offlineRecords';
 import { Button, LoadingScreen } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
+import { BarcodeScannerModal } from '@/components/scanner/BarcodeScannerModal';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS } from '@/constants';
+import { COLORS, FONT, RADIUS } from '@/constants';
 import { dismissScreen } from '@/lib/navigation';
 import { Category } from '@/types';
 
@@ -70,10 +72,12 @@ export default function AddStockScreen() {
   const params = useLocalSearchParams<{
     prefillName?: string | string[];
     prefillQuantity?: string | string[];
+    prefillBarcode?: string | string[];
   }>();
 
   const rawPrefillName = Array.isArray(params.prefillName) ? params.prefillName[0] : params.prefillName;
   const rawPrefillQty = Array.isArray(params.prefillQuantity) ? params.prefillQuantity[0] : params.prefillQuantity;
+  const rawPrefillBarcode = Array.isArray(params.prefillBarcode) ? params.prefillBarcode[0] : params.prefillBarcode;
   const initialPrefill = parsePrefillQuantity(rawPrefillQty);
 
   const { currentBusiness, currentBranch } = useAuthStore();
@@ -104,8 +108,10 @@ export default function AddStockScreen() {
   const [sellingPrice, setSellingPrice] = useState('');
   const [openingQuantity, setOpeningQuantity] = useState(initialPrefill.quantity ?? '');
   const [reorderLevel, setReorderLevel] = useState('5');
+  const [barcode, setBarcode] = useState(rawPrefillBarcode ?? '');
   const [isService, setIsService] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   // Sync route parameters if they change or screen is re-navigated
   useEffect(() => {
@@ -117,7 +123,10 @@ export default function AddStockScreen() {
       if (parsed.quantity) setOpeningQuantity(parsed.quantity);
       if (parsed.unit) setProductUnit(parsed.unit);
     }
-  }, [rawPrefillName, rawPrefillQty]);
+    if (rawPrefillBarcode && !barcode) {
+      setBarcode(rawPrefillBarcode);
+    }
+  }, [rawPrefillName, rawPrefillQty, rawPrefillBarcode]);
 
   const closeScreen = () => dismissScreen();
 
@@ -141,6 +150,7 @@ export default function AddStockScreen() {
     setSellingPrice('');
     setOpeningQuantity('');
     setReorderLevel('5');
+    setBarcode('');
     setIsService(false);
   };
 
@@ -283,6 +293,7 @@ export default function AddStockScreen() {
           cost_price: parsedCostPrice,
           selling_price: parseFloat(sellingPrice),
           reorder_level: parseFloat(reorderLevel) || 5,
+          barcode: barcode.trim() || undefined,
           is_service: isService,
         });
 
@@ -374,6 +385,57 @@ export default function AddStockScreen() {
             />
           }
         >
+          {/* Quick Alternative Ways to Add Stock */}
+          <View
+            style={{
+              backgroundColor: '#eff6ff',
+              borderRadius: RADIUS.md,
+              padding: 12,
+              marginBottom: 16,
+              borderWidth: 1,
+              borderColor: '#bfdbfe',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: '#1e40af' }}>
+                Adding multiple products?
+              </Text>
+              <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: '#3b82f6', marginTop: 1 }}>
+                Save time with rapid batch mode or Excel.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              <TouchableOpacity
+                onPress={() => router.replace('/(app)/rapid-add-stock' as any)}
+                style={{
+                  backgroundColor: '#1e40af',
+                  paddingVertical: 6,
+                  paddingHorizontal: 9,
+                  borderRadius: RADIUS.sm,
+                }}
+              >
+                <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: '#FFFFFF' }}>⚡ Rapid</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.replace('/(app)/import-stock' as any)}
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderColor: '#1e40af',
+                  borderWidth: 1,
+                  paddingVertical: 6,
+                  paddingHorizontal: 9,
+                  borderRadius: RADIUS.sm,
+                }}
+              >
+                <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: '#1e40af' }}>📊 Excel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
           <ProductFormFields
             productName={productName}
             onProductNameChange={setProductName}
@@ -396,6 +458,9 @@ export default function AddStockScreen() {
             stockQuantityHint="Set the starting stock while creating this product."
             isService={isService}
             onIsServiceChange={setIsService}
+            barcode={barcode}
+            onBarcodeChange={setBarcode}
+            onScanBarcodePress={() => setScannerOpen(true)}
           />
           <Button
             title={saving ? 'Saving...' : 'Add Product'}
@@ -404,6 +469,14 @@ export default function AddStockScreen() {
             size="lg"
           />
         </KeyboardAwareScrollView>
+
+        <BarcodeScannerModal
+          visible={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onScan={(scanned) => setBarcode(scanned)}
+          title="Scan Product Barcode"
+          subtitle="Point at any barcode or QR code on the packaging"
+        />
     </ScreenShell>
   );
 }

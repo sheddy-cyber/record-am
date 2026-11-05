@@ -13,6 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import Toast from 'react-native-toast-message';
 
+import { BottomSheetModal } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { COLORS, FONT, RADIUS, SP } from '@/constants';
@@ -160,178 +161,152 @@ export function CategoryPicker({
       </TouchableOpacity>
 
       {/* ── Category Selection Modal ──────────────────────────── */}
-      <Modal
+      <BottomSheetModal
         visible={modalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setModalVisible(false)}
+        onClose={() => setModalVisible(false)}
+        title="Select Category"
+        subtitle="Organize items for browsing and inventory filtering"
+        maxHeight="82%"
       >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setModalVisible(false)}
-        >
-          <Pressable
-            style={styles.modalContent}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>Select Category</Text>
-                <Text style={styles.modalSubtitle}>
-                  Organize items for browsing and inventory filtering
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={styles.closeBtn}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Feather name="x" size={18} color={COLORS.text.muted} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Quick Create Input */}
-            <View style={styles.createBox}>
-              <Text style={styles.createBoxTitle}>CREATE NEW CATEGORY</Text>
-              <View style={styles.inputRow}>
-                <TextInput
-                  value={newCatName}
-                  onChangeText={setNewCatName}
-                  placeholder="e.g. Beverages, Snacks..."
-                  placeholderTextColor={COLORS.text.muted}
-                  style={styles.createInput}
-                  onSubmitEditing={() => handleCreateNewCategory()}
-                  returnKeyType="done"
-                />
-                <TouchableOpacity
-                  onPress={() => handleCreateNewCategory()}
-                  disabled={!newCatName.trim() || isCreating}
-                  style={[
-                    styles.createBtn,
-                    (!newCatName.trim() || isCreating) && styles.createBtnDisabled,
-                  ]}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.createBtnText}>
-                    {isCreating ? 'Adding...' : '+ Add'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* Category List */}
-            <ScrollView
-              style={{ maxHeight: 320 }}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 16 }}
+        {/* Quick Create Input */}
+        <View style={styles.createBox}>
+          <Text style={styles.createBoxTitle}>CREATE NEW CATEGORY</Text>
+          <View style={styles.inputRow}>
+            <TextInput
+              value={newCatName}
+              onChangeText={setNewCatName}
+              placeholder="e.g. Beverages, Snacks..."
+              placeholderTextColor={COLORS.text.muted}
+              style={styles.createInput}
+              onSubmitEditing={() => handleCreateNewCategory()}
+              returnKeyType="done"
+            />
+            <TouchableOpacity
+              onPress={() => handleCreateNewCategory()}
+              disabled={!newCatName.trim() || isCreating}
+              style={[
+                styles.createBtn,
+                (!newCatName.trim() || isCreating) && styles.createBtnDisabled,
+              ]}
+              activeOpacity={0.8}
             >
-              {/* Default General Option */}
+              <Text style={styles.createBtnText}>
+                {isCreating ? 'Adding...' : '+ Add'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Category List */}
+        <ScrollView
+          style={{ maxHeight: 320 }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 16 }}
+        >
+          {/* Default General Option */}
+          <TouchableOpacity
+            onPress={() => handleSelect(null)}
+            style={[
+              styles.categoryRow,
+              !categoryId && styles.categoryRowSelected,
+            ]}
+            activeOpacity={0.7}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+              <View style={styles.catIconContainer}>
+                <Feather name="folder" size={15} color={COLORS.text.muted} />
+              </View>
+              <View>
+                <Text
+                  style={[
+                    styles.catName,
+                    !categoryId && styles.catNameSelected,
+                  ]}
+                >
+                  General (No Category)
+                </Text>
+                <Text style={styles.catMeta}>Default for unassigned products</Text>
+              </View>
+            </View>
+            {!categoryId ? (
+              <Feather name="check" size={18} color={COLORS.navy} />
+            ) : null}
+          </TouchableOpacity>
+
+          {/* Existing Categories */}
+          {categories.map((cat) => {
+            const isSelected = categoryId === cat.id;
+            const prodCount = products.filter(
+              (p) => p.category_id === cat.id
+            ).length;
+
+            return (
               <TouchableOpacity
-                onPress={() => handleSelect(null)}
+                key={cat.id}
+                onPress={() => handleSelect(cat)}
                 style={[
                   styles.categoryRow,
-                  !categoryId && styles.categoryRowSelected,
+                  isSelected && styles.categoryRowSelected,
                 ]}
                 activeOpacity={0.7}
               >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                  <View style={styles.catIconContainer}>
-                    <Feather name="folder" size={15} color={COLORS.text.muted} />
+                  <View
+                    style={[
+                      styles.catIconContainer,
+                      isSelected && styles.catIconContainerSelected,
+                    ]}
+                  >
+                    <Feather
+                      name="tag"
+                      size={15}
+                      color={isSelected ? COLORS.navy : COLORS.text.secondary}
+                    />
                   </View>
                   <View>
                     <Text
                       style={[
                         styles.catName,
-                        !categoryId && styles.catNameSelected,
+                        isSelected && styles.catNameSelected,
                       ]}
                     >
-                      General (No Category)
+                      {cat.name}
                     </Text>
-                    <Text style={styles.catMeta}>Default for unassigned products</Text>
+                    <Text style={styles.catMeta}>
+                      {prodCount} item{prodCount === 1 ? '' : 's'} in inventory
+                    </Text>
                   </View>
                 </View>
-                {!categoryId ? (
+                {isSelected ? (
                   <Feather name="check" size={18} color={COLORS.navy} />
                 ) : null}
               </TouchableOpacity>
+            );
+          })}
 
-              {/* Existing Categories */}
-              {categories.map((cat) => {
-                const isSelected = categoryId === cat.id;
-                const prodCount = products.filter(
-                  (p) => p.category_id === cat.id
-                ).length;
-
-                return (
+          {/* Suggestions when list is small */}
+          {categories.length < 3 && (
+            <View style={styles.suggestionsContainer}>
+              <Text style={styles.suggestionsTitle}>QUICK SUGGESTIONS</Text>
+              <View style={styles.chipsRow}>
+                {SUGGESTED_CATEGORIES.filter(
+                  (s) => !categories.some((c) => c.name.toLowerCase() === s.toLowerCase())
+                ).map((suggestion) => (
                   <TouchableOpacity
-                    key={cat.id}
-                    onPress={() => handleSelect(cat)}
-                    style={[
-                      styles.categoryRow,
-                      isSelected && styles.categoryRowSelected,
-                    ]}
+                    key={suggestion}
+                    onPress={() => handleCreateNewCategory(suggestion)}
+                    style={styles.suggestionChip}
                     activeOpacity={0.7}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                      <View
-                        style={[
-                          styles.catIconContainer,
-                          isSelected && styles.catIconContainerSelected,
-                        ]}
-                      >
-                        <Feather
-                          name="tag"
-                          size={15}
-                          color={isSelected ? COLORS.navy : COLORS.text.secondary}
-                        />
-                      </View>
-                      <View>
-                        <Text
-                          style={[
-                            styles.catName,
-                            isSelected && styles.catNameSelected,
-                          ]}
-                        >
-                          {cat.name}
-                        </Text>
-                        <Text style={styles.catMeta}>
-                          {prodCount} item{prodCount === 1 ? '' : 's'} in inventory
-                        </Text>
-                      </View>
-                    </View>
-                    {isSelected ? (
-                      <Feather name="check" size={18} color={COLORS.navy} />
-                    ) : null}
+                    <Feather name="plus" size={11} color={COLORS.navy} />
+                    <Text style={styles.suggestionChipText}>{suggestion}</Text>
                   </TouchableOpacity>
-                );
-              })}
-
-              {/* Suggestions when list is small */}
-              {categories.length < 3 && (
-                <View style={styles.suggestionsContainer}>
-                  <Text style={styles.suggestionsTitle}>QUICK SUGGESTIONS</Text>
-                  <View style={styles.chipsRow}>
-                    {SUGGESTED_CATEGORIES.filter(
-                      (s) => !categories.some((c) => c.name.toLowerCase() === s.toLowerCase())
-                    ).map((suggestion) => (
-                      <TouchableOpacity
-                        key={suggestion}
-                        onPress={() => handleCreateNewCategory(suggestion)}
-                        style={styles.suggestionChip}
-                        activeOpacity={0.7}
-                      >
-                        <Feather name="plus" size={11} color={COLORS.navy} />
-                        <Text style={styles.suggestionChipText}>{suggestion}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
+                ))}
+              </View>
+            </View>
+          )}
+        </ScrollView>
+      </BottomSheetModal>
     </View>
   );
 }
@@ -371,18 +346,18 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    justifyContent: 'center',
-    paddingHorizontal: SP.lg,
-    paddingVertical: 32,
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.xl,
-    maxHeight: 520,
+    borderTopLeftRadius: RADIUS.xl,
+    borderTopRightRadius: RADIUS.xl,
+    maxHeight: '82%',
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: COLORS.border,
     padding: 18,
+    paddingBottom: 28,
     gap: 14,
   },
   modalHeader: {

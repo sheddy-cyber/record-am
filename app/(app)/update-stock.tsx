@@ -26,6 +26,7 @@ import { Button, EmptyState, LoadingScreen, RoleGate } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
 import { CostStrategySelector } from '@/components/inventory/CostStrategySelector';
+import { BarcodeScannerModal } from '@/components/scanner/BarcodeScannerModal';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL, ACCENTS } from '@/constants';
 import { dismissScreen } from '@/lib/navigation';
@@ -100,6 +101,8 @@ export default function UpdateStockScreen() {
   const [sellingPrice, setSellingPrice] = useState('');
   const [stockQuantity, setStockQuantity] = useState('');
   const [reorderLevel, setReorderLevel] = useState('5');
+  const [barcode, setBarcode] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [isService, setIsService] = useState(false);
   const [saving, setSaving] = useState(false);
   const [prefilledStockQty, setPrefilledStockQty] = useState<number | null>(null);
@@ -303,6 +306,7 @@ export default function UpdateStockScreen() {
     }
 
     setReorderLevel(formatCount(Number(product.reorder_level ?? 5)));
+    setBarcode(product.barcode ?? '');
     setIsService(product.is_service);
   }, [currentStock, effectiveStockAdjustment, fromPurchase, isRestock, product, purchasedQty, purchasedUnitCost]);
 
@@ -626,6 +630,7 @@ export default function UpdateStockScreen() {
             cost_price: parsedCostPrice,
             selling_price: parsedSellingPrice,
             reorder_level: parsedReorderLevel,
+            barcode: barcode.trim() || undefined,
             is_service: isService,
           },
           nextQuantity: currentBranch ? nextQuantity : undefined,
@@ -893,6 +898,9 @@ export default function UpdateStockScreen() {
                     ? `Prefilled: ${formatCount(currentStock)} in stock + ${formatCount(purchasedQty)} purchased.`
                   : 'Set the quantity currently available in this branch.'
             }
+            barcode={barcode}
+            onBarcodeChange={setBarcode}
+            onScanBarcodePress={() => setScannerOpen(true)}
             isService={isService}
             onIsServiceChange={(val) => {
               if (val && !isOwnerOrManager && currentStock > 0) {
@@ -912,6 +920,14 @@ export default function UpdateStockScreen() {
             size="lg"
           />
         </KeyboardAwareScrollView>
+
+        <BarcodeScannerModal
+          visible={scannerOpen}
+          onClose={() => setScannerOpen(false)}
+          onScan={(scanned) => setBarcode(scanned)}
+          title="Scan Product Barcode"
+          subtitle="Point at any barcode or QR code on the packaging"
+        />
     </ScreenShell>
   );
 }

@@ -113,6 +113,8 @@ export default function AppLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="record-sale" />
           <Stack.Screen name="add-stock" />
+          <Stack.Screen name="rapid-add-stock" />
+          <Stack.Screen name="import-stock" />
           <Stack.Screen name="record-expense" />
           <Stack.Screen name="record-debt" />
           <Stack.Screen name="update-stock" />

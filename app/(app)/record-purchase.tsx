@@ -828,7 +828,7 @@ export default function RecordPurchaseScreen() {
         <View style={styles.flowCard}>
           <View style={styles.flowIntro}>
             <View style={styles.flowIcon}>
-              <Feather name="shopping-bag" size={18} color={COLORS.accent} />
+              <Feather name="shopping-bag" size={18} color={COLORS.accentDark} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.flowTitle}>Purchase workspace</Text>
@@ -911,7 +911,7 @@ export default function RecordPurchaseScreen() {
                 activeOpacity={0.75}
                 style={styles.todayAction}
               >
-                <Feather name="calendar" size={13} color={COLORS.accent} />
+                <Feather name="calendar" size={13} color={COLORS.accentDark} />
                 <Text style={styles.todayActionText}>Use today</Text>
               </TouchableOpacity>
             </View>
@@ -934,7 +934,7 @@ export default function RecordPurchaseScreen() {
                 activeOpacity={0.75}
                 style={[styles.newItemToggle, showNewItemForm && styles.newItemToggleActive]}
               >
-                <Feather name={showNewItemForm ? 'x' : 'plus'} size={16} color={showNewItemForm ? '#FFFFFF' : COLORS.accent} />
+                <Feather name={showNewItemForm ? 'x' : 'plus'} size={16} color={showNewItemForm ? COLORS.onAccent : COLORS.accentDark} />
                 <Text style={[styles.newItemToggleText, showNewItemForm && styles.newItemToggleTextActive]}>
                   {showNewItemForm ? 'Close' : 'New item'}
                 </Text>
@@ -1029,7 +1029,7 @@ export default function RecordPurchaseScreen() {
                         {inCart ? (
                           <Text style={styles.productAddActiveText}>{formatNumberInput(cartItem?.quantity ?? 0)}</Text>
                         ) : (
-                          <Feather name="plus" size={17} color={COLORS.accent} />
+                          <Feather name="plus" size={17} color={COLORS.accentDark} />
                         )}
                       </View>
                     </TouchableOpacity>
@@ -1345,7 +1345,7 @@ const styles = {
     fontSize: 10,
   },
   flowStepNumberTextActive: {
-    color: '#000000',
+    color: COLORS.onAccent,
   },
   flowStepLabel: {
     color: COLORS.text.secondary,
@@ -1435,7 +1435,7 @@ const styles = {
     fontSize: 12,
   },
   newItemToggleTextActive: {
-    color: '#000000',
+    color: COLORS.onAccent,
   },
   newItemForm: {
     backgroundColor: COLORS.warningLight,

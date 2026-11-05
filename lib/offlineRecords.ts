@@ -349,6 +349,13 @@ export async function recordSaleOffline(params: {
     })),
   };
 
+  const saleCost = params.cart.reduce((sum, item) => {
+    const factor = getSaleUnitOption(item.product, item.sale_unit, item.bundle_size).stockFactor;
+    const unitCost = roundAmount(Number(item.product.cost_price ?? 0) * factor);
+    return sum + (unitCost * item.quantity);
+  }, 0);
+  const saleProfit = roundAmount(Math.max(0, params.totalAmount - saleCost));
+
   await Promise.all([
     upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'sales', [sale]),
     upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'sale_items', saleItems),
@@ -360,6 +367,7 @@ export async function recordSaleOffline(params: {
       params.branchId,
       roundAmount(params.amountPaid),
       roundAmount(params.amountOwed),
+      saleProfit,
     ),
   ]);
 
@@ -1007,6 +1015,7 @@ export async function recordRepaymentOffline(params: {
       params.branchId,
       roundAmount(params.amount),
       -roundAmount(params.amount),
+      0,
     ),
     enqueueMutations(mutations),
   ]);

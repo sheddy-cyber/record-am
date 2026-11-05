@@ -28,7 +28,7 @@ import {
   deleteExpenseOffline,
 } from '@/lib/offlineRecords';
 import { readCachedExpenses, cacheExpenses, upsertCachedExpenses } from '@/lib/offlineStore';
-import { Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
+import { BottomSheetModal, Button, Card, EmptyState, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, EXPENSE_CATEGORIES, FONT, PAYMENT_METHODS, RADIUS, SHADOW } from '@/constants';
@@ -51,7 +51,7 @@ const CATEGORY_META: Record<
   water: { label: 'Water', icon: 'droplet', color: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.12)' },
   security: { label: 'Security', icon: 'shield', color: '#64748B', bg: 'rgba(100, 116, 139, 0.12)' },
   damage: { label: 'Damaged Goods', icon: 'x-octagon', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.12)' },
-  other: { label: 'Other', icon: 'tag', color: COLORS.accent, bg: 'rgba(202, 138, 4, 0.12)' },
+  other: { label: 'Other', icon: 'tag', color: COLORS.accentDark, bg: 'rgba(202, 138, 4, 0.12)' },
 };
 
 const getCategoryMeta = (cat: string) => {
@@ -60,7 +60,7 @@ const getCategoryMeta = (cat: string) => {
     CATEGORY_META[key] ?? {
       label: cat ? cat.charAt(0).toUpperCase() + cat.slice(1) : 'Expense',
       icon: 'tag' as keyof typeof Feather.glyphMap,
-      color: COLORS.accent,
+      color: COLORS.accentDark,
       bg: 'rgba(202, 138, 4, 0.12)',
     }
   );
@@ -604,7 +604,7 @@ export default function ExpensesScreen() {
                       fontSize: 12,
                       color:
                         expenseDate === format(new Date(), 'yyyy-MM-dd')
-                          ? '#FFFFFF'
+                          ? COLORS.onAccent
                           : COLORS.text.secondary,
                     }}
                   >
@@ -632,7 +632,7 @@ export default function ExpensesScreen() {
                       fontSize: 12,
                       color:
                         expenseDate === format(subDays(new Date(), 1), 'yyyy-MM-dd')
-                          ? '#FFFFFF'
+                          ? COLORS.onAccent
                           : COLORS.text.secondary,
                     }}
                   >
@@ -763,7 +763,7 @@ export default function ExpensesScreen() {
                 backgroundColor: COLORS.accentLight,
               }}
             >
-              <Feather name="calendar" size={14} color={COLORS.accent} />
+              <Feather name="calendar" size={14} color={COLORS.accentDark} />
             </View>
             <View style={{ flex: 1, marginLeft: 9 }}>
               <Text style={{ fontFamily: FONT.medium, fontSize: 10.5, color: COLORS.text.muted }}>Time Period</Text>
@@ -783,7 +783,7 @@ export default function ExpensesScreen() {
               paddingHorizontal: 12,
               borderWidth: StyleSheet.hairlineWidth,
               borderRadius: RADIUS.lg,
-              borderColor: selectedCategory === 'all' ? COLORS.border : COLORS.accent,
+              borderColor: selectedCategory === 'all' ? COLORS.border : COLORS.accentDark,
               backgroundColor: COLORS.card,
             }}
           >
@@ -797,7 +797,7 @@ export default function ExpensesScreen() {
                 backgroundColor: selectedCategory === 'all' ? COLORS.surface2 : COLORS.accentLight,
               }}
             >
-              <Feather name="tag" size={14} color={selectedCategory === 'all' ? COLORS.text.muted : COLORS.accent} />
+              <Feather name="tag" size={14} color={selectedCategory === 'all' ? COLORS.text.muted : COLORS.accentDark} />
             </View>
             <View style={{ flex: 1, marginLeft: 9 }}>
               <Text style={{ fontFamily: FONT.medium, fontSize: 10.5, color: COLORS.text.muted }}>Category</Text>
@@ -1086,74 +1086,54 @@ export default function ExpensesScreen() {
         }
       />
 
-      <Modal
+      <BottomSheetModal
         visible={filterSheetVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFilterSheetVisible(false)}
+        onClose={() => setFilterSheetVisible(false)}
+        title="Filter expenses"
+        subtitle="Choose what appears in the list and total."
+        maxHeight="86%"
       >
-        <Pressable
-          style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,33,28,0.48)' }}
-          onPress={() => setFilterSheetVisible(false)}
-        >
-          <Pressable
-            onPress={(event) => event.stopPropagation()}
-            style={{ maxHeight: '86%', borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: COLORS.surface, paddingTop: 12 }}
-          >
-            <View style={{ width: 38, height: 4, alignSelf: 'center', borderRadius: 4, backgroundColor: COLORS.borderDark }} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 14 }}>
-              <View>
-                <Text style={{ fontFamily: FONT.bold, fontSize: 17, color: COLORS.text.primary }}>Filter expenses</Text>
-                <Text style={{ marginTop: 3, fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>Choose what appears in the list and total.</Text>
-              </View>
-              <TouchableOpacity onPress={() => setFilterSheetVisible(false)} hitSlop={8}>
-                <Feather name="x" size={20} color={COLORS.text.muted} />
-              </TouchableOpacity>
-            </View>
+        <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 14 }} showsVerticalScrollIndicator={false}>
+          <Text style={{ marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>TIME PERIOD</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {periodOptions.map((period) => {
+              const active = selectedPeriod === period.key;
+              return (
+                <TouchableOpacity
+                  key={period.key}
+                  onPress={() => setSelectedPeriod(period.key)}
+                  activeOpacity={0.8}
+                  style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: active ? COLORS.ink : COLORS.border, backgroundColor: active ? COLORS.ink : COLORS.card }}
+                >
+                  <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: active ? COLORS.text.inverse : COLORS.text.secondary }}>{period.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-            <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 14 }} showsVerticalScrollIndicator={false}>
-              <Text style={{ marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>TIME PERIOD</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {periodOptions.map((period) => {
-                  const active = selectedPeriod === period.key;
-                  return (
-                    <TouchableOpacity
-                      key={period.key}
-                      onPress={() => setSelectedPeriod(period.key)}
-                      activeOpacity={0.8}
-                      style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: active ? COLORS.ink : COLORS.border, backgroundColor: active ? COLORS.ink : COLORS.card }}
-                    >
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: active ? COLORS.text.inverse : COLORS.text.secondary }}>{period.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+          <Text style={{ marginTop: 22, marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>CATEGORY</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {CATEGORY_CHIPS.map((category) => {
+              const active = selectedCategory === category.key;
+              return (
+                <TouchableOpacity
+                  key={category.key}
+                  onPress={() => setSelectedCategory(category.key)}
+                  activeOpacity={0.8}
+                  style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: active ? COLORS.accentDark : COLORS.border, backgroundColor: active ? COLORS.accentLight : COLORS.card }}
+                >
+                  <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: active ? COLORS.accentDark : COLORS.text.secondary }}>{category.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </ScrollView>
 
-              <Text style={{ marginTop: 22, marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>CATEGORY</Text>
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                {CATEGORY_CHIPS.map((category) => {
-                  const active = selectedCategory === category.key;
-                  return (
-                    <TouchableOpacity
-                      key={category.key}
-                      onPress={() => setSelectedCategory(category.key)}
-                      activeOpacity={0.8}
-                      style={{ minHeight: 38, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: active ? COLORS.accent : COLORS.border, backgroundColor: active ? `${COLORS.accent}14` : COLORS.card }}
-                    >
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: active ? COLORS.accent : COLORS.text.secondary }}>{category.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingTop: 10, paddingBottom: insets.bottom + 18, borderTopWidth: 1, borderTopColor: COLORS.border }}>
-              <Button title="Reset" variant="secondary" size="md" style={{ flex: 0.75 }} onPress={resetFilters} />
-              <Button title="Show expenses" variant="accent" icon="check" size="md" style={{ flex: 1.25 }} onPress={() => setFilterSheetVisible(false)} />
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        <View style={{ flexDirection: 'row', gap: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+          <Button title="Reset" variant="secondary" size="md" style={{ flex: 0.75 }} onPress={resetFilters} />
+          <Button title="Show expenses" variant="accent" icon="check" size="md" style={{ flex: 1.25 }} onPress={() => setFilterSheetVisible(false)} />
+        </View>
+      </BottomSheetModal>
     </ScreenShell>
   );
 }

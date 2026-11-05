@@ -21,7 +21,7 @@ import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 
 import { useAuthStore } from '@/store/authStore';
-import { Button, Card, EmptyState, SmartChip } from '@/components/ui';
+import { BottomSheetModal, Button, Card, EmptyState, SmartChip } from '@/components/ui';
 import { InputField } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP } from '@/constants';
@@ -267,7 +267,7 @@ export default function MarketListScreen() {
           <View style={styles.overviewHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={styles.cartIconBadge}>
-                <Feather name="shopping-cart" size={16} color="#000000" />
+                <Feather name="shopping-cart" size={16} color={COLORS.onAccent} />
               </View>
               <View>
                 <Text style={styles.overviewTitle}>MARKET PROCUREMENT</Text>
@@ -327,7 +327,7 @@ export default function MarketListScreen() {
             activeOpacity={0.8}
             style={styles.quickAddButton}
           >
-            <Feather name="plus" size={15} color="#000000" />
+            <Feather name="plus" size={15} color={COLORS.onAccent} />
             <Text style={styles.quickAddButtonText}>Add Item</Text>
           </TouchableOpacity>
         </View>
@@ -516,96 +516,73 @@ export default function MarketListScreen() {
       </ScrollView>
 
       {/* ── Add Request Modal ────────────────────────────────────────── */}
-      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      <BottomSheetModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        title="Add to Market List"
+        subtitle="Note down item requested by a customer"
+        maxHeight="86%"
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ gap: 10, paddingBottom: 16 }}
         >
-          {/* Backdrop dismiss touch target */}
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setModalVisible(false)} />
+          <InputField
+            label="Item Name"
+            placeholder="e.g. Peak Milk 400g Tin, Size 43 Shoe"
+            value={itemName}
+            onChangeText={setItemName}
+            required
+          />
 
-          {/* Modal Card (plain View so scroll gestures are never intercepted) */}
-          <View style={styles.modalCard}>
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <View style={{ flex: 1, marginRight: 8 }}>
-                <Text style={styles.modalTitle}>Add to Market List</Text>
-                <Text style={styles.modalSubtitle}>Note down item requested by a customer</Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={styles.modalCloseButton}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Feather name="x" size={17} color={COLORS.text.muted} />
-              </TouchableOpacity>
-            </View>
+          <InputField
+            label="Quantity / Size (Optional)"
+            placeholder="e.g. 2 packs, 1 roll, 5 cartons"
+            value={quantityNeeded}
+            onChangeText={setQuantityNeeded}
+          />
 
-            <ScrollView
-              style={styles.modalScrollView}
-              contentContainerStyle={styles.modalScrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled={true}
-              bounces={false}
-            >
-              <InputField
-                label="Item Name"
-                placeholder="e.g. Peak Milk 400g Tin, Size 43 Shoe"
-                value={itemName}
-                onChangeText={setItemName}
-                required
-              />
+          <InputField
+            label="Customer Name (Optional)"
+            placeholder="e.g. Mama Chinedu, Brother John"
+            value={customerName}
+            onChangeText={setCustomerName}
+          />
 
-              <InputField
-                label="Quantity / Size (Optional)"
-                placeholder="e.g. 2 packs, 1 roll, 5 cartons"
-                value={quantityNeeded}
-                onChangeText={setQuantityNeeded}
-              />
+          <InputField
+            label="Customer Phone (Optional)"
+            placeholder="e.g. 08012345678"
+            value={customerPhone}
+            onChangeText={setCustomerPhone}
+            keyboardType="phone-pad"
+          />
 
-              <InputField
-                label="Customer Name (Optional)"
-                placeholder="e.g. Mama Chinedu, Brother John"
-                value={customerName}
-                onChangeText={setCustomerName}
-              />
+          <InputField
+            label="Notes / Brand Preference (Optional)"
+            placeholder="e.g. Blue color only, prefers Dutch brand"
+            value={notes}
+            onChangeText={setNotes}
+          />
 
-              <InputField
-                label="Customer Phone (Optional)"
-                placeholder="e.g. 08012345678"
-                value={customerPhone}
-                onChangeText={setCustomerPhone}
-                keyboardType="phone-pad"
-              />
+          <View style={{ marginTop: 8, gap: 10 }}>
+            <Button
+              title={saving ? 'Saving...' : 'Save to Market List'}
+              variant="accent"
+              size="md"
+              loading={saving}
+              onPress={handleSaveRequest}
+            />
 
-              <InputField
-                label="Notes / Brand Preference (Optional)"
-                placeholder="e.g. Blue color only, prefers Dutch brand"
-                value={notes}
-                onChangeText={setNotes}
-              />
-
-              <View style={{ marginTop: 8, gap: 10, paddingBottom: 6 }}>
-                <Button
-                  title={saving ? 'Saving...' : 'Save to Market List'}
-                  variant="accent"
-                  size="md"
-                  loading={saving}
-                  onPress={handleSaveRequest}
-                />
-
-                <Button
-                  title="Cancel"
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => setModalVisible(false)}
-                />
-              </View>
-            </ScrollView>
+            <Button
+              title="Cancel"
+              variant="ghost"
+              size="sm"
+              onPress={() => setModalVisible(false)}
+            />
           </View>
-        </KeyboardAvoidingView>
-      </Modal>
+        </ScrollView>
+      </BottomSheetModal>
     </ScreenShell>
   );
 }
@@ -715,7 +692,7 @@ const styles = StyleSheet.create({
   quickAddButtonText: {
     fontSize: 13,
     fontFamily: FONT.semiBold,
-    color: '#002744',
+    color: COLORS.onAccent,
   },
   segmentContainer: {
     flexDirection: 'row',

@@ -943,7 +943,15 @@ function SalesScreen() {
             title="Sales"
             subtitle={`${activities.length} activity record${activities.length === 1 ? '' : 's'}`}
             theme="dark"
-            right={<HeaderAction icon="plus" label="Record Sale" onPress={openRecordSale} />}
+            right={
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <HeaderAction
+                  icon="maximize"
+                  onPress={() => router.push('/(app)/record-sale?scan=1')}
+                />
+                <HeaderAction icon="plus" label="Record Sale" onPress={openRecordSale} />
+              </View>
+            }
           />
         )}
 
@@ -1072,10 +1080,10 @@ function SalesScreen() {
                 disabled={isMergingReceipts}
               >
                 {isMergingReceipts ? (
-                  <ActivityIndicator size="small" color="#002744" />
+                  <ActivityIndicator size="small" color={COLORS.onAccent} />
                 ) : (
                   <>
-                    <Feather name="layers" size={15} color="#002744" style={{ marginRight: 6 }} />
+                    <Feather name="layers" size={15} color={COLORS.onAccent} style={{ marginRight: 6 }} />
                     <Text style={styles.dockMergeText}>
                       {selectedSales.length < 2 ? 'Select 2+ to Merge' : `Merge Receipt (${selectedSales.length})`}
                     </Text>
@@ -1190,7 +1198,7 @@ const styles = StyleSheet.create({
   dockMergeText: {
     fontSize: 13,
     fontFamily: FONT.bold,
-    color: '#002744',
+    color: COLORS.onAccent,
     letterSpacing: -0.2,
   },
 });

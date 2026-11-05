@@ -96,7 +96,7 @@ export const PaymentAccountsSection: React.FC<PaymentAccountsSectionProps> = ({ 
                   <Feather
                     name={acc.channel === 'pos' ? 'credit-card' : 'send'}
                     size={16}
-                    color={acc.channel === 'pos' ? COLORS.warning : COLORS.accent}
+                    color={acc.channel === 'pos' ? COLORS.warning : COLORS.navy}
                   />
                 </View>
                 <View style={{ flex: 1 }}>

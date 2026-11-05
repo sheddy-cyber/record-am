@@ -390,7 +390,7 @@ export default function RecordPaymentScreen() {
                     </Text>
                   </View>
                 </View>
-                <Feather name="plus-circle" size={18} color={COLORS.accent} />
+                <Feather name="plus-circle" size={18} color={COLORS.navy} />
               </TouchableOpacity>
             )
           ) : null}
@@ -478,7 +478,7 @@ export default function RecordPaymentScreen() {
                   <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                     + Add bank for transfer portion
                   </Text>
-                  <Feather name="plus" size={14} color={COLORS.accent} />
+                  <Feather name="plus" size={14} color={COLORS.navy} />
                 </TouchableOpacity>
               )}
 

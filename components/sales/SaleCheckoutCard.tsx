@@ -109,7 +109,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
           <Divider style={{ marginVertical: 2 }} />
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>Total Due</Text>
-            <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.accent }}>{formatCurrency(cartTotal)}</Text>
+            <Text style={{ fontSize: 20, fontFamily: FONT.bold, color: COLORS.ink }}>{formatCurrency(cartTotal)}</Text>
           </View>
         </View>
 
@@ -195,7 +195,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                   activeOpacity={0.7}
                   style={{ alignSelf: 'flex-start', paddingVertical: 2, paddingHorizontal: 4 }}
                 >
-                  <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accent }}>
+                  <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                     + Add new {isPos ? 'POS terminal' : 'bank account'}
                   </Text>
                 </TouchableOpacity>
@@ -238,7 +238,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                   </Text>
                 </View>
               </View>
-              <Feather name="plus-circle" size={18} color={COLORS.accent} />
+              <Feather name="plus-circle" size={18} color={COLORS.navy} />
             </TouchableOpacity>
           ) : null
         ) : null}
@@ -325,7 +325,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                 <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                   + Add bank for transfer portion
                 </Text>
-                <Feather name="plus" size={14} color={COLORS.accent} />
+                <Feather name="plus" size={14} color={COLORS.navy} />
               </TouchableOpacity>
             ) : null}
 

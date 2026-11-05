@@ -21,7 +21,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { endOfDay, format, startOfDay, subDays } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
-import { Badge, Button, EmptyState, PermissionDenied } from '@/components/ui';
+import { Badge, BottomSheetModal, Button, EmptyState, PermissionDenied } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from "@/constants";
 import { readAltUnitNote } from '@/lib/records';
@@ -364,7 +364,7 @@ export default function StockHistoryScreen() {
               backgroundColor: COLORS.accentLight,
             }}
           >
-            <Feather name="calendar" size={14} color={COLORS.accent} />
+            <Feather name="calendar" size={14} color={COLORS.accentDark} />
           </View>
           <View style={{ flex: 1, marginLeft: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.text.muted }}>Time Period</Text>
@@ -451,7 +451,7 @@ export default function StockHistoryScreen() {
           ListEmptyComponent={
             loading ? (
               <View style={{ paddingTop: 44, alignItems: 'center' }}>
-                <ActivityIndicator color={COLORS.accent} />
+                <ActivityIndicator color={COLORS.navy} />
               </View>
             ) : (
               <EmptyState
@@ -546,100 +546,76 @@ export default function StockHistoryScreen() {
         />
       </View>
 
-      <Modal
+      <BottomSheetModal
         visible={periodSheetVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           setDatePickerTarget(null);
           setPeriodSheetVisible(false);
         }}
+        title="Choose time period"
+        subtitle="Only matching items are shown and printed."
       >
-        <Pressable
-          style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,33,28,0.48)' }}
-          onPress={() => {
-            setDatePickerTarget(null);
-            setPeriodSheetVisible(false);
-          }}
-        >
-          <Pressable
-            onPress={(event) => event.stopPropagation()}
-            style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: insets.bottom + 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: COLORS.surface }}
-          >
-            <View style={{ alignSelf: 'center', width: 38, height: 4, borderRadius: 4, marginBottom: 18, backgroundColor: COLORS.borderDark }} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <View>
-                <Text style={{ fontSize: 17, fontFamily: FONT.bold, color: COLORS.text.primary }}>Choose time period</Text>
-                <Text style={{ marginTop: 3, fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>Only matching items are shown and printed.</Text>
-              </View>
-              <TouchableOpacity onPress={() => setPeriodSheetVisible(false)} hitSlop={8}>
-                <Feather name="x" size={20} color={COLORS.text.muted} />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {PERIOD_OPTIONS.map((option) => {
+            const active = period === option.key;
+            return (
+              <TouchableOpacity
+                key={option.key}
+                onPress={() => selectPeriod(option.key)}
+                activeOpacity={0.8}
+                style={{ paddingHorizontal: 12, minHeight: 38, justifyContent: 'center', borderRadius: RADIUS.md, borderWidth: 1, borderColor: active ? COLORS.ink : COLORS.border, backgroundColor: active ? COLORS.ink : COLORS.card }}
+              >
+                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: active ? COLORS.text.inverse : COLORS.text.secondary }}>{option.label}</Text>
               </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {period === 'custom' ? (
+          <View style={{ marginTop: 16, gap: 10 }}>
+            <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.secondary }}>Custom dates</Text>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {([
+                { target: 'start' as const, label: 'From', value: customStartDate },
+                { target: 'end' as const, label: 'To', value: customEndDate },
+              ]).map(({ target, label, value }) => (
+                <TouchableOpacity
+                  key={target}
+                  onPress={() => setDatePickerTarget(datePickerTarget === target ? null : target)}
+                  activeOpacity={0.8}
+                  style={{ flex: 1, padding: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: datePickerTarget === target ? COLORS.accent : COLORS.border, backgroundColor: COLORS.card }}
+                >
+                  <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>{label}</Text>
+                  <Text style={{ marginTop: 4, fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>{format(value, 'MMM d, yyyy')}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {PERIOD_OPTIONS.map((option) => {
-                const active = period === option.key;
-                return (
-                  <TouchableOpacity
-                    key={option.key}
-                    onPress={() => selectPeriod(option.key)}
-                    activeOpacity={0.8}
-                    style={{ paddingHorizontal: 12, minHeight: 38, justifyContent: 'center', borderRadius: RADIUS.md, borderWidth: 1, borderColor: active ? COLORS.ink : COLORS.border, backgroundColor: active ? COLORS.ink : COLORS.card }}
-                  >
-                    <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: active ? COLORS.text.inverse : COLORS.text.secondary }}>{option.label}</Text>
+            {datePickerTarget ? (
+              <View style={{ borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, overflow: 'hidden', backgroundColor: COLORS.card }}>
+                <DateTimePicker
+                  value={datePickerTarget === 'start' ? customStartDate : customEndDate}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  maximumDate={datePickerTarget === 'start' ? customEndDate : new Date()}
+                  minimumDate={datePickerTarget === 'end' ? customStartDate : undefined}
+                  onChange={(_, date) => {
+                    if (Platform.OS !== 'ios') setDatePickerTarget(null);
+                    if (date) updateCustomDate(datePickerTarget, date);
+                  }}
+                />
+                {Platform.OS === 'ios' ? (
+                  <TouchableOpacity onPress={() => setDatePickerTarget(null)} style={{ alignItems: 'center', paddingVertical: 11, borderTopWidth: 1, borderTopColor: COLORS.border }}>
+                    <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.accentDark }}>Done</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {period === 'custom' ? (
-              <View style={{ marginTop: 16, gap: 10 }}>
-                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.text.secondary }}>Custom dates</Text>
-                <View style={{ flexDirection: 'row', gap: 10 }}>
-                  {([
-                    { target: 'start' as const, label: 'From', value: customStartDate },
-                    { target: 'end' as const, label: 'To', value: customEndDate },
-                  ]).map(({ target, label, value }) => (
-                    <TouchableOpacity
-                      key={target}
-                      onPress={() => setDatePickerTarget(datePickerTarget === target ? null : target)}
-                      activeOpacity={0.8}
-                      style={{ flex: 1, padding: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: datePickerTarget === target ? COLORS.accent : COLORS.border, backgroundColor: COLORS.card }}
-                    >
-                      <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>{label}</Text>
-                      <Text style={{ marginTop: 4, fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>{format(value, 'MMM d, yyyy')}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {datePickerTarget ? (
-                  <View style={{ borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, overflow: 'hidden', backgroundColor: COLORS.card }}>
-                    <DateTimePicker
-                      value={datePickerTarget === 'start' ? customStartDate : customEndDate}
-                      mode="date"
-                      display={Platform.OS === 'ios' ? 'inline' : 'default'}
-                      maximumDate={datePickerTarget === 'start' ? customEndDate : new Date()}
-                      minimumDate={datePickerTarget === 'end' ? customStartDate : undefined}
-                      onChange={(_, date) => {
-                        if (Platform.OS !== 'ios') setDatePickerTarget(null);
-                        if (date) updateCustomDate(datePickerTarget, date);
-                      }}
-                    />
-                    {Platform.OS === 'ios' ? (
-                      <TouchableOpacity onPress={() => setDatePickerTarget(null)} style={{ alignItems: 'center', paddingVertical: 11, borderTopWidth: 1, borderTopColor: COLORS.border }}>
-                        <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.accentDark }}>Done</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
                 ) : null}
-
-                <Button title="Show selected period" variant="accent" icon="check" onPress={() => setPeriodSheetVisible(false)} />
               </View>
             ) : null}
-          </Pressable>
-        </Pressable>
-      </Modal>
+
+            <Button title="Show selected period" variant="accent" icon="check" onPress={() => setPeriodSheetVisible(false)} />
+          </View>
+        ) : null}
+      </BottomSheetModal>
     </ScreenShell>
   );
 }

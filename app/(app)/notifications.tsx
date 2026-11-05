@@ -20,7 +20,7 @@ import {
   useNotificationStore,
 } from '@/store/notificationStore';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { Card, EmptyState, SmartChip, confirmModal } from '@/components/ui';
+import { Card, EmptyState, confirmModal } from '@/components/ui';
 import { COLORS, FONT, RADIUS, SP } from '@/constants';
 import { dismissScreen } from '@/lib/navigation';
 
@@ -431,7 +431,7 @@ export default function NotificationsScreen() {
                       </View>
                     </View>
 
-                    {/* Bottom Row: Category Chip, Action Prompt, and Delete Button */}
+                    {/* Bottom Row: Action Prompt and Delete Button */}
                     <View
                       style={{
                         flexDirection: 'row',
@@ -442,14 +442,11 @@ export default function NotificationsScreen() {
                         borderTopColor: COLORS.borderSubtle,
                       }}
                     >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <SmartChip label={config.label} size="xs" variant={config.variant} />
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                          <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: COLORS.accentDark }}>
-                            {getActionLabel(item)}
-                          </Text>
-                          <Feather name="arrow-right" size={11} color={COLORS.accentDark} />
-                        </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <Text style={{ fontSize: 11.5, fontFamily: FONT.semiBold, color: COLORS.accentDark }}>
+                          {getActionLabel(item)}
+                        </Text>
+                        <Feather name="arrow-right" size={11} color={COLORS.accentDark} />
                       </View>
 
                       <TouchableOpacity

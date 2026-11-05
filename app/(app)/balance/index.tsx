@@ -104,7 +104,7 @@ export default function DailyBalanceScreen() {
   const discountedSalesCount = salesEntries.filter((entry) => Number(entry.discount_amount ?? 0) > 0).length;
 
   const discrepancyTone =
-    discrepancy === 0 ? COLORS.success : discrepancy > 0 ? COLORS.accent : COLORS.danger;
+    discrepancy === 0 ? COLORS.success : discrepancy > 0 ? COLORS.ink : COLORS.danger;
   const discrepancyBg =
     discrepancy === 0 ? '#ECFDF3' : discrepancy > 0 ? '#EEF4FF' : '#FEF3F2';
   const discrepancyBorder =
@@ -401,7 +401,7 @@ export default function DailyBalanceScreen() {
                             }}
                           >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Feather name="send" size={12} color={COLORS.accent} />
+                              <Feather name="send" size={12} color={COLORS.navy} />
                               <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }}>
                                 {item.bankName}
                               </Text>

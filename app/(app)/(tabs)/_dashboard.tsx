@@ -437,12 +437,12 @@ function DashboardScreen() {
                         borderColor: action.primary ? COLORS.accent : 'rgba(255, 255, 255, 0.12)',
                       }}
                     >
-                      <Feather name={action.icon} size={15} color={action.primary ? '#000000' : '#FFFFFF'} />
+                      <Feather name={action.icon} size={15} color={action.primary ? COLORS.onAccent : '#FFFFFF'} />
                       <Text
                         style={{
                           fontSize: 13,
                           fontFamily: FONT.bold,
-                          color: action.primary ? '#000000' : '#FFFFFF',
+                          color: action.primary ? COLORS.onAccent : '#FFFFFF',
                           letterSpacing: -0.1,
                         }}
                         numberOfLines={1}
@@ -506,7 +506,7 @@ function DashboardScreen() {
                   >
                     <Feather name="alert-triangle" size={17} color="#FFFFFF" />
                   </View>
-                  <View style={{ flex: 1, gap: 1 }}>
+                  <View style={{ flex: 1, gap: 2 }}>
                     <Text style={{ fontSize: 10.5, fontFamily: FONT.bold, color: '#b91c1c', letterSpacing: 0.5 }}>
                       {outOfStockCount > 0 && lowStockCount > 0
                         ? 'STOCK REMINDER'
@@ -514,14 +514,17 @@ function DashboardScreen() {
                           ? 'RESTOCK REMINDER'
                           : 'LOW STOCK NOTICE'}
                     </Text>
-                    <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }} numberOfLines={1}>
-                      {outOfStockCount > 0 && lowStockCount > 0
-                        ? `${outOfStockCount} out of stock · ${lowStockCount} running low`
-                        : outOfStockCount > 0
-                          ? `${outOfStockCount} product${outOfStockCount === 1 ? ' is' : 's are'} out of stock`
-                          : `${lowStockCount} product${lowStockCount === 1 ? ' is' : 's are'} running low`}
-                    </Text>
-                    <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+                    {outOfStockCount > 0 ? (
+                      <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
+                        {outOfStockCount} product{outOfStockCount === 1 ? ' is' : 's are'} out of stock
+                      </Text>
+                    ) : null}
+                    {lowStockCount > 0 ? (
+                      <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
+                        {lowStockCount} product{lowStockCount === 1 ? ' is' : 's are'} running low
+                      </Text>
+                    ) : null}
+                    <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 }}>
                       Tap to review and reorder
                     </Text>
                   </View>
@@ -538,7 +541,7 @@ function DashboardScreen() {
                       borderRadius: RADIUS.full,
                     }}
                   >
-                    <Text style={{ fontSize: 11.5, fontFamily: FONT.bold, color: '#b91c1c' }}>Restock</Text>
+                    <Text style={{ fontSize: 11.5, fontFamily: FONT.bold, color: '#b91c1c' }}>View</Text>
                     <Feather name="arrow-right" size={12} color="#b91c1c" />
                   </View>
                 </PressableScale>

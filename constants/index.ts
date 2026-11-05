@@ -31,6 +31,7 @@ export const COLORS = {
   accentLight: '#FEF9C3',     // soft champagne/gold wash
   accentMuted: '#CA8A04',     // deeper gold for pressed states / borders
   accentDark: '#B45309',      // rich amber-gold for accessible text on light surfaces
+  onAccent: '#004e89',        // steel azure blue — the signature blue used in header sections
   gold: '#FACC15',            // canary gold — high-contrast revenue metrics & active highlights
   goldLight: '#FEF9C3',       // soft gold wash
   goldMuted: 'rgba(250, 204, 21, 0.18)', // translucent gold capsule
@@ -61,6 +62,7 @@ export const COLORS = {
     muted: '#94a3b8',         // slate-400
     inverse: '#f8fafc',       // text on dark
     accent: '#B45309',        // rich amber-gold text (readable on white/light surfaces!)
+    onAccent: '#004e89',      // steel azure blue (from header sections) on canary gold surfaces
   },
 
   // Borders

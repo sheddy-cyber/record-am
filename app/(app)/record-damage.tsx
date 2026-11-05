@@ -658,10 +658,10 @@ export default function RecordDamageScreen() {
                 activeOpacity={0.7}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
               >
-                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accent }}>
+                <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                   View History
                 </Text>
-                <Feather name="arrow-right" size={13} color={COLORS.accent} />
+                <Feather name="arrow-right" size={13} color={COLORS.navy} />
               </TouchableOpacity>
             </View>
 

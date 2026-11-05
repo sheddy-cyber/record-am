@@ -550,6 +550,6 @@ const styles = StyleSheet.create({
   summaryValueTotal: {
     fontSize: 14.5,
     fontFamily: FONT.bold,
-    color: COLORS.accent,
+    color: COLORS.ink,
   },
 });

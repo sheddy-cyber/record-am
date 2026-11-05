@@ -141,7 +141,7 @@ const BUTTON_COLORS: Record<
   primary: { bg: COLORS.ink, text: COLORS.text.inverse },
   secondary: { bg: COLORS.card, border: COLORS.border, text: COLORS.text.primary },
   danger: { bg: COLORS.danger, text: '#FFFFFF' },
-  accent: { bg: COLORS.accent, text: '#000000' },
+  accent: { bg: COLORS.accent, text: COLORS.onAccent },
   success: { bg: COLORS.success, text: '#FFFFFF' },
 };
 

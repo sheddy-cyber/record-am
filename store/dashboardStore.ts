@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { DashboardStats, RevenueActivity, CustomerDebt } from '@/types';
 import {
   buildCachedDashboardData,
+  readCachedProducts,
   upsertCachedCustomerDebts,
   upsertCachedExpenses,
   writePersistedDashboardStats,
@@ -11,7 +12,8 @@ import {
 import { format, startOfDay, endOfDay } from 'date-fns';
 import { isDebtSettlementSale } from '@/lib/records';
 import { fetchRevenueActivities } from '@/lib/revenue';
-import { productsTable } from '@/lib/dataAccess';
+import { productsTable, saleItemsTable } from '@/lib/dataAccess';
+import { useBusinessStore } from '@/store/businessStore';
 
 const DASHBOARD_REVENUE_VISIBLE_KEY = 'record-am:dashboard:revenue-visible';
 const getRevenueKey = (businessId?: string) =>
@@ -29,8 +31,8 @@ interface DashboardState {
   toggleRevenueVisibility: (businessId?: string) => Promise<void>;
   setRevenueVisibility: (visible: boolean, businessId?: string) => Promise<void>;
 
-  incrementTodaySales: (amountPaid: number, debtAmount?: number) => void;
-  decrementTodaySales: (amountPaid: number, debtAmount?: number) => void;
+  incrementTodaySales: (amountPaid: number, debtAmount?: number, profitAmount?: number) => void;
+  decrementTodaySales: (amountPaid: number, debtAmount?: number, profitAmount?: number) => void;
   applyRepaymentToTodaySales: (amount: number) => void;
   decrementRepaymentFromTodaySales: (amount: number) => void;
 
@@ -93,11 +95,13 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     }
   },
 
-  incrementTodaySales: (amountPaid: number, debtAmount = 0) => {
+  incrementTodaySales: (amountPaid: number, debtAmount = 0, profitAmount?: number) => {
     const currentStats = get().stats;
     if (!currentStats) return;
     const nextSales = Number((currentStats.today_sales + amountPaid).toFixed(2));
-    const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
+    const nextProfit = profitAmount !== undefined
+      ? Number((currentStats.today_profit + profitAmount).toFixed(2))
+      : currentStats.today_profit;
     const nextDebts = Number(Math.max(0, currentStats.outstanding_debts + debtAmount).toFixed(2));
     const nextCount = (currentStats.today_sales_count ?? 0) + 1;
     set({
@@ -111,11 +115,13 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     });
   },
 
-  decrementTodaySales: (amountPaid: number, debtAmount = 0) => {
+  decrementTodaySales: (amountPaid: number, debtAmount = 0, profitAmount?: number) => {
     const currentStats = get().stats;
     if (!currentStats) return;
     const nextSales = Number(Math.max(0, currentStats.today_sales - amountPaid).toFixed(2));
-    const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
+    const nextProfit = profitAmount !== undefined
+      ? Number(Math.max(0, currentStats.today_profit - profitAmount).toFixed(2))
+      : currentStats.today_profit;
     const nextDebts = Number(Math.max(0, currentStats.outstanding_debts - debtAmount).toFixed(2));
     const nextCount = Math.max(0, (currentStats.today_sales_count ?? 0) - 1);
     set({
@@ -133,14 +139,12 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const currentStats = get().stats;
     if (!currentStats) return;
     const nextSales = Number((currentStats.today_sales + amount).toFixed(2));
-    const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
     const nextDebts = Number(Math.max(0, currentStats.outstanding_debts - amount).toFixed(2));
     const nextCount = (currentStats.today_sales_count ?? 0) + 1;
     set({
       stats: {
         ...currentStats,
         today_sales: nextSales,
-        today_profit: nextProfit,
         outstanding_debts: nextDebts,
         today_sales_count: nextCount,
       },
@@ -151,14 +155,12 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     const currentStats = get().stats;
     if (!currentStats) return;
     const nextSales = Number(Math.max(0, currentStats.today_sales - amount).toFixed(2));
-    const nextProfit = Number((nextSales - currentStats.today_expenses).toFixed(2));
     const nextDebts = Number((currentStats.outstanding_debts + amount).toFixed(2));
     const nextCount = Math.max(0, (currentStats.today_sales_count ?? 0) - 1);
     set({
       stats: {
         ...currentStats,
         today_sales: nextSales,
-        today_profit: nextProfit,
         outstanding_debts: nextDebts,
         today_sales_count: nextCount,
       },
@@ -212,7 +214,20 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       ] = await Promise.all([
         supabase
           .from('sales')
-          .select('amount_paid, notes')
+          .select(`
+            id,
+            amount_paid,
+            total_amount,
+            notes,
+            items:${saleItemsTable()}(
+              id,
+              product_id,
+              quantity,
+              unit_price,
+              cost_price,
+              total_price
+            )
+          `)
           .eq('business_id', businessId)
           .eq('branch_id', branchId)
           .gte('created_at', todayStart)
@@ -257,28 +272,53 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         fetchRevenueActivities(businessId, branchId, 5),
       ]);
 
-      const totalSales = todaySalesRes.data
-        ?.filter((row) => !isDebtSettlementSale(row.notes))
-        .reduce((sum, row) => sum + row.amount_paid, 0) ?? 0;
-      const salesCount = todaySalesRes.data
-        ?.filter((row) => !isDebtSettlementSale(row.notes))
-        .length ?? 0;
+      const validSales = todaySalesRes.data
+        ?.filter((row) => !isDebtSettlementSale(row.notes)) ?? [];
+      const totalSales = validSales.reduce((sum, row) => sum + Number(row.amount_paid ?? 0), 0);
+      const salesCount = validSales.length;
       const totalRepayments = todayRepaymentsRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
       const repaymentsCount = todayRepaymentsRes.data?.length ?? 0;
       const totalExpenses = todayExpensesRes.data?.reduce((sum, row) => sum + row.amount, 0) ?? 0;
       const totalDebts = debtsRes.data?.reduce((sum, row) => sum + row.balance, 0) ?? 0;
       const stockAlerts = await getStockAlerts(businessId, branchId);
 
+      // Build product cost map for fallback
+      let storeProducts = useBusinessStore.getState().products;
+      if (!storeProducts || storeProducts.length === 0) {
+        try {
+          storeProducts = await readCachedProducts(businessId);
+        } catch {}
+      }
+      const productCostMap = new Map((storeProducts ?? []).map((p) => [p.id, Number(p.cost_price ?? 0)]));
+
+      // Calculate server gross profit: selling price minus cost price
+      const serverGrossProfit = validSales.reduce((sum, sale: any) => {
+        const items = (sale.items as any[]) ?? [];
+        if (items.length > 0) {
+          const totalCogs = items.reduce((cogsSum: number, item: any) => {
+            const rawCost = Number(item.cost_price ?? 0);
+            const unitCost = rawCost > 0 ? rawCost : (productCostMap.get(item.product_id) ?? 0);
+            return cogsSum + (unitCost * Number(item.quantity ?? 1));
+          }, 0);
+          const saleSellingPrice = Number(sale.total_amount ?? sale.amount_paid ?? 0);
+          return sum + (saleSellingPrice - totalCogs);
+        }
+        return sum + Number(sale.amount_paid ?? 0);
+      }, 0);
+
       // Re-read latest cache to account for transactions recorded locally during the network fetch
       const latestCached = await buildCachedDashboardData(businessId, branchId);
 
       const serverSalesTotal = totalSales + totalRepayments;
       const cachedTodaySales = latestCached.stats?.today_sales ?? 0;
+      const cachedTodayProfit = latestCached.stats?.today_profit ?? 0;
 
       // Prefer server sales total unless local cache has unsynced offline sales (cachedTodaySales > serverSalesTotal)
       const resolvedTodaySales = Math.max(serverSalesTotal, cachedTodaySales);
       const resolvedTodayExpenses = Math.max(totalExpenses, latestCached.stats?.today_expenses ?? 0);
-      const resolvedTodayProfit = resolvedTodaySales - resolvedTodayExpenses;
+      const resolvedTodayProfit = serverSalesTotal >= cachedTodaySales
+        ? Number(serverGrossProfit.toFixed(2))
+        : Number(Math.max(serverGrossProfit, cachedTodayProfit).toFixed(2));
 
       const serverSalesCount = salesCount + repaymentsCount;
       const cachedTodaySalesCount = latestCached.stats?.today_sales_count ?? 0;

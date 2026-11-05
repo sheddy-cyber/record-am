@@ -45,8 +45,19 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
         label="Find Product"
         value={search}
         onChangeText={onSearchChange}
-        placeholder="Search products by name..."
+        placeholder="Search by name, barcode, or SKU..."
         leftIcon={<Feather name="search" size={16} color={COLORS.text.muted} />}
+        rightElement={
+          search ? (
+            <TouchableOpacity
+              onPress={() => onSearchChange('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ padding: 4 }}
+            >
+              <Feather name="x" size={16} color={COLORS.text.muted} />
+            </TouchableOpacity>
+          ) : undefined
+        }
         containerStyle={{ marginBottom: 14 }}
       />
 
@@ -189,7 +200,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
                         height: 32,
                         borderRadius: RADIUS.full,
                         borderWidth: 1,
-                        borderColor: isPinned ? COLORS.accent : COLORS.border,
+                        borderColor: isPinned ? COLORS.accentDark : COLORS.border,
                         backgroundColor: isPinned ? COLORS.accentLight : COLORS.surface,
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -198,7 +209,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
                       <Feather
                         name="star"
                         size={14}
-                        color={isPinned ? COLORS.accent : COLORS.text.muted}
+                        color={isPinned ? COLORS.accentDark : COLORS.text.muted}
                       />
                     </TouchableOpacity>
 
@@ -215,7 +226,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
                       <Feather
                         name={alreadyAdded ? 'check' : 'plus'}
                         size={16}
-                        color={alreadyAdded ? '#000000' : COLORS.text.primary}
+                        color={alreadyAdded ? COLORS.onAccent : COLORS.text.primary}
                       />
                     </View>
                   </View>

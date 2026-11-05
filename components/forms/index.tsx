@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ViewStyle, TextInputProps, Modal, Pressable, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, ViewStyle, TextInputProps, StyleSheet, Pressable } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
+import { BottomSheetModal } from '@/components/ui/BottomSheetModal';
 import { useKeyboardAwareScroll, formatAmountInput } from './keyboard';
 
 // ─── Input Field ────────────────────────────────────────────────────────────
@@ -124,8 +125,11 @@ export const InputField: React.FC<InputFieldProps> = ({
               fontSize: 15,
               fontFamily: FONT.regular,
               color: COLORS.text.primary,
-              paddingVertical: 12,
+              paddingVertical: props.multiline ? 12 : 0,
+              textAlignVertical: props.multiline ? 'top' : 'center',
+              includeFontPadding: false,
               backgroundColor: 'transparent',
+              height: props.multiline ? undefined : '100%',
             },
             props.style,
           ]}
@@ -208,84 +212,50 @@ export const SelectField: React.FC<SelectFieldProps> = ({
         <Feather name={open ? 'chevron-up' : 'chevron-down'} size={17} color={COLORS.text.muted} />
       </TouchableOpacity>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(15, 23, 42, 0.55)',
-            justifyContent: 'center',
-            paddingHorizontal: SP.lg,
-            paddingVertical: 32,
-          }}
-          onPress={() => setOpen(false)}
-        >
-          <Pressable
-            style={{
-              backgroundColor: '#FFFFFF',
-              borderRadius: RADIUS.xl,
-              maxHeight: 440,
-              overflow: 'hidden',
-              borderWidth: 1,
-              borderColor: COLORS.border,
-            }}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingHorizontal: SP.card,
-                paddingVertical: 16,
-                borderBottomWidth: StyleSheet.hairlineWidth,
-                borderBottomColor: COLORS.borderSubtle,
-                backgroundColor: COLORS.surface2,
-              }}
-            >
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>{label}</Text>
-              <TouchableOpacity onPress={() => setOpen(false)} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Feather name="x" size={18} color={COLORS.text.muted} />
+      <BottomSheetModal
+        visible={open}
+        onClose={() => setOpen(false)}
+        title={label}
+        maxHeight={460}
+      >
+        <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
+          {options.map((option, index) => {
+            const isSelected = option.value === value;
+            return (
+              <TouchableOpacity
+                key={option.value}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  paddingHorizontal: 8,
+                  paddingVertical: 14,
+                  borderBottomWidth: index < options.length - 1 ? StyleSheet.hairlineWidth : 0,
+                  borderBottomColor: COLORS.borderSubtle,
+                  backgroundColor: isSelected ? COLORS.accentLight : 'transparent',
+                  borderRadius: RADIUS.md,
+                }}
+                activeOpacity={0.7}
+                onPress={() => {
+                  onChange(option.value);
+                  setOpen(false);
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 14.5,
+                    fontFamily: isSelected ? FONT.bold : FONT.regular,
+                    color: isSelected ? COLORS.accentDark : COLORS.text.primary,
+                  }}
+                >
+                  {option.label}
+                </Text>
+                {isSelected ? <Feather name="check" size={16} color={COLORS.accentDark} /> : null}
               </TouchableOpacity>
-            </View>
-            <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
-              {options.map((option, index) => {
-                const isSelected = option.value === value;
-                return (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      paddingHorizontal: SP.card,
-                      paddingVertical: 14,
-                      borderBottomWidth: index < options.length - 1 ? StyleSheet.hairlineWidth : 0,
-                      borderBottomColor: COLORS.borderSubtle,
-                      backgroundColor: isSelected ? COLORS.accentLight : COLORS.card,
-                    }}
-                    activeOpacity={0.7}
-                    onPress={() => {
-                      onChange(option.value);
-                      setOpen(false);
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 14.5,
-                        fontFamily: isSelected ? FONT.bold : FONT.regular,
-                        color: isSelected ? COLORS.accentMuted : COLORS.text.primary,
-                      }}
-                    >
-                      {option.label}
-                    </Text>
-                    {isSelected ? <Feather name="check" size={16} color={COLORS.accent} /> : null}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
+            );
+          })}
+        </ScrollView>
+      </BottomSheetModal>
       {error ? <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.danger, marginTop: 5 }}>{error}</Text> : null}
     </View>
   );

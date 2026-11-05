@@ -1,9 +1,10 @@
 import React from 'react';
-import { View } from 'react-native';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { InputField, SelectField, Toggle } from '@/components/forms';
 import { Card, RoleGate, SectionHeader } from '@/components/ui';
 import { CategoryPicker } from '@/components/inventory/CategoryPicker';
-import { CURRENCY_SYMBOL, PRODUCT_UNITS } from '@/constants';
+import { CURRENCY_SYMBOL, PRODUCT_UNITS, COLORS, FONT, RADIUS } from '@/constants';
 import { Category } from '@/types';
 
 const CUSTOM_UNIT_VALUE = '__custom_unit__';
@@ -36,6 +37,9 @@ type ProductFormFieldsProps = {
   stockQuantityFirst?: boolean;
   isService: boolean;
   onIsServiceChange: (value: boolean) => void;
+  barcode?: string;
+  onBarcodeChange?: (value: string) => void;
+  onScanBarcodePress?: () => void;
 };
 
 export function ProductFormFields({
@@ -62,6 +66,9 @@ export function ProductFormFields({
   stockQuantityFirst = false,
   isService,
   onIsServiceChange,
+  barcode = '',
+  onBarcodeChange,
+  onScanBarcodePress,
 }: ProductFormFieldsProps) {
   const hasPresetUnit = PRODUCT_UNITS.some((unit) => unit.value === productUnit);
   const selectedUnit = hasPresetUnit ? productUnit : CUSTOM_UNIT_VALUE;
@@ -139,6 +146,36 @@ export function ProductFormFields({
             onSelectCategory={onCategoryIdChange}
             containerStyle={{ marginBottom: 0 }}
           />
+
+          {onBarcodeChange ? (
+            <InputField
+              label="Barcode / SKU (Optional)"
+              value={barcode}
+              onChangeText={onBarcodeChange}
+              placeholder="Scan or type barcode"
+              containerStyle={{ marginBottom: 0 }}
+              rightElement={
+                onScanBarcodePress ? (
+                  <TouchableOpacity
+                    onPress={onScanBarcodePress}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{
+                      paddingVertical: 5,
+                      paddingHorizontal: 8,
+                      backgroundColor: 'rgba(0, 78, 137, 0.08)',
+                      borderRadius: RADIUS.sm,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <Feather name="maximize" size={15} color={COLORS.ink} />
+                    <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.ink }}>Scan</Text>
+                  </TouchableOpacity>
+                ) : undefined
+              }
+            />
+          ) : null}
 
           <Toggle
             label="This is a service"

@@ -7,6 +7,7 @@ export * from './RoleGate';
 export * from './PermissionDenied';
 export * from './GlobalDialog';
 export * from './ConfirmationModal';
+export * from './BottomSheetModal';
 export { confirmModal, showAlertDialog, useConfirmModal } from '@/store/alertStore';
 
 // ─── PressableScale (Tactile Spring Physics) ─────────────────────────────────
@@ -120,7 +121,7 @@ export const Button: React.FC<ButtonProps> = ({
     danger:    '#FFFFFF',
     ghost:     COLORS.text.secondary,
     success:   '#FFFFFF',
-    accent:    '#000000',
+    accent:    COLORS.onAccent,
   };
   const heights = { sm: 38, md: 46, lg: 52 };
   const paddings = { sm: 14, md: 20, lg: 24 };
@@ -338,7 +339,7 @@ const dotChipThemes: Record<SmartChipVariant, { bg: string; text: string; border
   warning: { bg: '#B45309', text: '#FFFFFF', border: '#92400E', dot: '#FFFFFF' },
   danger:  { bg: '#B91C1C', text: '#FFFFFF', border: '#991B1B', dot: '#FFFFFF' },
   info:    { bg: '#0369A1', text: '#FFFFFF', border: '#075985', dot: '#FFFFFF' },
-  accent:  { bg: '#EAB308', text: '#002744', border: '#CA8A04', dot: '#002744' },
+  accent:  { bg: '#EAB308', text: COLORS.onAccent, border: '#CA8A04', dot: COLORS.onAccent },
   primary: { bg: '#004E89', text: '#FFFFFF', border: '#003B68', dot: '#FFFFFF' },
 };
 
@@ -498,7 +499,7 @@ export const EmptyState: React.FC<{
 
 export const LoadingScreen: React.FC<{ message?: string }> = ({ message }) => (
   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.surface }}>
-    <ActivityIndicator size="large" color={COLORS.accent} />
+    <ActivityIndicator size="large" color={COLORS.navy} />
     {message ? (
       <Text style={{ marginTop: 14, color: COLORS.text.muted, fontSize: 13.5, fontFamily: FONT.medium }}>{message}</Text>
     ) : null}
@@ -610,7 +611,7 @@ export const PaymentSummary: React.FC<{
   tone?: 'default' | 'sales' | 'purchase';
   style?: ViewStyle;
 }> = ({ totalAmount, amountPaid, amountOwed, tone = 'default', style }) => {
-  const totalColor = tone === 'sales' ? COLORS.accent : COLORS.text.primary;
+  const totalColor = tone === 'sales' ? COLORS.ink : COLORS.text.primary;
   const paidColor = amountPaid > 0 ? COLORS.success : COLORS.text.muted;
   const creditColor = amountOwed > 0 ? COLORS.danger : COLORS.text.muted;
   const fmt = (value: number) => `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;

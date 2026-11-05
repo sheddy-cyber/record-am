@@ -10,7 +10,7 @@ import { hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
 import { ScreenShell, ScreenHeader, HeaderAction } from '@/components/layout';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL } from '@/constants';
-import { Button, EmptyState, PermissionDenied } from '@/components/ui';
+import { Button, BottomSheetModal, EmptyState, PermissionDenied } from '@/components/ui';
 import { ProductAnalysisPrintData, printProductAnalysis, shareProductAnalysisPDF } from '@/lib/reports';
 
 const fmtCount = (n: number) => n.toLocaleString();
@@ -329,147 +329,85 @@ export default function AnalyticsProductsScreen() {
           />
         }
       />
-      <Modal
+      <BottomSheetModal
         visible={printModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onClose={() => {
           if (!isPrinting && !isSharingPDF) setPrintModalVisible(false);
         }}
+        title="Print Product Analytics"
+        subtitle="Executive A4 performance sheet"
+        showCloseButton={!isPrinting && !isSharingPDF}
       >
-        <Pressable
+        {/* Summary Details Card */}
+        <View
           style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.5)',
-            justifyContent: 'flex-end',
-          }}
-          onPress={() => {
-            if (!isPrinting && !isSharingPDF) setPrintModalVisible(false);
+            backgroundColor: COLORS.card,
+            borderRadius: RADIUS.md,
+            borderWidth: 1,
+            borderColor: COLORS.border,
+            padding: 14,
+            marginBottom: 16,
+            gap: 8,
           }}
         >
-          <Pressable
-            style={{
-              backgroundColor: COLORS.surface,
-              borderTopLeftRadius: RADIUS.xl,
-              borderTopRightRadius: RADIUS.xl,
-              paddingHorizontal: 20,
-              paddingTop: 20,
-              paddingBottom: insets.bottom + 20,
-            }}
-            onPress={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 16,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: RADIUS.md,
-                    backgroundColor: COLORS.ink + '12',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Feather name="printer" size={18} color={COLORS.ink} />
-                </View>
-                <View>
-                  <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                    Print Product Analytics
-                  </Text>
-                  <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                    Executive A4 performance sheet
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                onPress={() => setPrintModalVisible(false)}
-                disabled={isPrinting || isSharingPDF}
-              >
-                <Feather name="x" size={20} color={COLORS.text.muted} />
-              </TouchableOpacity>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Products</Text>
+            <Text style={{ fontSize: 12.5, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+              {sortedAndFiltered.length} items
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Sorted By</Text>
+            <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: COLORS.text.primary }}>
+              {sortField === 'quantity' ? 'Quantity Sold' : sortField === 'revenue' ? 'Revenue' : 'Gross Profit'} ({sortOrder === 'desc' ? 'High to Low' : 'Low to High'})
+            </Text>
+          </View>
+          {search.trim() ? (
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Filter Search</Text>
+              <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: COLORS.text.secondary }}>
+                "{search.trim()}"
+              </Text>
             </View>
+          ) : null}
+          <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 2 }} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Total Revenue</Text>
+            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
+              {CURRENCY_SYMBOL}{sortedAndFiltered.reduce((s, p) => s + p.total_revenue, 0).toLocaleString('en-NG')}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Gross Profit</Text>
+            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.success }}>
+              {CURRENCY_SYMBOL}{sortedAndFiltered.reduce((s, p) => s + p.total_profit, 0).toLocaleString('en-NG')}
+            </Text>
+          </View>
+        </View>
 
-            {/* Summary Details Card */}
-            <View
-              style={{
-                backgroundColor: COLORS.card,
-                borderRadius: RADIUS.md,
-                borderWidth: 1,
-                borderColor: COLORS.border,
-                padding: 14,
-                marginBottom: 16,
-                gap: 8,
-              }}
-            >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Products</Text>
-                <Text style={{ fontSize: 12.5, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                  {sortedAndFiltered.length} items
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Sorted By</Text>
-                <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                  {sortField === 'quantity' ? 'Quantity Sold' : sortField === 'revenue' ? 'Revenue' : 'Gross Profit'} ({sortOrder === 'desc' ? 'High to Low' : 'Low to High'})
-                </Text>
-              </View>
-              {search.trim() ? (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Filter Search</Text>
-                  <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: COLORS.text.secondary }}>
-                    "{search.trim()}"
-                  </Text>
-                </View>
-              ) : null}
-              <View style={{ height: 1, backgroundColor: COLORS.border, marginVertical: 2 }} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Total Revenue</Text>
-                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                  {CURRENCY_SYMBOL}{sortedAndFiltered.reduce((s, p) => s + p.total_revenue, 0).toLocaleString('en-NG')}
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>Gross Profit</Text>
-                <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.success }}>
-                  {CURRENCY_SYMBOL}{sortedAndFiltered.reduce((s, p) => s + p.total_profit, 0).toLocaleString('en-NG')}
-                </Text>
-              </View>
-            </View>
+        {/* Action Buttons */}
+        <View style={{ gap: 8 }}>
+          <Button
+            title="Print Report"
+            variant="accent"
+            size="md"
+            loading={isPrinting}
+            disabled={isSharingPDF}
+            icon="printer"
+            onPress={() => handlePrint('print')}
+          />
 
-            {/* Action Buttons */}
-            <View style={{ gap: 8 }}>
-              <Button
-                title="Print Report"
-                variant="accent"
-                size="md"
-                loading={isPrinting}
-                disabled={isSharingPDF}
-                icon="printer"
-                onPress={() => handlePrint('print')}
-              />
-
-              <Button
-                title="Share as PDF"
-                variant="secondary"
-                size="md"
-                loading={isSharingPDF}
-                disabled={isPrinting}
-                icon="share-2"
-                onPress={() => handlePrint('share')}
-              />
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
+          <Button
+            title="Share as PDF"
+            variant="secondary"
+            size="md"
+            loading={isSharingPDF}
+            disabled={isPrinting}
+            icon="share-2"
+            onPress={() => handlePrint('share')}
+          />
+        </View>
+      </BottomSheetModal>
     </ScreenShell>
   );
 }
