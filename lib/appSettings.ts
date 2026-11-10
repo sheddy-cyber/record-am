@@ -9,6 +9,12 @@ export interface AppSettings {
   autoCloseTime: string;
   inventoryPurchaseSyncEnabled: boolean;
   autoCloseLastRunByBranch: Record<string, string>;
+  voiceAssistantEnabled: boolean;
+  voiceAutoConfirmSeconds: number;
+  voiceTtsEnabled: boolean;
+  groqApiKey?: string;
+  geminiApiKey?: string;
+  openaiApiKey?: string;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -18,6 +24,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   autoCloseTime: '21:00',
   inventoryPurchaseSyncEnabled: true,
   autoCloseLastRunByBranch: {},
+  voiceAssistantEnabled: true,
+  voiceAutoConfirmSeconds: 0,
+  voiceTtsEnabled: true,
 };
 
 export function normalizeTimeInput(value: string, fallback = '20:00'): string {
@@ -55,6 +64,12 @@ export async function getAppSettings(): Promise<AppSettings> {
       autoCloseTime: normalizeTimeInput(parsed.autoCloseTime ?? DEFAULT_APP_SETTINGS.autoCloseTime, DEFAULT_APP_SETTINGS.autoCloseTime),
       inventoryPurchaseSyncEnabled: parsed.inventoryPurchaseSyncEnabled ?? DEFAULT_APP_SETTINGS.inventoryPurchaseSyncEnabled,
       autoCloseLastRunByBranch: parsed.autoCloseLastRunByBranch ?? {},
+      voiceAssistantEnabled: parsed.voiceAssistantEnabled ?? DEFAULT_APP_SETTINGS.voiceAssistantEnabled,
+      voiceAutoConfirmSeconds: parsed.voiceAutoConfirmSeconds ?? DEFAULT_APP_SETTINGS.voiceAutoConfirmSeconds,
+      voiceTtsEnabled: parsed.voiceTtsEnabled ?? DEFAULT_APP_SETTINGS.voiceTtsEnabled,
+      groqApiKey: parsed.groqApiKey || DEFAULT_APP_SETTINGS.groqApiKey,
+      geminiApiKey: parsed.geminiApiKey,
+      openaiApiKey: parsed.openaiApiKey,
     };
   } catch (err) {
     console.log('[appSettings] load failed:', err);

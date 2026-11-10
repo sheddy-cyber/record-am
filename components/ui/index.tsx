@@ -340,7 +340,7 @@ const dotChipThemes: Record<SmartChipVariant, { bg: string; text: string; border
   danger:  { bg: '#B91C1C', text: '#FFFFFF', border: '#991B1B', dot: '#FFFFFF' },
   info:    { bg: '#0369A1', text: '#FFFFFF', border: '#075985', dot: '#FFFFFF' },
   accent:  { bg: '#EAB308', text: COLORS.onAccent, border: '#CA8A04', dot: COLORS.onAccent },
-  primary: { bg: '#004E89', text: '#FFFFFF', border: '#003B68', dot: '#FFFFFF' },
+  primary: { bg: COLORS.ink, text: '#FFFFFF', border: '#003B68', dot: '#FFFFFF' },
 };
 
 export interface SmartChipProps {

@@ -175,9 +175,11 @@ function buildSnapshotFromRows(params: {
   const totalCOGS = params.saleItems
     .filter((item: any) => saleIds.has(item.sale_id))
     .reduce((sum: number, item: any) => {
+      const productCost = productCostMap.get(item.product_id);
       const rawCost = Number(item.cost_price ?? 0);
-      const fallbackCost = productCostMap.get(item.product_id) ?? 0;
-      const effectiveCost = rawCost > 0 ? rawCost : fallbackCost;
+      const effectiveCost = (productCost !== undefined && productCost > 0)
+        ? productCost
+        : rawCost;
       return sum + effectiveCost * item.quantity;
     }, 0);
   const grossProfit = (totalSales + totalRepayments) - totalCOGS;

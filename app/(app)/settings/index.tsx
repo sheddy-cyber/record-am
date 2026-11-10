@@ -46,6 +46,14 @@ export default function SettingsScreen() {
   const [autoCloseTime, setAutoCloseTime] = useState('21:00');
   const [inventoryPurchaseSyncEnabled, setInventoryPurchaseSyncEnabled] = useState(true);
 
+  // Voice Assistant Settings
+  const [voiceAssistantEnabled, setVoiceAssistantEnabled] = useState(true);
+  const [voiceTtsEnabled, setVoiceTtsEnabled] = useState(true);
+  const [voiceAutoConfirmSeconds, setVoiceAutoConfirmSeconds] = useState('5');
+  const [groqApiKey, setGroqApiKey] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [voiceSaving, setVoiceSaving] = useState(false);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -55,6 +63,11 @@ export default function SettingsScreen() {
       setAutoCloseEnabled(settings.autoCloseEnabled);
       setAutoCloseTime(settings.autoCloseTime);
       setInventoryPurchaseSyncEnabled(settings.inventoryPurchaseSyncEnabled);
+      setVoiceAssistantEnabled(settings.voiceAssistantEnabled ?? true);
+      setVoiceTtsEnabled(settings.voiceTtsEnabled ?? true);
+      setVoiceAutoConfirmSeconds(String(settings.voiceAutoConfirmSeconds ?? 5));
+      setGroqApiKey(settings.groqApiKey ?? '');
+      setGeminiApiKey(settings.geminiApiKey ?? '');
       if (currentBusiness) {
         await usePaymentAccountStore.getState().fetchAccounts(currentBusiness.id);
       }
@@ -80,6 +93,11 @@ export default function SettingsScreen() {
       setAutoCloseEnabled(settings.autoCloseEnabled);
       setAutoCloseTime(settings.autoCloseTime);
       setInventoryPurchaseSyncEnabled(settings.inventoryPurchaseSyncEnabled);
+      setVoiceAssistantEnabled(settings.voiceAssistantEnabled ?? true);
+      setVoiceTtsEnabled(settings.voiceTtsEnabled ?? true);
+      setVoiceAutoConfirmSeconds(String(settings.voiceAutoConfirmSeconds ?? 5));
+      setGroqApiKey(settings.groqApiKey ?? '');
+      setGeminiApiKey(settings.geminiApiKey ?? '');
     };
 
     loadSettings();
@@ -203,6 +221,29 @@ export default function SettingsScreen() {
       Alert.alert('Error', err.message);
     } finally {
       setInventorySaving(false);
+    }
+  };
+
+  const handleSaveVoiceSettings = async () => {
+    setVoiceSaving(true);
+    try {
+      await saveAppSettings({
+        voiceAssistantEnabled,
+        voiceTtsEnabled,
+        voiceAutoConfirmSeconds: parseInt(voiceAutoConfirmSeconds, 10) || 5,
+        groqApiKey: groqApiKey.trim() || undefined,
+        geminiApiKey: geminiApiKey.trim() || undefined,
+      });
+
+      Toast.show({
+        type: 'success',
+        text1: 'Voice settings saved',
+        text2: 'Voice control preferences have been updated.',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setVoiceSaving(false);
     }
   };
 
@@ -401,6 +442,53 @@ export default function SettingsScreen() {
               title="Save Inventory Settings"
               onPress={handleSaveInventorySettings}
               loading={inventorySaving}
+              variant="accent"
+              size="md"
+            />
+          </Card>
+
+          <Card>
+            <SectionHeader title="Voice Control (Siri / Alexa)" />
+            <Toggle
+              label="Enable Voice Assistant"
+              description="Show voice control button to record sales, stock, debt, and expenses by voice."
+              value={voiceAssistantEnabled}
+              onChange={setVoiceAssistantEnabled}
+            />
+            <Toggle
+              label="Spoken Voice Confirmation"
+              description="Hear voice confirmation spoken out loud when an action is executed."
+              value={voiceTtsEnabled}
+              onChange={setVoiceTtsEnabled}
+            />
+            <InputField
+              label="Auto-Save Countdown (seconds)"
+              value={voiceAutoConfirmSeconds}
+              onChangeText={setVoiceAutoConfirmSeconds}
+              placeholder="5"
+              keyboardType="numeric"
+              hint="Seconds to wait before automatically saving a parsed voice command (0 for manual only)."
+            />
+            <InputField
+              label="Groq Whisper API Key (Optional)"
+              value={groqApiKey}
+              onChangeText={setGroqApiKey}
+              placeholder="gsk_..."
+              hint="Free, ultra-fast cloud speech-to-text. Leave blank to use local typing/commands."
+              secureTextEntry
+            />
+            <InputField
+              label="Gemini API Key (Optional)"
+              value={geminiApiKey}
+              onChangeText={setGeminiApiKey}
+              placeholder="AIza..."
+              hint="Advanced natural language parsing for Nigerian English & Pidgin slang."
+              secureTextEntry
+            />
+            <Button
+              title="Save Voice Settings"
+              onPress={handleSaveVoiceSettings}
+              loading={voiceSaving}
               variant="accent"
               size="md"
             />

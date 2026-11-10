@@ -1163,6 +1163,18 @@ export async function updateProductAndInventoryOffline(params: {
   }
 
   await enqueueMutations(mutations);
+
+  if (
+    params.productPatch.cost_price !== undefined &&
+    Number(params.productPatch.cost_price) !== Number(params.product.cost_price ?? 0)
+  ) {
+    await syncCostPriceAdjustment(
+      params.businessId,
+      params.branchId,
+      params.product.id,
+      Number(params.productPatch.cost_price),
+    );
+  }
 }
 
 export async function recordDamagedStockOffline(params: {
@@ -1280,4 +1292,131 @@ export async function recordDamagedStockOffline(params: {
 
 export function sanitizeProductForWrite(product: Product) {
   return stripNestedProduct(product);
+}
+
+export async function syncCostPriceAdjustment(
+  businessId: string,
+  branchId: string | undefined,
+  productId: string,
+  newCostPrice: number,
+): Promise<void> {
+  const normalizedCost = Math.max(0, roundAmount(newCostPrice));
+  const allBranches = useBusinessStore.getState().branches.filter((b) => b.business_id === businessId);
+  const branchScopes = Array.from(
+    new Set([
+      ...(branchId ? [branchId] : []),
+      ...allBranches.map((b) => b.id),
+      undefined,
+    ]),
+  );
+
+  // 1. Update cached sale_items and revenue_activities for this product across branch scopes
+  for (const bId of branchScopes) {
+    try {
+      const cachedSaleItems = await readCachedRows<SaleItem>(
+        { businessId, branchId: bId },
+        'sale_items',
+      );
+      let hasSaleItemUpdates = false;
+      const updatedSaleItems = cachedSaleItems.map((item) => {
+        if (item.product_id === productId) {
+          hasSaleItemUpdates = true;
+          return { ...item, cost_price: normalizedCost };
+        }
+        return item;
+      });
+
+      if (hasSaleItemUpdates) {
+        await replaceCachedRows(
+          { businessId, branchId: bId },
+          'sale_items',
+          updatedSaleItems,
+        );
+      }
+    } catch (err) {
+      console.warn('[syncCostPriceAdjustment] Failed updating cached sale_items for branch', bId, err);
+    }
+
+    if (bId) {
+      try {
+        const activities = await readCachedRows<RevenueActivity>(
+          { businessId, branchId: bId },
+          'revenue_activities',
+        );
+        let activitiesUpdated = false;
+        const nextActivities = activities.map((act) => {
+          if (act.items && act.items.some((it) => it.product_id === productId)) {
+            activitiesUpdated = true;
+            return {
+              ...act,
+              items: act.items.map((it) =>
+                it.product_id === productId ? { ...it, cost_price: normalizedCost } : it,
+              ),
+            };
+          }
+          return act;
+        });
+        if (activitiesUpdated) {
+          await replaceCachedRows({ businessId, branchId: bId }, 'revenue_activities', nextActivities);
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 2. Queue mutation for sale_items cost sync
+  try {
+    await enqueueMutations([
+      {
+        operation: 'update',
+        table: 'sale_items',
+        payload: { cost_price: normalizedCost },
+        match: { product_id: productId },
+        conflictPolicy: 'server-wins-if-newer',
+        description: `Sync cost price update for sale items of product ${productId}`,
+      },
+    ]);
+  } catch (err) {
+    console.warn('[syncCostPriceAdjustment] Failed to enqueue sale_items mutation', err);
+  }
+
+  // 3. Direct Supabase update if online
+  try {
+    void supabase
+      .from('sale_items')
+      .update({ cost_price: normalizedCost })
+      .eq('product_id', productId);
+  } catch (_) {}
+
+  // 4. Immediately refresh Dashboard, Analytics, and Daily Balance stores
+  const targetBranchId = branchId || allBranches[0]?.id;
+  if (targetBranchId) {
+    try {
+      const { buildCachedDashboardData } = await import('@/lib/offlineStore');
+      const refreshed = await buildCachedDashboardData(businessId, targetBranchId);
+
+      const { useDashboardStore } = await import('@/store/dashboardStore');
+      useDashboardStore.setState((state) => ({
+        stats: refreshed.stats,
+        recentActivities:
+          refreshed.recentActivities.length > 0 ? refreshed.recentActivities : state.recentActivities,
+        recentDebts: refreshed.recentDebts.length > 0 ? refreshed.recentDebts : state.recentDebts,
+      }));
+    } catch (err) {
+      console.warn('[syncCostPriceAdjustment] Failed to refresh dashboard store', err);
+    }
+
+    try {
+      const { useAnalyticsStore } = await import('@/store/analyticsStore');
+      void useAnalyticsStore.getState().refreshFromCache(businessId, targetBranchId);
+    } catch (err) {
+      console.warn('[syncCostPriceAdjustment] Failed to refresh analytics store', err);
+    }
+
+    try {
+      const { useDailyBalanceStore } = await import('@/store/dailyBalanceStore');
+      void useDailyBalanceStore.getState().fetchDailyBalance(businessId, targetBranchId);
+    } catch (err) {
+      console.warn('[syncCostPriceAdjustment] Failed to refresh daily balance store', err);
+    }
+  }
 }

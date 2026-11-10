@@ -57,9 +57,9 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
 
   const statusColor =
     isRepayment
-      ? '#004E89'
+      ? '#1E3A8A'
       : isForgiven
-        ? '#004E89'
+        ? '#1E3A8A'
         : (sale.payment_status === 'paid' || hasHigherPayment)
           ? '#059669'
           : sale.payment_status === 'partial'
@@ -104,7 +104,7 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
   }
   .header {
-    background: #004e89;
+    background: #1E3A8A;
     padding: 24px 20px 20px;
     text-align: center;
     color: #ffffff;
@@ -251,7 +251,7 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   .total-box .val {
     font-size: 19px;
     font-weight: 800;
-    color: #004e89;
+    color: #1E3A8A;
   }
   .paid-val {
     color: #10b981;
@@ -387,7 +387,7 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
       <span>Balance Owed</span>
       <span>${formatMoney(sale.amount_owed)}</span>
     </div>` : isForgiven ? `
-    <div class="owed-box" style="background:#f0f9ff;border-color:#bae6fd;color:#004e89;">
+    <div class="owed-box" style="background:#f0f9ff;border-color:#bae6fd;color:#1E3A8A;">
       <span>Debt Status</span>
       <span>FORGIVEN (₦0 DUE)</span>
     </div>` : ''}
@@ -725,14 +725,14 @@ export function generateStaffShiftReportHTML(data: StaffShiftReportData): string
   <title>Staff Shift Summary - ${data.date}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1e293b; background: #ffffff; }
-    .header { background: #004e89; color: #ffffff; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+    .header { background: #1E3A8A; color: #ffffff; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
     .header h1 { margin: 0; font-size: 20px; font-weight: 800; }
     .header p { margin: 4px 0 0; opacity: 0.9; font-size: 13px; }
     .status { margin-top: 10px; font-weight: 700; font-size: 12px; color: ${data.isClosed ? '#4ade80' : '#facc15'}; }
     .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
     .metric { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
     .metric .label { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-    .metric .val { font-size: 20px; font-weight: 800; color: #004e89; margin-top: 4px; }
+    .metric .val { font-size: 20px; font-weight: 800; color: #1E3A8A; margin-top: 4px; }
     .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
     .card h2 { font-size: 13px; margin: 0 0 10px; text-transform: uppercase; color: #334155; letter-spacing: 0.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; font-weight: 700; }
     .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
@@ -757,7 +757,7 @@ export function generateStaffShiftReportHTML(data: StaffShiftReportData): string
     </div>
     <div class="metric">
       <div class="label">Cash in Till / Drawer</div>
-      <div class="val" style="color:#004e89;">${formatMoney(data.totalCash)}</div>
+      <div class="val" style="color:#1E3A8A;">${formatMoney(data.totalCash)}</div>
       <div style="font-size:11px;color:#64748b;margin-top:2px;">Count in drawer</div>
     </div>
     <div class="metric">
@@ -1284,7 +1284,7 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
     line-height: 1.35;
   }
   .header {
-    border-bottom: 2px solid #004e89;
+    border-bottom: 2px solid #1E3A8A;
     padding-bottom: 10px;
     margin-bottom: 12px;
     display: flex;
@@ -1294,7 +1294,7 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   .business-name {
     font-size: 18px;
     font-weight: 800;
-    color: #004e89;
+    color: #1E3A8A;
     letter-spacing: -0.2px;
   }
   .branch-name {
@@ -1361,7 +1361,7 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
     display: table-header-group;
   }
   th {
-    background: #004e89;
+    background: #1E3A8A;
     color: #ffffff;
     font-size: 10px;
     font-weight: 700;
@@ -1392,7 +1392,7 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   td.col-rank {
     text-align: center;
     font-weight: 700;
-    color: #004e89;
+    color: #1E3A8A;
   }
   td.col-name {
     font-weight: 500;

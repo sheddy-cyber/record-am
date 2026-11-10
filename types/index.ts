@@ -394,6 +394,7 @@ export interface RevenueActivity {
     product_id?: string;
     quantity: number;
     unit_price?: number;
+    cost_price?: number;
     discount_amount?: number;
     total_price: number;
     product_name: string;

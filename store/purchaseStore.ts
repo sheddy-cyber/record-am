@@ -511,11 +511,8 @@ async function writePurchaseRecord(
           .update({ cost_price: effectiveCost, updated_at: new Date().toISOString() })
           .eq('id', item.product_id);
 
-        await supabase
-          .from('sale_items')
-          .update({ cost_price: effectiveCost })
-          .eq('product_id', item.product_id)
-          .or('cost_price.is.null,cost_price.eq.0');
+        const { syncCostPriceAdjustment } = await import('@/lib/offlineRecords');
+        await syncCostPriceAdjustment(businessId, branchId, item.product_id, effectiveCost);
       }
     }
 
@@ -905,6 +902,20 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
       products: state.products.map((p) => (updatedIds.has(p.id) ? productsToUpdate.find((up) => up.id === p.id)! : p)),
     }));
     await upsertCachedProducts(params.businessId, productsToUpdate);
+
+    for (const prod of productsToUpdate) {
+      if (prod.cost_price !== undefined) {
+        try {
+          const { syncCostPriceAdjustment } = await import('@/lib/offlineRecords');
+          await syncCostPriceAdjustment(
+            params.businessId,
+            params.branchId,
+            prod.id,
+            Number(prod.cost_price),
+          );
+        } catch (_) {}
+      }
+    }
   }
 
   try {

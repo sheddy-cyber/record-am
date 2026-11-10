@@ -5,13 +5,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error(
-    '[Record Am] Missing Supabase credentials.\n' +
-    'Make sure your .env file contains:\n' +
+export const isSupabaseConfigured = Boolean(
+  supabaseUrl &&
+  supabaseAnonKey &&
+  !supabaseUrl.includes('placeholder') &&
+  !supabaseUrl.includes('your-project')
+);
+
+if (!isSupabaseConfigured) {
+  console.warn(
+    '[Record Am] Supabase credentials not configured in .env.\n' +
+    'To sync online, add your project credentials to .env:\n' +
     '  EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co\n' +
-    '  EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key\n' +
-    'Then restart with: npx expo start --clear'
+    '  EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key'
   );
 }
 

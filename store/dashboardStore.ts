@@ -296,8 +296,11 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         const items = (sale.items as any[]) ?? [];
         if (items.length > 0) {
           const totalCogs = items.reduce((cogsSum: number, item: any) => {
+            const productCost = productCostMap.get(item.product_id);
             const rawCost = Number(item.cost_price ?? 0);
-            const unitCost = rawCost > 0 ? rawCost : (productCostMap.get(item.product_id) ?? 0);
+            const unitCost = (productCost !== undefined && productCost > 0)
+              ? productCost
+              : rawCost;
             return cogsSum + (unitCost * Number(item.quantity ?? 1));
           }, 0);
           const saleSellingPrice = Number(sale.total_amount ?? sale.amount_paid ?? 0);
@@ -318,7 +321,7 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       const resolvedTodayExpenses = Math.max(totalExpenses, latestCached.stats?.today_expenses ?? 0);
       const resolvedTodayProfit = serverSalesTotal >= cachedTodaySales
         ? Number(serverGrossProfit.toFixed(2))
-        : Number(Math.max(serverGrossProfit, cachedTodayProfit).toFixed(2));
+        : Number(cachedTodayProfit.toFixed(2));
 
       const serverSalesCount = salesCount + repaymentsCount;
       const cachedTodaySalesCount = latestCached.stats?.today_sales_count ?? 0;

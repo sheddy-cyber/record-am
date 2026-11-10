@@ -48,6 +48,12 @@
         }
       ],
       [
+        "expo-av",
+        {
+          "microphonePermission": "Allow Record Am to access your microphone for voice commands."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/logo.png",

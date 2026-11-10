@@ -1008,8 +1008,8 @@ const styles = StyleSheet.create({
     borderColor: '#CBD5E1',
   },
   reasonChipActive: {
-    backgroundColor: '#004E89',
-    borderColor: '#004E89',
+    backgroundColor: COLORS.ink,
+    borderColor: COLORS.ink,
   },
   reasonChipText: {
     fontSize: 11.5,

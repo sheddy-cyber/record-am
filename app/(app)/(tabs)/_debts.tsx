@@ -382,6 +382,12 @@ function DebtsScreen() {
           title="Debts"
           subtitle={`${debts.length} ${debts.length === 1 ? 'debtor' : 'debtors'}`}
           theme="dark"
+          left={
+            <HeaderAction
+              icon="arrow-left"
+              onPress={() => router.back()}
+            />
+          }
           right={
             <HeaderAction
               icon="plus"
@@ -396,7 +402,7 @@ function DebtsScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={{
             paddingHorizontal: SP.page,
-            paddingBottom: insets.bottom + 96,
+            paddingBottom: insets.bottom + 48,
             flexGrow: 1,
           }}
           ItemSeparatorComponent={() => <View style={{ height: 20 }} />}

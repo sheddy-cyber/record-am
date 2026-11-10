@@ -4,6 +4,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { useTabStore } from '@/store/tabStore';
+import { useVoiceStore } from '@/store/voiceStore';
 import PagerView from 'react-native-pager-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,14 +12,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DashboardScreen from './_dashboard';
 import InventoryScreen from './_inventory';
 import SalesScreen from './_sales';
-import DebtsScreen from './_debts';
 import MoreScreen from './_more';
 
 const TAB_CONFIG: Record<string, { label: string; icon: keyof typeof Feather.glyphMap }> = {
   dashboard: { label: 'Hub', icon: 'home' },
   inventory: { label: 'Inventory', icon: 'box' },
   sales: { label: 'Sales', icon: 'shopping-cart' },
-  debts: { label: 'Debts', icon: 'users' },
   more: { label: 'More', icon: 'grid' },
 };
 
@@ -26,7 +25,6 @@ const ROUTES = [
   { key: 'dashboard', component: DashboardScreen },
   { key: 'inventory', component: InventoryScreen },
   { key: 'sales', component: SalesScreen },
-  { key: 'debts', component: DebtsScreen },
   { key: 'more', component: MoreScreen },
 ];
 
@@ -34,7 +32,7 @@ const ACTIVE_TAB_COLOR = COLORS.gold; // Canary Gold — aligned with today's re
 const ACTIVE_TAB_BG = COLORS.goldMuted;
 const ACTIVE_TAB_BORDER = 'rgba(250, 204, 21, 0.32)';
 
-const INACTIVE_TAB_COLOR = '#93B4D1'; // Clear, vibrant silver-sky — completely visible against #00335c
+const INACTIVE_TAB_COLOR = '#94A3B8'; // Crisp silver-slate on deep slate obsidian dock
 
 // ─── Individual tab icon (never re-renders unless its own isActive changes) ───
 const TabIcon = React.memo(function TabIcon({
@@ -121,10 +119,68 @@ const TabIcon = React.memo(function TabIcon({
   );
 });
 
-// ─── Tab bar: isolated component — only these 5 icons re-render on tab switch ───
+// ─── Prominent Center Mic Action Button ───────────────────────────────────────
+const CenterMicButton = React.memo(function CenterMicButton({
+  onPress,
+  isListening,
+}: {
+  onPress: () => void;
+  isListening: boolean;
+}) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.88,
+      bounciness: 4,
+      speed: 25,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      bounciness: 8,
+      speed: 20,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={styles.centerMicWrapper}
+      android_ripple={null}
+      accessibilityRole="button"
+      accessibilityLabel="Voice Command"
+    >
+      <Animated.View
+        style={[
+          styles.centerMicCircle,
+          isListening && styles.centerMicListening,
+          { transform: [{ scale: scaleAnim }] },
+        ]}
+      >
+        <Feather
+          name="mic"
+          size={25}
+          color={isListening ? '#FFFFFF' : '#0F172A'}
+        />
+      </Animated.View>
+      <Text style={styles.centerMicLabel}>Voice</Text>
+    </Pressable>
+  );
+});
+
+// ─── Tab bar: isolated component — 4 tabs + prominent center mic button ───────
 function TabBar({ onTabPress }: { onTabPress: (routeKey: string, index: number) => void }) {
   const insets = useSafeAreaInsets();
   const activeTab = useTabStore((s) => s.activeTab);
+  const openVoice = useVoiceStore((s) => s.open);
+  const isListening = useVoiceStore((s) => s.state === 'listening');
 
   return (
     <View style={styles.tabBarContainer}>
@@ -132,17 +188,39 @@ function TabBar({ onTabPress }: { onTabPress: (routeKey: string, index: number) 
         styles.tabBar,
         { 
           paddingBottom: Math.max(insets.bottom, 8),
-          height: 62 + Math.max(insets.bottom, 8)
+          height: 64 + Math.max(insets.bottom, 8)
         }
       ]}>
-        {ROUTES.map((route, index) => (
-          <TabIcon
-            key={route.key}
-            routeKey={route.key}
-            isActive={activeTab === route.key}
-            onPressIn={() => onTabPress(route.key, index)}
-          />
-        ))}
+        {/* Hub */}
+        <TabIcon
+          routeKey="dashboard"
+          isActive={activeTab === 'dashboard'}
+          onPressIn={() => onTabPress('dashboard', 0)}
+        />
+
+        {/* Inventory */}
+        <TabIcon
+          routeKey="inventory"
+          isActive={activeTab === 'inventory'}
+          onPressIn={() => onTabPress('inventory', 1)}
+        />
+
+        {/* Center Mic Button */}
+        <CenterMicButton onPress={openVoice} isListening={isListening} />
+
+        {/* Sales */}
+        <TabIcon
+          routeKey="sales"
+          isActive={activeTab === 'sales'}
+          onPressIn={() => onTabPress('sales', 2)}
+        />
+
+        {/* More */}
+        <TabIcon
+          routeKey="more"
+          isActive={activeTab === 'more'}
+          onPressIn={() => onTabPress('more', 3)}
+        />
       </View>
     </View>
   );
@@ -155,6 +233,7 @@ const TabScene = React.memo(({ component: Component }: { component: React.Compon
 
 // ─── Main tabs container: does NOT subscribe to activeTab — zero re-renders on tab switch ───
 export default function TabsScreen() {
+  const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const pagerRef = useRef<any>(null);
   const hasMountedRef = useRef(false);
@@ -177,7 +256,6 @@ export default function TabsScreen() {
     const unsub = useTabStore.subscribe((state) => {
       const targetIndex = ROUTES.findIndex((r) => r.key === state.activeTab);
       // Only command PagerView if it is NOT already on this page.
-      // This ensures native swipe gestures are never abruptly interrupted with setPageWithoutAnimation.
       if (targetIndex !== -1 && targetIndex !== currentPageIndexRef.current) {
         currentPageIndexRef.current = targetIndex;
         pagerRef.current?.setPageWithoutAnimation(targetIndex);
@@ -206,8 +284,6 @@ export default function TabsScreen() {
   }, [isFocused]);
 
   // Update tab state when a new page is selected during a swipe.
-  // Note: we record currentPageIndexRef BEFORE updating activeTab so the external
-  // listener doesn't redundantly call setPageWithoutAnimation and kill the momentum!
   const handlePageSelected = useCallback((e: any) => {
     if (!hasMountedRef.current) return;
 
@@ -240,7 +316,7 @@ export default function TabsScreen() {
           onPageSelected={handlePageSelected}
           overdrag={true}
           overScrollMode="auto"
-          offscreenPageLimit={4}
+          offscreenPageLimit={3}
         >
           {ROUTES.map((route) => (
             <View key={route.key} style={{ flex: 1 }}>
@@ -261,20 +337,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    elevation: 20,
-    shadowColor: '#002040',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
     backgroundColor: 'transparent',
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#00335c', // Refined deep steel azure matching app theme
+    backgroundColor: COLORS.navPanel, // Deep Slate Obsidian (#0F172A)
     borderTopWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     paddingTop: 6,
-    overflow: 'hidden',
+    overflow: 'visible',
   },
   tabItem: {
     flex: 1,
@@ -294,5 +365,32 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: ACTIVE_TAB_BORDER,
     borderRadius: 14,
+  },
+  centerMicWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 54,
+    marginTop: -16,
+  },
+  centerMicCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: COLORS.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: COLORS.navPanel,
+  },
+  centerMicListening: {
+    backgroundColor: '#EF4444',
+  },
+  centerMicLabel: {
+    fontSize: 10,
+    fontFamily: FONT.bold,
+    color: COLORS.gold,
+    marginTop: 2,
+    letterSpacing: 0.1,
   },
 });

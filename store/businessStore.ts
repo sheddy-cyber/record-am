@@ -577,6 +577,8 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     try {
       const timestamp = nowIso();
       const patch = { ...data, updated_at: timestamp };
+      const currentProduct = get().products.find((item) => item.id === id);
+      const oldCostPrice = Number(currentProduct?.cost_price ?? 0);
       set((state) => ({
         products: state.products.map((p) => (p.id === id ? { ...p, ...patch } : p)),
       }));
@@ -594,6 +596,18 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
           description: 'Sync product update',
         },
       ]);
+      if (
+        data.cost_price !== undefined &&
+        Number(data.cost_price) !== oldCostPrice
+      ) {
+        const { syncCostPriceAdjustment } = await import('@/lib/offlineRecords');
+        await syncCostPriceAdjustment(
+          product ? product.business_id : (get().businesses[0]?.id || ''),
+          get().branches[0]?.id,
+          id,
+          Number(data.cost_price),
+        );
+      }
     } catch (err: any) {
       set({ error: err.message });
     }

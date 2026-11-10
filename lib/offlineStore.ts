@@ -864,9 +864,11 @@ export async function buildCachedDashboardData(
 
   if (todaySaleItems.length > 0) {
     calculatedProfit = todaySaleItems.reduce((sum, item) => {
+      const productCost = productCostMap.get(item.product_id);
       const rawCost = Number(item.cost_price ?? 0);
-      const fallbackCost = productCostMap.get(item.product_id) ?? 0;
-      const unitCost = rawCost > 0 ? rawCost : fallbackCost;
+      const unitCost = (productCost !== undefined && productCost > 0)
+        ? productCost
+        : rawCost;
       const itemSellingPrice = Number(item.total_price ?? ((item.unit_price ?? 0) * (item.quantity ?? 1)));
       const itemCost = unitCost * Number(item.quantity ?? 1);
       return sum + (itemSellingPrice - itemCost);
@@ -878,7 +880,11 @@ export async function buildCachedDashboardData(
     if (salesWithItems.length > 0) {
       calculatedProfit = salesWithItems.reduce((sum, sale) => {
         const saleCogs = (sale.items ?? []).reduce((cogsSum, item) => {
-          const cost = productCostMap.get(item.product_id ?? '') ?? 0;
+          const productCost = productCostMap.get(item.product_id ?? '');
+          const rawCost = Number(item.cost_price ?? 0);
+          const cost = (productCost !== undefined && productCost > 0)
+            ? productCost
+            : rawCost;
           return cogsSum + (cost * Number(item.quantity ?? 1));
         }, 0);
         const saleSellingPrice = Number(sale.total_amount ?? sale.amount_paid ?? 0);

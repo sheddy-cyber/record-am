@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
+import { useDebtStore } from '@/store/debtStore';
 import { Badge, Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
 import { BrandMark, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
@@ -31,6 +32,7 @@ function MoreScreen() {
   const businessCurrency = useAuthStore((s) => s.currentBusiness?.currency);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
   const userRole = useAuthStore((s) => s.userRole);
+  const debts = useDebtStore((s) => s.debts);
   const signOut = useAuthStore((s) => s.signOut);
   const canViewPurchases = hasPermission(userRole, 'purchases.view');
   const canViewStockHistory = hasPermission(userRole, 'stock-history.view');
@@ -73,6 +75,16 @@ function MoreScreen() {
       title: 'Operations',
       items: [
         {
+          icon: 'credit-card' as keyof typeof Feather.glyphMap,
+          label: 'Customer Debts',
+          subtitle: debts.length > 0
+            ? `${debts.length} debtor${debts.length === 1 ? '' : 's'} with unpaid balances`
+            : 'Track customer balances, settlements & reminders',
+          onPress: () => router.push('/(app)/debts'),
+          iconBg: '#DC2626',
+          iconColor: '#FFFFFF',
+        },
+        {
           icon: 'minus-circle',
           label: 'Expenses',
           subtitle: 'Track, record and manage operational costs',
@@ -114,7 +126,7 @@ function MoreScreen() {
           label: 'Customers',
           subtitle: 'Profiles, history, and debts',
           onPress: () => router.push('/(app)/customers'),
-          iconBg: '#004E89',
+          iconBg: COLORS.ink,
           iconColor: '#FFFFFF',
         },
         ...(canViewPurchases ? [{

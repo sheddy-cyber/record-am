@@ -24,22 +24,25 @@ export const FONT = {
 } as const;
 
 // ─── Colors ─────────────────────────────────────────────────────────────────
-// Theme: Steel Azure + Canary Gold — prestigious financial clarity meets modern vibrancy
+// Theme: Mature Royal Navy (#1E3A8A) + Canary Gold — prestigious clarity & executive elegance
 export const COLORS = {
   // Core brand
+  primary: '#1E3A8A',         // mature royal navy — navigation panel, tab bar, primary brand tone
+  primaryBlue: '#1E3A8A',     // mature royal navy alias
   accent: '#FACC15',          // canary gold — primary action & highlights
   accentLight: '#FEF9C3',     // soft champagne/gold wash
   accentMuted: '#CA8A04',     // deeper gold for pressed states / borders
   accentDark: '#B45309',      // rich amber-gold for accessible text on light surfaces
-  onAccent: '#004e89',        // steel azure blue — the signature blue used in header sections
+  onAccent: '#1E3A8A',        // mature navy text/icons on canary gold surfaces
   gold: '#FACC15',            // canary gold — high-contrast revenue metrics & active highlights
   goldLight: '#FEF9C3',       // soft gold wash
   goldMuted: 'rgba(250, 204, 21, 0.18)', // translucent gold capsule
 
   // Surfaces
-  ink: '#004e89',             // steel azure — headers, tab bar, dark surfaces
-  navy: '#1a659e',            // baltic blue for secondary dark
-  navyLight: '#e0f2fe',       // soft blue wash
+  ink: '#1E3A8A',             // mature royal navy — navigation headers, primary dark surfaces
+  navPanel: '#0F172A',        // deep slate obsidian — bottom navigation panel / dock
+  navy: '#2563EB',            // refined sapphire blue for secondary accents/badges
+  navyLight: '#EFF6FF',       // soft royal wash
   card: '#FFFFFF',
   surface: '#f8fafc',         // crisp, modern off-white page background
   surface2: '#f1f5f9',        // subtle slate tint for secondary containers
@@ -62,7 +65,7 @@ export const COLORS = {
     muted: '#94a3b8',         // slate-400
     inverse: '#f8fafc',       // text on dark
     accent: '#B45309',        // rich amber-gold text (readable on white/light surfaces!)
-    onAccent: '#004e89',      // steel azure blue (from header sections) on canary gold surfaces
+    onAccent: '#1E3A8A',      // mature navy text on canary gold surfaces
   },
 
   // Borders
@@ -72,14 +75,13 @@ export const COLORS = {
   shadow: '#0f172a',
 
   // Chart palette
-  chart: ['#FACC15', '#004e89', '#0284c7', '#10b981', '#f59e0b', '#8b5cf6'],
+  chart: ['#FACC15', '#1E3A8A', '#0284c7', '#10b981', '#f59e0b', '#8b5cf6'],
 
   // Legacy aliases
-  primary: '#FACC15',
   background: '#f8fafc',
   cyan: '#0284c7',
-  cyanDark: '#004e89',
-  cyanLight: '#f0f9ff',
+  cyanDark: '#1E3A8A',
+  cyanLight: '#EFF6FF',
   lime: '#10b981',
   limeLight: '#ecfdf5',
   limeDark: '#059669',

@@ -152,12 +152,13 @@ async function buildCachedAnalytics(
   const products = useBusinessStore.getState().products;
   const productCostMap = new Map(products.map((p) => [p.id, Number(p.cost_price ?? 0)]));
   const getSaleItemCost = (item: any) => {
-    const rawCost = Number(item.cost_price ?? 0);
-    if (rawCost > 0) return rawCost;
     const pid = item.product_id ?? item.product?.id;
     if (pid && productCostMap.has(pid)) {
-      return productCostMap.get(pid) ?? 0;
+      const pCost = productCostMap.get(pid);
+      if (pCost !== undefined && pCost > 0) return pCost;
     }
+    const rawCost = Number(item.cost_price ?? 0);
+    if (rawCost > 0) return rawCost;
     return Number(item.product?.cost_price ?? 0);
   };
 
@@ -500,12 +501,13 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       const saleIds = new Set((currentSales ?? []).map(s => s.id));
       const productCostMap = new Map(products.map((p) => [p.id, Number(p.cost_price ?? 0)]));
       const getSaleItemCost = (item: any) => {
-        const rawCost = Number(item.cost_price ?? 0);
-        if (rawCost > 0) return rawCost;
         const pid = item.product_id ?? (item.product as any)?.id;
         if (pid && productCostMap.has(pid)) {
-          return productCostMap.get(pid) ?? 0;
+          const pCost = productCostMap.get(pid);
+          if (pCost !== undefined && pCost > 0) return pCost;
         }
+        const rawCost = Number(item.cost_price ?? 0);
+        if (rawCost > 0) return rawCost;
         return Number((item.product as any)?.cost_price ?? 0);
       };
 

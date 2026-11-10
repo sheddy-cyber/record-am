@@ -35,7 +35,7 @@ const ROLE_OPTIONS: RoleOption[] = [
     role: 'manager',
     title: 'Manager',
     badge: 'FULL ACCESS',
-    badgeBg: '#004E89',
+    badgeBg: COLORS.ink,
     icon: 'shield',
     summary: 'Full day-to-day administrative authority over sales, stock, and expenses.',
     permissions: [
@@ -74,7 +74,7 @@ const ROLE_OPTIONS: RoleOption[] = [
 
 const ROLE_THEMES: Record<string, { bg: string; text: string; label: string }> = {
   owner: { bg: '#1E293B', text: '#FFFFFF', label: 'Owner' },
-  manager: { bg: '#004E89', text: '#FFFFFF', label: 'Manager' },
+  manager: { bg: COLORS.ink, text: '#FFFFFF', label: 'Manager' },
   cashier: { bg: '#15803D', text: '#FFFFFF', label: 'Cashier' },
   auditor: { bg: '#B45309', text: '#FFFFFF', label: 'Auditor' },
 };

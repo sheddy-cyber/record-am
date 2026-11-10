@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 // Purge legacy unscoped notifications once
 AsyncStorage.removeItem('record-am:notifications:v1').catch(() => {});
@@ -57,6 +57,7 @@ interface NotificationState {
 async function resolveUserId(explicitUserId?: unknown, currentActiveId?: string | null): Promise<string | null> {
   if (typeof explicitUserId === 'string' && explicitUserId) return explicitUserId;
   if (currentActiveId) return currentActiveId;
+  if (!isSupabaseConfigured) return null;
   try {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.user?.id ?? null;

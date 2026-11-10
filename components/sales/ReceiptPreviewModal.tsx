@@ -317,9 +317,9 @@ export function ReceiptShareCard({
 
   const statusBgColor =
     isRepayment
-      ? '#004E89'
+      ? COLORS.ink
       : isForgiven
-        ? '#004E89'
+        ? COLORS.ink
         : (sale.payment_status === 'paid' || hasHigherPayment)
           ? '#059669'
           : sale.payment_status === 'partial'

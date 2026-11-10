@@ -18,6 +18,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { GlobalDialog } from '@/components/ui';
+import { VoiceControlModal } from '@/components/voice';
 import '@/lib/alertBridge';
 
 // Keep the native splash screen visible until our JS AnimatedSplashScreen renders
@@ -345,16 +346,15 @@ export default function RootLayout() {
 
           if (typeof route === 'string' && route) {
             if (route.includes('_inventory')) useTabStore.getState().setActiveTab('inventory');
-            else if (route.includes('_debts')) useTabStore.getState().setActiveTab('debts');
+            else if (route.includes('_debts') || route.includes('debts')) router.push('/(app)/debts' as any);
             else if (route.includes('_sales')) useTabStore.getState().setActiveTab('sales');
             else if (route.includes('_dashboard')) useTabStore.getState().setActiveTab('dashboard');
-            router.push(route as any);
+            else router.push(route as any);
           } else if (type === 'sync_mismatch' || type === 'mismatch' || type === 'low_stock') {
             useTabStore.getState().setActiveTab('inventory');
             router.push('/(app)/(tabs)/_inventory');
           } else if (type === 'debt_reminder' || type === 'debt') {
-            useTabStore.getState().setActiveTab('debts');
-            router.push('/(app)/(tabs)/_debts');
+            router.push('/(app)/debts' as any);
           } else if (type === 'daily_summary' || type === 'close_day') {
             router.push('/(app)/close-day');
           }
@@ -462,6 +462,7 @@ export default function RootLayout() {
         </Stack>
         <StatusBar style="dark" backgroundColor={COLORS.surface} />
         <GlobalDialog />
+        <VoiceControlModal />
         <Toast config={toastConfig} />
       </GestureHandlerRootView>
     </SafeAreaProvider>

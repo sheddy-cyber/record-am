@@ -47,7 +47,7 @@ const TYPE_CONFIG: Record<
   },
   debt_reminder: {
     icon: 'credit-card',
-    bg: '#004E89',
+    bg: COLORS.ink,
     variant: 'primary',
     label: 'Debt Notice',
   },
@@ -136,8 +136,8 @@ export default function NotificationsScreen() {
     if (item.actionRoute) {
       if (item.actionRoute.includes('_inventory')) {
         navigateToTab('inventory', item.actionRoute);
-      } else if (item.actionRoute.includes('_debts')) {
-        navigateToTab('debts', item.actionRoute);
+      } else if (item.actionRoute.includes('_debts') || item.actionRoute.includes('debts')) {
+        router.push('/(app)/debts' as any);
       } else if (item.actionRoute.includes('_sales')) {
         navigateToTab('sales', item.actionRoute);
       } else if (item.actionRoute.includes('_dashboard')) {
@@ -154,7 +154,7 @@ export default function NotificationsScreen() {
     } else if (type === 'low_stock') {
       navigateToTab('inventory', '/(app)/(tabs)/_inventory');
     } else if (type === 'debt_reminder' || type === 'debt') {
-      navigateToTab('debts', '/(app)/(tabs)/_debts');
+      router.push('/(app)/debts' as any);
     } else if (type === 'daily_summary' || type === 'close_day') {
       router.push('/(app)/close-day');
     } else if (item.data?.customerId) {

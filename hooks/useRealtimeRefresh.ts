@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useIsFocused } from '@react-navigation/native';
-import { supabase } from '@/lib/supabase';
+import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 type RealtimeTableConfig = {
   table: string;
@@ -34,7 +34,7 @@ export function useRealtimeRefresh({
   }, [onRefresh]);
 
   useEffect(() => {
-    if (!enabled || tables.length === 0) {
+    if (!enabled || tables.length === 0 || !isSupabaseConfigured) {
       return;
     }
 
