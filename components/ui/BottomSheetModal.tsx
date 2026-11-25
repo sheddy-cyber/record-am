@@ -2,20 +2,22 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   BackHandler,
+  Dimensions,
   Easing,
+  KeyboardAvoidingView,
   LayoutChangeEvent,
   Modal,
   PanResponder,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
   ViewStyle,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { COLORS, FONT, RADIUS, SP } from '@/constants';
+import { Icon } from '@/components/icons';
+import { COLORS, FONT, SP } from '@/constants';
 
 export interface BottomSheetModalProps {
   visible: boolean;
@@ -27,7 +29,11 @@ export interface BottomSheetModalProps {
   showHandle?: boolean;
   showCloseButton?: boolean;
   maxHeight?: number | string;
+  /** Optional element shown at the right of the title row instead of the close button. */
+  headerRight?: React.ReactNode;
 }
+
+const SCREEN_H = Dimensions.get('window').height;
 
 export function BottomSheetModal({
   visible,
@@ -38,247 +44,170 @@ export function BottomSheetModal({
   contentStyle,
   showHandle = true,
   showCloseButton = true,
-  maxHeight = '88%',
+  maxHeight = '90%',
+  headerRight,
 }: BottomSheetModalProps) {
   const insets = useSafeAreaInsets();
-
-  // Track closing animation state without delaying initial mount
   const [isClosing, setIsClosing] = useState(false);
   const isMounted = visible || isClosing;
 
-  // Stored sheet height in a ref so layout measurement never triggers a mid-animation re-render
-  const sheetHeightRef = useRef<number>(360);
+  const sheetHeightRef = useRef<number>(SCREEN_H * 0.6);
+  const translateY = useRef(new Animated.Value(SCREEN_H)).current;
+  const backdrop = useRef(new Animated.Value(0)).current;
+  const closingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
-  // Initialize translateY right at the bottom edge for instant 0ms entry
-  const translateY = useRef(new Animated.Value(360)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const isClosingRef = useRef(false);
-
-  // Run entrance/dismissal animation immediately when visible changes
-  useEffect(() => {
-    if (visible) {
-      isClosingRef.current = false;
-      setIsClosing(false);
-
-      // Start right at the bottom edge
-      const startY = sheetHeightRef.current || 360;
-      translateY.setValue(startY);
-      backdropOpacity.setValue(0);
-
-      // Start animation immediately — 0ms delay, rapid 200ms cubic rise
-      Animated.parallel([
-        Animated.timing(backdropOpacity, {
-          toValue: 1,
-          duration: 150,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: 200,
-          // Cubic decelerate curve: peak upward velocity at t=0 so it begins rising instantaneously upon tap
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]).start();
-    } else if (isMounted && !isClosingRef.current) {
-      handleDismiss();
-    }
-  }, [visible]);
-
-  const handleDismiss = () => {
-    if (isClosingRef.current) return;
-    isClosingRef.current = true;
+  const dismiss = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
     setIsClosing(true);
-
-    const exitY = sheetHeightRef.current || 360;
-
     Animated.parallel([
       Animated.timing(translateY, {
-        toValue: exitY,
-        duration: 160,
+        toValue: sheetHeightRef.current + 40,
+        duration: 200,
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
       }),
-      Animated.timing(backdropOpacity, {
-        toValue: 0,
-        duration: 140,
-        easing: Easing.out(Easing.quad),
-        useNativeDriver: true,
-      }),
+      Animated.timing(backdrop, { toValue: 0, duration: 180, useNativeDriver: true }),
     ]).start(() => {
+      closingRef.current = false;
       setIsClosing(false);
-      isClosingRef.current = false;
-      onClose();
+      onCloseRef.current();
     });
   };
 
-  // Android hardware back button listener
+  useEffect(() => {
+    if (visible) {
+      closingRef.current = false;
+      setIsClosing(false);
+      translateY.setValue(sheetHeightRef.current + 40);
+      backdrop.setValue(0);
+      Animated.parallel([
+        Animated.timing(backdrop, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.spring(translateY, {
+          toValue: 0,
+          damping: 28,
+          stiffness: 340,
+          mass: 0.8,
+          overshootClamping: true,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (isMounted && !closingRef.current) {
+      dismiss();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
   useEffect(() => {
     if (!isMounted) return;
-
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleDismiss();
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      dismiss();
       return true;
     });
-
-    return () => backHandler.remove();
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMounted]);
 
-  // Swipe-down-to-dismiss responder on the handle area
-  const panResponder = useRef(
+  const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dy) > 4,
-      onPanResponderMove: (_, gesture) => {
-        if (gesture.dy > 0) {
-          translateY.setValue(gesture.dy);
-        }
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dy) > 4,
+      onPanResponderMove: (_, g) => {
+        translateY.setValue(g.dy > 0 ? g.dy : g.dy * 0.15);
       },
-      onPanResponderRelease: (_, gesture) => {
-        if (gesture.dy > 70 || gesture.vy > 0.5) {
-          handleDismiss();
+      onPanResponderRelease: (_, g) => {
+        if (g.dy > 90 || g.vy > 0.6) {
+          dismiss();
         } else {
-          Animated.spring(translateY, {
-            toValue: 0,
-            damping: 24,
-            mass: 0.8,
-            stiffness: 260,
-            useNativeDriver: true,
-          }).start();
+          Animated.spring(translateY, { toValue: 0, damping: 24, stiffness: 300, useNativeDriver: true }).start();
         }
       },
-    })
+    }),
   ).current;
 
-  const onSheetLayout = (e: LayoutChangeEvent) => {
+  const onLayout = (e: LayoutChangeEvent) => {
     const h = e.nativeEvent.layout.height;
-    if (h > 60) {
-      sheetHeightRef.current = h;
-    }
+    if (h > 60) sheetHeightRef.current = h;
   };
 
   if (!isMounted) return null;
 
   return (
-    <Modal
-      transparent
-      visible={isMounted}
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={handleDismiss}
-    >
-      <View style={styles.modalRoot}>
-        {/* Animated Dim Backdrop */}
-        <Animated.View
-          style={[
-            styles.backdrop,
-            {
-              opacity: backdropOpacity,
-            },
-          ]}
-        >
-          <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss} />
-        </Animated.View>
+    <Modal transparent visible animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.root}>
+          <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} accessibilityLabel="Close" />
+          </Animated.View>
 
-        {/* Animated Bottom Sheet */}
-        <Animated.View
-          onLayout={onSheetLayout}
-          style={[
-            styles.sheetContainer,
-            {
-              maxHeight: maxHeight as any,
-              paddingBottom: insets.bottom + 16,
-              transform: [{ translateY }],
-            },
-            contentStyle,
-          ]}
-        >
-          {showHandle && (
-            <View {...panResponder.panHandlers} style={styles.handleContainer}>
-              <View style={styles.handleBar} />
-            </View>
-          )}
-
-          {(title || showCloseButton) && (
-            <View style={styles.headerRow}>
-              <View style={{ flex: 1, paddingRight: 8 }}>
-                {title ? <Text style={styles.headerTitle}>{title}</Text> : null}
-                {subtitle ? <Text style={styles.headerSubtitle}>{subtitle}</Text> : null}
-              </View>
-
-              {showCloseButton && (
-                <TouchableOpacity
-                  onPress={handleDismiss}
-                  style={styles.closeCircleButton}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Feather name="x" size={17} color={COLORS.text.muted} />
-                </TouchableOpacity>
+          <Animated.View
+            onLayout={onLayout}
+            style={[
+              styles.sheet,
+              { maxHeight: maxHeight as any, paddingBottom: insets.bottom + 16, transform: [{ translateY }] },
+              contentStyle,
+            ]}
+          >
+            <View {...pan.panHandlers}>
+              {showHandle ? (
+                <View style={styles.handleArea}>
+                  <View style={styles.handle} />
+                </View>
+              ) : (
+                <View style={{ height: 14 }} />
               )}
-            </View>
-          )}
 
-          {children}
-        </Animated.View>
-      </View>
+              {title || showCloseButton || headerRight ? (
+                <View style={styles.header}>
+                  <View style={{ flex: 1, paddingRight: 12 }}>
+                    {title ? <Text style={styles.title}>{title}</Text> : null}
+                    {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+                  </View>
+                  {headerRight ??
+                    (showCloseButton ? (
+                      <Pressable
+                        onPress={dismiss}
+                        hitSlop={10}
+                        accessibilityLabel="Close"
+                        style={({ pressed }) => [styles.close, pressed && { opacity: 0.6 }]}
+                      >
+                        <Icon name="x" size={15} color={COLORS.text.secondary} strokeWidth={2.2} />
+                      </Pressable>
+                    ) : null)}
+                </View>
+              ) : null}
+            </View>
+
+            {children}
+          </Animated.View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  modalRoot: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-  },
-  sheetContainer: {
-    backgroundColor: COLORS.card,
-    borderTopLeftRadius: RADIUS['2xl'],
-    borderTopRightRadius: RADIUS['2xl'],
+  root: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: COLORS.scrim },
+  sheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderCurve: 'continuous',
     paddingHorizontal: SP.page,
-    paddingTop: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 16,
     overflow: 'hidden',
   },
-  handleContainer: {
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  handleBar: {
-    width: 38,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#cbd5e1',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: COLORS.text.muted,
-    marginTop: 2,
-  },
-  closeCircleButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  handleArea: { alignItems: 'center', paddingTop: 8, paddingBottom: 10 },
+  handle: { width: 36, height: 5, borderRadius: 3, backgroundColor: COLORS.borderDark },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14 },
+  title: { fontSize: 19, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.35 },
+  subtitle: { fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3, lineHeight: 18 },
+  close: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: COLORS.surface2,
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,16 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Alert, Platform, ScrollView, Text, View } from 'react-native';
+import { Icon } from '@/components/icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -27,7 +17,9 @@ import { useSaleStore } from '@/store/saleStore';
 import { recordSaleOffline } from '@/lib/offlineRecords';
 import { flushOfflineQueue } from '@/lib/offlineStore';
 import { dismissScreen } from '@/lib/navigation';
-import { Badge, Button, Card, SectionHeader } from '@/components/ui';
+import { Button } from '@/components/ui';
+import { Toggle } from '@/components/forms';
+import { FilePickerBox, ImportStep, importStyles } from '@/components/import';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { CartItem, PaymentMethod, PaymentStatus, Product } from '@/types';
@@ -327,7 +319,7 @@ export default function ImportSalesScreen() {
         statusMessage = 'Unit price or Total amount must be greater than 0';
       } else if (!parsedDate.parsedOk && rawDate) {
         status = 'warning';
-        statusMessage = 'Could not parse date — using today';
+        statusMessage = 'Date not recognised, so today was used';
       } else if (!matched) {
         status = 'warning';
         statusMessage = autoCreateProducts
@@ -642,267 +634,127 @@ export default function ImportSalesScreen() {
     }
   };
 
+  const methodName = (m: string) =>
+    ({ cash: 'Cash', transfer: 'Transfer', pos: 'POS', mobile_money: 'Mobile money', mixed: 'Split' } as Record<string, string>)[m] ?? m;
+
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell>
       <ScreenHeader
-        title="Import Sales"
-        subtitle={`Transfer Excel or CSV sales into ${currentBranch?.name ?? 'current branch'}`}
-        theme="dark"
+        title="Import sales"
+        large
+        subtitle={`Into ${currentBranch?.name ?? 'this'} branch`}
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: SP.page, paddingBottom: 60, gap: 14 }}
+        contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: 60 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Step 1: Template */}
-        <Card style={{ gap: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: RADIUS.md,
-                backgroundColor: COLORS.accentLight,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Feather name="file-text" size={19} color={COLORS.accent} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                1. Download Sales Template
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary }}>
-                Columns: Date, Sale Number, Product Name, Quantity, Unit Price, Payment Method, Amount Paid.
-              </Text>
-            </View>
-          </View>
+        {/* ── 1. Template ───────────────────────────────────────── */}
+        <ImportStep number={1} title="Start from the template" detail="One row per item sold. Rows with the same sale number become one receipt." />
+        <Button title="Download template (.xlsx)" icon="download" variant="secondary" onPress={handleDownloadTemplate} />
 
-          <TouchableOpacity
-            style={styles.templateButton}
-            onPress={handleDownloadTemplate}
-            activeOpacity={0.8}
-          >
-            <Feather name="download" size={16} color={COLORS.ink} />
-            <Text style={styles.templateButtonText}>Download Sales Excel Template (.xlsx)</Text>
-          </TouchableOpacity>
-        </Card>
+        {/* ── 2. File ───────────────────────────────────────────── */}
+        <ImportStep number={2} title="Choose your file" detail="Excel (.xlsx, .xls) or CSV." />
+        <FilePickerBox fileName={fileName} busy={parsing} disabled={isImporting} onPress={handlePickDocument} />
 
-        {/* Step 2: Upload */}
-        <Card style={{ gap: 12 }}>
-          <SectionHeader title="2. Select Sales File (.xlsx, .xls, .csv)" />
+        <View style={[styles.group, { marginTop: 14, paddingTop: 14, paddingHorizontal: 16 }]}>
+          <Toggle
+            label="Reduce stock for these sales"
+            description="Leave off for old records, so today’s stock counts stay correct."
+            value={deductStock}
+            onChange={setDeductStock}
+          />
+          <Toggle
+            label="Add products that aren’t in your list"
+            description="New names in the file become products with zero stock."
+            value={autoCreateProducts}
+            onChange={setAutoCreateProducts}
+          />
+        </View>
 
-          <TouchableOpacity
-            style={[styles.uploadBox, fileName && styles.uploadBoxActive]}
-            onPress={handlePickDocument}
-            activeOpacity={0.75}
-            disabled={parsing || isImporting}
-          >
-            {parsing ? (
-              <View style={{ alignItems: 'center', gap: 8 }}>
-                <ActivityIndicator size="large" color={COLORS.accent} />
-                <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.secondary }}>
-                  Reading spreadsheet...
-                </Text>
-              </View>
-            ) : (
-              <View style={{ alignItems: 'center', gap: 6 }}>
-                <Feather
-                  name={fileName ? 'check-circle' : 'upload-cloud'}
-                  size={28}
-                  color={fileName ? COLORS.success : COLORS.accent}
-                />
-                <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: COLORS.text.primary, textAlign: 'center' }}>
-                  {fileName || 'Tap to choose Excel or CSV sales sheet'}
-                </Text>
-                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, textAlign: 'center' }}>
-                  Rows with matching Sale Number are combined into a single receipt
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
-          <View style={styles.optionRow}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={{ fontFamily: FONT.semiBold, fontSize: 13.5, color: COLORS.text.primary }}>
-                Deduct from current shelf stock
-              </Text>
-              <Text style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.text.muted, marginTop: 2 }}>
-                Keep OFF when importing historical books so your live inventory counts are preserved.
-              </Text>
-            </View>
-            <Switch
-              value={deductStock}
-              onValueChange={setDeductStock}
-              trackColor={{ false: COLORS.border, true: COLORS.accent }}
-              thumbColor="#FFFFFF"
+        {/* ── 3. Review ─────────────────────────────────────────── */}
+        {parsedRows.length > 0 ? (
+          <>
+            <ImportStep
+              number={3}
+              title="Check and import"
+              detail={`${groupedReceipts.length} ${groupedReceipts.length === 1 ? 'sale' : 'sales'} · ${validRows.length} ${validRows.length === 1 ? 'line' : 'lines'}${
+                errorRowsCount > 0 ? ` · ${errorRowsCount} skipped` : ''
+              }`}
             />
-          </View>
-
-          <View style={styles.optionRow}>
-            <View style={{ flex: 1, paddingRight: 10 }}>
-              <Text style={{ fontFamily: FONT.semiBold, fontSize: 13.5, color: COLORS.text.primary }}>
-                Auto-create unmatched products
-              </Text>
-              <Text style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.text.muted, marginTop: 2 }}>
-                Automatically add spreadsheet products not yet in your catalog.
-              </Text>
-            </View>
-            <Switch
-              value={autoCreateProducts}
-              onValueChange={setAutoCreateProducts}
-              trackColor={{ false: COLORS.border, true: COLORS.accent }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-        </Card>
-
-        {/* Preview & Summary */}
-        {parsedRows.length > 0 && (
-          <Card style={{ gap: 12 }}>
-            <SectionHeader title="3. Review Parsed Sales" />
-
-            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-              <Badge label={`${groupedReceipts.length} Receipts Ready`} variant="success" />
-              <Badge label={`${validRows.length} Valid Line Items`} variant="info" />
-              {errorRowsCount > 0 && <Badge label={`${errorRowsCount} Skipped Errors`} variant="danger" />}
-            </View>
-
-            <View style={{ gap: 8 }}>
-              {groupedReceipts.slice(0, 8).map((receipt) => (
-                <View key={`${receipt.saleNumber}-${receipt.createdAt}`} style={styles.previewItem}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 13.5, color: COLORS.text.primary }}>
-                      {receipt.saleNumber} · {receipt.customerName || 'Walk-in'}
+            <View style={styles.group}>
+              {groupedReceipts.slice(0, 8).map((receipt, i, list) => (
+                <View key={`${receipt.saleNumber}-${receipt.createdAt}`} style={[styles.row, i < list.length - 1 && styles.divider]}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>
+                      {receipt.customerName || 'Walk-in'}
                     </Text>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 13.5, color: COLORS.accent }}>
-                      {CURRENCY_SYMBOL}{receipt.totalAmount.toLocaleString('en-NG')}
+                    <Text style={styles.rowMeta} numberOfLines={1}>
+                      {receipt.saleNumber} · {receipt.saleDateLabel} · {receipt.items.length} {receipt.items.length === 1 ? 'item' : 'items'} ·{' '}
+                      {methodName(receipt.paymentMethod)}
                     </Text>
                   </View>
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.text.muted, marginTop: 2 }}>
-                    {receipt.saleDateLabel} · {receipt.items.length} item{receipt.items.length === 1 ? '' : 's'} · {receipt.paymentMethod.toUpperCase()}
-                    {receipt.amountOwed > 0 ? ` · Owed: ${CURRENCY_SYMBOL}${receipt.amountOwed.toLocaleString('en-NG')}` : ''}
-                  </Text>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.rowAmount}>
+                      {CURRENCY_SYMBOL}
+                      {receipt.totalAmount.toLocaleString('en-NG')}
+                    </Text>
+                    {receipt.amountOwed > 0 ? (
+                      <Text style={[styles.rowMeta, { color: COLORS.dangerText }]}>
+                        Owes {CURRENCY_SYMBOL}
+                        {receipt.amountOwed.toLocaleString('en-NG')}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
               ))}
-              {groupedReceipts.length > 8 && (
-                <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.muted, textAlign: 'center', marginTop: 4 }}>
-                  + {groupedReceipts.length - 8} more receipt{groupedReceipts.length - 8 === 1 ? '' : 's'} will also be imported
-                </Text>
-              )}
             </View>
+            {groupedReceipts.length > 8 ? (
+              <Text style={styles.more}>and {groupedReceipts.length - 8} more</Text>
+            ) : null}
 
-            {errorRowsCount > 0 && (
-              <View style={styles.errorBox}>
-                <Text style={{ fontFamily: FONT.bold, fontSize: 12.5, color: COLORS.danger, marginBottom: 4 }}>
-                  Rows skipped due to errors:
-                </Text>
+            {errorRowsCount > 0 ? (
+              <View style={styles.errors}>
+                <Text style={styles.errorsTitle}>These rows will be skipped</Text>
                 {parsedRows
                   .filter((r) => r.status === 'error')
                   .slice(0, 5)
                   .map((errRow) => (
-                    <Text key={errRow.rowIndex} style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.danger }}>
-                      • Row {errRow.rowIndex}: {errRow.statusMessage}
+                    <Text key={errRow.rowIndex} style={styles.errorsText}>
+                      Row {errRow.rowIndex}: {errRow.statusMessage}
                     </Text>
                   ))}
               </View>
-            )}
+            ) : null}
 
             {importResult ? (
-              <View style={styles.successBanner}>
-                <Feather name="check-circle" size={18} color={COLORS.success} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: FONT.bold, fontSize: 13.5, color: COLORS.success }}>
-                    Import Complete!
-                  </Text>
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary }}>
-                    Transferred {importResult.receipts} receipt{importResult.receipts === 1 ? '' : 's'} ({importResult.items} items) into {currentBranch?.name}.
-                  </Text>
-                </View>
+              <View style={styles.done}>
+                <Icon name="check-circle" size={20} color={COLORS.success} />
+                <Text style={styles.doneText}>
+                  Imported {importResult.receipts} {importResult.receipts === 1 ? 'sale' : 'sales'} ({importResult.items} items) into {currentBranch?.name}.
+                </Text>
               </View>
             ) : (
               <Button
                 title={
                   isImporting && importProgress
-                    ? `Importing ${importProgress.current} of ${importProgress.total}...`
-                    : `Transfer ${groupedReceipts.length} Sale${groupedReceipts.length === 1 ? '' : 's'} into App`
+                    ? `Importing ${importProgress.current} of ${importProgress.total}…`
+                    : `Import ${groupedReceipts.length} ${groupedReceipts.length === 1 ? 'sale' : 'sales'}`
                 }
+                size="lg"
                 loading={isImporting}
                 disabled={isImporting || groupedReceipts.length === 0}
                 onPress={handleImportSales}
+                style={{ marginTop: 16 }}
               />
             )}
-          </Card>
-        )}
+          </>
+        ) : null}
       </ScrollView>
     </ScreenShell>
   );
 }
 
-const styles = StyleSheet.create({
-  templateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingVertical: 11,
-  },
-  templateButtonText: {
-    fontFamily: FONT.semiBold,
-    fontSize: 13,
-    color: COLORS.ink,
-  },
-  uploadBox: {
-    borderWidth: 1.5,
-    borderStyle: 'dashed',
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.lg,
-    padding: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FAFAFA',
-  },
-  uploadBoxActive: {
-    borderColor: COLORS.success,
-    backgroundColor: '#F0FDF4',
-  },
-  optionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
-  },
-  previewItem: {
-    padding: 11,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-  },
-  errorBox: {
-    padding: 10,
-    borderRadius: RADIUS.md,
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-  },
-  successBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    borderRadius: RADIUS.md,
-    backgroundColor: '#ECFDF3',
-    borderWidth: 1,
-    borderColor: '#BFD9CA',
-  },
-});
+const styles = importStyles;

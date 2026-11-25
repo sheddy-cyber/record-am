@@ -69,10 +69,10 @@ export default function SupplierCreateScreen() {
 
   if (!canManageGoods) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Add Supplier"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <PermissionDenied
@@ -84,11 +84,11 @@ export default function SupplierCreateScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Add Supplier"
-        subtitle="Save a supplier profile for goods bought and balances."
-        theme="dark"
+        subtitle="Track what you buy and what you owe"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
       <KeyboardAwareScrollView

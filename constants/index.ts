@@ -3,114 +3,169 @@ import { BusinessType } from '@/types';
 // ─── Brand ──────────────────────────────────────────────────────────────────
 export const BRAND = {
   name: 'Record Am',
-  tagline: 'Smart records for everyday business.',
+  tagline: 'Every sale, every naira, accounted for.',
 } as const;
 
 export const APP_VERSION = '1.0.0';
-export const APP_FOOTER_TEXT = `v${APP_VERSION} \u00B7 PYTHRON Labs`;
+export const APP_FOOTER_TEXT = `v${APP_VERSION} · PYTHRON Labs`;
 export const CURRENCY_SYMBOL = String.fromCharCode(0x20A6);
 
-// ─── Font helpers ───────────────────────────────────────────────────────────
-// Maps semantic weight names to the physical Steradian font-family strings
-// registered in _layout.tsx. Use these EVERYWHERE instead of raw fontWeight.
+// ─── Typefaces ──────────────────────────────────────────────────────────────
+// Public Sans carries the interface (it has a real ₦ glyph and tabular figures);
+// Newsreader is reserved for display moments: large titles and hero figures.
+// Families are registered in app/_layout.tsx. Use these instead of fontWeight.
 export const FONT = {
-  thin: 'Steradian Trial Thin',
-  light: 'Steradian Trial Light',
-  regular: 'Steradian Trial',
-  medium: 'Steradian Trial Medium',
-  semiBold: 'Steradian Trial Bold',
-  bold: 'Steradian Trial Bold',
-  black: 'Steradian Trial Black',
+  thin: 'PublicSans-Regular',
+  light: 'PublicSans-Regular',
+  regular: 'PublicSans-Regular',
+  medium: 'PublicSans-Medium',
+  semiBold: 'PublicSans-SemiBold',
+  bold: 'PublicSans-SemiBold',
+  black: 'PublicSans-Bold',
+  heavy: 'PublicSans-Bold',
+  serif: 'Newsreader-Medium',
+  serifRegular: 'Newsreader-Regular',
 } as const;
 
-// ─── Colors ─────────────────────────────────────────────────────────────────
-// Theme: Mature Royal Navy (#1E3A8A) + Canary Gold — prestigious clarity & executive elegance
+export const FONT_ASSETS = {
+  'PublicSans-Regular': require('../assets/fonts/PublicSans-Regular.ttf'),
+  'PublicSans-Medium': require('../assets/fonts/PublicSans-Medium.ttf'),
+  'PublicSans-SemiBold': require('../assets/fonts/PublicSans-SemiBold.ttf'),
+  'PublicSans-Bold': require('../assets/fonts/PublicSans-Bold.ttf'),
+  'Newsreader-Regular': require('../assets/fonts/Newsreader-Regular.ttf'),
+  'Newsreader-Medium': require('../assets/fonts/Newsreader-Medium.ttf'),
+} as const;
+
+// ─── Palette ────────────────────────────────────────────────────────────────
+// "Paper & Clay": warm paper surfaces, ink text, one earthy accent used sparingly.
+// Semantic colours are deliberately muted so status never shouts over content.
+export const PALETTE = {
+  paper: '#F5F3EE',
+  paperDeep: '#EDEAE3',
+  white: '#FFFFFF',
+  ink: '#1A1917',
+  ink2: '#2B2925',
+  graphite: '#57534C',
+  stone: '#8A857B',
+  pebble: '#B3AEA4',
+  line: '#E6E2D9',
+  lineSoft: '#EEEBE4',
+  lineStrong: '#D3CEC2',
+  clay: '#C4613F',
+  clayDeep: '#A9502F',
+  clayText: '#9A4527',
+  clayTint: '#F6E7DF',
+  green: '#2E7D4F',
+  greenText: '#24663F',
+  greenTint: '#E6F0E9',
+  amber: '#B7791F',
+  amberText: '#8A5A12',
+  amberTint: '#F6EDDA',
+  red: '#C2412D',
+  redText: '#A3321F',
+  redTint: '#F8E5E1',
+  blue: '#3B6B9A',
+  blueText: '#2F5A84',
+  blueTint: '#E3EBF3',
+} as const;
+
 export const COLORS = {
   // Core brand
-  primary: '#1E3A8A',         // mature royal navy — navigation panel, tab bar, primary brand tone
-  primaryBlue: '#1E3A8A',     // mature royal navy alias
-  accent: '#FACC15',          // canary gold — primary action & highlights
-  accentLight: '#FEF9C3',     // soft champagne/gold wash
-  accentMuted: '#CA8A04',     // deeper gold for pressed states / borders
-  accentDark: '#B45309',      // rich amber-gold for accessible text on light surfaces
-  onAccent: '#1E3A8A',        // mature navy text/icons on canary gold surfaces
-  gold: '#FACC15',            // canary gold — high-contrast revenue metrics & active highlights
-  goldLight: '#FEF9C3',       // soft gold wash
-  goldMuted: 'rgba(250, 204, 21, 0.18)', // translucent gold capsule
+  primary: PALETTE.ink,
+  primaryBlue: PALETTE.ink,
+  accent: PALETTE.clay, // the one colour that means "act here"
+  accentLight: PALETTE.clayTint,
+  accentMuted: PALETTE.clayDeep, // pressed state
+  accentDark: PALETTE.clayText, // accent-coloured text on light surfaces
+  onAccent: '#FFFFFF',
+  gold: PALETTE.clay,
+  goldLight: PALETTE.clayTint,
+  goldMuted: 'rgba(196, 97, 63, 0.12)',
 
   // Surfaces
-  ink: '#1E3A8A',             // mature royal navy — navigation headers, primary dark surfaces
-  navPanel: '#0F172A',        // deep slate obsidian — bottom navigation panel / dock
-  navy: '#2563EB',            // refined sapphire blue for secondary accents/badges
-  navyLight: '#EFF6FF',       // soft royal wash
-  card: '#FFFFFF',
-  surface: '#f8fafc',         // crisp, modern off-white page background
-  surface2: '#f1f5f9',        // subtle slate tint for secondary containers
-  elevated: '#FFFFFF',
+  ink: PALETTE.ink, // primary text & primary buttons
+  navPanel: PALETTE.white,
+  navy: PALETTE.ink2, // selected / emphasised state
+  navyLight: PALETTE.paperDeep,
+  card: PALETTE.white,
+  surface: PALETTE.paper, // page background
+  surface2: PALETTE.paperDeep, // sunken containers, segmented controls
+  elevated: PALETTE.white,
+  scrim: 'rgba(26, 25, 23, 0.42)',
 
   // Semantic
-  success: '#10b981',         // emerald green
-  successLight: '#ecfdf5',
-  warning: '#f59e0b',         // lively warm amber-orange
-  warningLight: '#fffbeb',
-  danger: '#ef4444',          // modern crimson red
-  dangerLight: '#fef2f2',
-  info: '#0284c7',            // ocean blue
-  infoLight: '#f0f9ff',
+  success: PALETTE.green,
+  successLight: PALETTE.greenTint,
+  successText: PALETTE.greenText,
+  warning: PALETTE.amber,
+  warningLight: PALETTE.amberTint,
+  warningText: PALETTE.amberText,
+  danger: PALETTE.red,
+  dangerLight: PALETTE.redTint,
+  dangerText: PALETTE.redText,
+  info: PALETTE.blue,
+  infoLight: PALETTE.blueTint,
+  infoText: PALETTE.blueText,
 
   // Text
   text: {
-    primary: '#0f172a',       // slate-900 for ultra-crisp, mature readability
-    secondary: '#475569',     // slate-600
-    muted: '#94a3b8',         // slate-400
-    inverse: '#f8fafc',       // text on dark
-    accent: '#B45309',        // rich amber-gold text (readable on white/light surfaces!)
-    onAccent: '#1E3A8A',      // mature navy text on canary gold surfaces
+    primary: PALETTE.ink,
+    secondary: PALETTE.graphite,
+    muted: PALETTE.stone,
+    faint: PALETTE.pebble,
+    inverse: '#FAF9F6',
+    accent: PALETTE.clayText,
+    onAccent: '#FFFFFF',
   },
 
-  // Borders
-  border: '#eaedf1',          // whisper-thin, sophisticated edge (Upwork reference)
-  borderSubtle: '#f1f4f8',    // ultra-soft for internal card dividers
-  borderDark: '#cbd5e1',      // slate-300
-  shadow: '#0f172a',
+  // Lines
+  border: PALETTE.line,
+  borderSubtle: PALETTE.lineSoft,
+  borderDark: PALETTE.lineStrong,
+  shadow: PALETTE.ink,
 
-  // Chart palette
-  chart: ['#FACC15', '#1E3A8A', '#0284c7', '#10b981', '#f59e0b', '#8b5cf6'],
+  // Charts, ordered so adjacent series stay distinguishable
+  chart: [PALETTE.clay, PALETTE.ink2, '#7C9A86', '#D4A24C', '#6E8CAB', '#9C7AA0'],
 
-  // Legacy aliases
-  background: '#f8fafc',
-  cyan: '#0284c7',
-  cyanDark: '#1E3A8A',
-  cyanLight: '#EFF6FF',
-  lime: '#10b981',
-  limeLight: '#ecfdf5',
-  limeDark: '#059669',
-  record: '#FACC15',
+  // Legacy aliases (kept so older call sites keep compiling)
+  background: PALETTE.paper,
+  secondary: PALETTE.graphite,
+  cyan: PALETTE.blue,
+  cyanDark: PALETTE.ink,
+  cyanLight: PALETTE.blueTint,
+  lime: PALETTE.green,
+  limeLight: PALETTE.greenTint,
+  limeDark: PALETTE.greenText,
+  record: PALETTE.clay,
 } as const;
 
 // ─── Semantic accent groups ─────────────────────────────────────────────────
 export const ACCENTS = {
-  sales:     { bg: '#FEF9C3', border: '#FDE047', text: '#A16207' },
-  inventory: { bg: '#f0f9ff', border: '#bae6fd', text: '#0284c7' },
-  debt:      { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' },
-  expense:   { bg: '#fffbeb', border: '#fde68a', text: '#d97706' },
-  profit:    { bg: '#ecfdf5', border: '#a7f3d0', text: '#059669' },
-  warning:   { bg: '#fffbeb', border: '#fde68a', text: '#d97706' },
-  danger:    { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' },
+  sales: { bg: PALETTE.clayTint, border: '#EBCDBE', text: PALETTE.clayText },
+  inventory: { bg: PALETTE.blueTint, border: '#C9D7E6', text: PALETTE.blueText },
+  debt: { bg: PALETTE.redTint, border: '#EECAC2', text: PALETTE.redText },
+  expense: { bg: PALETTE.amberTint, border: '#E9D6AE', text: PALETTE.amberText },
+  profit: { bg: PALETTE.greenTint, border: '#C5DCCB', text: PALETTE.greenText },
+  warning: { bg: PALETTE.amberTint, border: '#E9D6AE', text: PALETTE.amberText },
+  danger: { bg: PALETTE.redTint, border: '#EECAC2', text: PALETTE.redText },
 } as const;
 
 // ─── Typography Scale ───────────────────────────────────────────────────────
 export const TYPE = {
-  h1:       { fontSize: 26, fontFamily: FONT.bold, letterSpacing: -0.4 },
-  h2:       { fontSize: 21, fontFamily: FONT.bold, letterSpacing: -0.3 },
-  h3:       { fontSize: 17, fontFamily: FONT.bold, letterSpacing: -0.2 },
-  body:     { fontSize: 15, fontFamily: FONT.regular, letterSpacing: -0.1 },
-  bodyBold: { fontSize: 15, fontFamily: FONT.bold, letterSpacing: -0.1 },
-  caption:  { fontSize: 13, fontFamily: FONT.regular, letterSpacing: 0 },
-  label:    { fontSize: 13, fontFamily: FONT.medium, letterSpacing: 0 },
-  overline: { fontSize: 11, fontFamily: FONT.bold, letterSpacing: 1, textTransform: 'uppercase' as const },
-  big:      { fontSize: 34, fontFamily: FONT.black, letterSpacing: -1 },
-  stat:     { fontSize: 22, fontFamily: FONT.bold, letterSpacing: -0.5 },
+  display: { fontSize: 40, fontFamily: FONT.serif, letterSpacing: -0.8, lineHeight: 46 },
+  largeTitle: { fontSize: 32, fontFamily: FONT.serif, letterSpacing: -0.6, lineHeight: 38 },
+  h1: { fontSize: 26, fontFamily: FONT.serif, letterSpacing: -0.4 },
+  h2: { fontSize: 20, fontFamily: FONT.semiBold, letterSpacing: -0.3 },
+  h3: { fontSize: 17, fontFamily: FONT.semiBold, letterSpacing: -0.2 },
+  body: { fontSize: 15, fontFamily: FONT.regular, letterSpacing: -0.1, lineHeight: 21 },
+  bodyBold: { fontSize: 15, fontFamily: FONT.semiBold, letterSpacing: -0.1 },
+  callout: { fontSize: 14, fontFamily: FONT.regular, letterSpacing: -0.05, lineHeight: 19 },
+  caption: { fontSize: 13, fontFamily: FONT.regular, letterSpacing: 0 },
+  footnote: { fontSize: 12, fontFamily: FONT.regular, letterSpacing: 0.05 },
+  label: { fontSize: 13, fontFamily: FONT.medium, letterSpacing: 0 },
+  overline: { fontSize: 11.5, fontFamily: FONT.medium, letterSpacing: 0.6, textTransform: 'uppercase' as const },
+  big: { fontSize: 34, fontFamily: FONT.serif, letterSpacing: -0.8 },
+  stat: { fontSize: 22, fontFamily: FONT.semiBold, letterSpacing: -0.5, fontVariant: ['tabular-nums'] as ['tabular-nums'] },
 } as const;
 
 // ─── Spacing (4-point grid) ─────────────────────────────────────────────────
@@ -124,22 +179,24 @@ export const SP = {
   '2xl': 32,
   '3xl': 40,
   '4xl': 48,
-  page: 18,
+  page: 20,
   card: 16,
 } as const;
 
 // ─── Border Radius ──────────────────────────────────────────────────────────
 export const RADIUS = {
   xs: 6,
-  sm: 8,
+  sm: 10,
   md: 12,
-  lg: 16,
-  xl: 20,
-  '2xl': 24,
+  lg: 18,
+  xl: 22,
+  '2xl': 28,
   full: 999,
 } as const;
 
-// ─── Shadows (flat cards for clean Upwork look; elevation 0 eliminates fuzzy borders) ─
+// ─── Elevation ──────────────────────────────────────────────────────────────
+// Surfaces separate by tone, not shadow. Shadows are reserved for things that
+// genuinely float (sheets, toasts, the tab bar).
 export const SHADOW = {
   sm: {
     shadowColor: 'transparent',
@@ -149,19 +206,25 @@ export const SHADOW = {
     elevation: 0,
   },
   md: {
-    shadowColor: '#0f172a',
+    shadowColor: PALETTE.ink,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 1,
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   lg: {
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 14,
-    elevation: 3,
+    shadowColor: PALETTE.ink,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 8,
   },
+} as const;
+
+// ─── Motion ─────────────────────────────────────────────────────────────────
+export const MOTION = {
+  fast: 140,
+  base: 220,
 } as const;
 
 // ─── Business Data ──────────────────────────────────────────────────────────

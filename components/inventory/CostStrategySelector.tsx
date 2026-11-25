@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL } from '@/constants';
 import { calculateWeightedAverageCost } from '@/lib/costing';
 
@@ -64,7 +64,7 @@ export function CostStrategySelector({
             isPriceIncrease ? styles.avatarIncrease : styles.avatarDecrease,
           ]}
         >
-          <Feather
+          <Icon
             name={isPriceIncrease ? 'trending-up' : 'trending-down'}
             size={17}
             color="#FFFFFF"
@@ -97,8 +97,8 @@ export function CostStrategySelector({
       <View style={styles.contextCard}>
         <View style={styles.contextItem}>
           <View style={styles.contextLabelRow}>
-            <Feather name="box" size={11} color={COLORS.text.muted} />
-            <Text style={styles.contextLabel}>CURRENT ON-HAND</Text>
+            <Icon name="box" size={11} color={COLORS.text.muted} />
+            <Text style={styles.contextLabel}>Current on-hand</Text>
           </View>
           <Text style={styles.contextValue}>
             {formatCount(currentStock)} {cleanUnit}
@@ -112,7 +112,7 @@ export function CostStrategySelector({
 
         <View style={styles.contextItem}>
           <View style={styles.contextLabelRow}>
-            <Feather name="truck" size={11} color={COLORS.text.muted} />
+            <Icon name="truck" size={11} color={COLORS.text.muted} />
             <Text style={styles.contextLabel}>
               {isFromPurchase ? 'PURCHASED BATCH' : 'INCOMING BATCH'}
             </Text>
@@ -151,7 +151,7 @@ export function CostStrategySelector({
                 ]}
               >
                 {isWeightedActive ? (
-                  <Feather name="check" size={11} color="#FFFFFF" />
+                  <Icon name="check" size={11} color="#FFFFFF" />
                 ) : null}
               </View>
 
@@ -166,7 +166,7 @@ export function CostStrategySelector({
                     Weighted Average
                   </Text>
                   <View style={styles.recommendedBadge}>
-                    <Text style={styles.recommendedBadgeText}>RECOMMENDED</Text>
+                    <Text style={styles.recommendedBadgeText}>Recommended</Text>
                   </View>
                 </View>
               </View>
@@ -213,7 +213,7 @@ export function CostStrategySelector({
                 ]}
               >
                 {isNewActive ? (
-                  <Feather name="check" size={11} color="#FFFFFF" />
+                  <Icon name="check" size={11} color="#FFFFFF" />
                 ) : null}
               </View>
 
@@ -228,7 +228,7 @@ export function CostStrategySelector({
                     Use New Cost Price
                   </Text>
                   <View style={styles.marketBadge}>
-                    <Text style={styles.marketBadgeText}>MARKET REPLACEMENT</Text>
+                    <Text style={styles.marketBadgeText}>Market replacement</Text>
                   </View>
                 </View>
               </View>
@@ -273,7 +273,7 @@ export function CostStrategySelector({
                 ]}
               >
                 {isOldActive ? (
-                  <Feather name="check" size={11} color="#FFFFFF" />
+                  <Icon name="check" size={11} color="#FFFFFF" />
                 ) : null}
               </View>
 
@@ -288,7 +288,7 @@ export function CostStrategySelector({
                     Stick with Old Cost Price
                   </Text>
                   <View style={styles.baselineBadge}>
-                    <Text style={styles.baselineBadgeText}>PRESERVE CATALOG</Text>
+                    <Text style={styles.baselineBadgeText}>Preserve catalog</Text>
                   </View>
                 </View>
               </View>
@@ -321,10 +321,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
     padding: 14,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderRadius: RADIUS.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    borderColor: '#E6E2D9',
     gap: 12,
   },
   headerBanner: {
@@ -340,10 +340,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarIncrease: {
-    backgroundColor: '#D97706',
+    backgroundColor: '#B7791F',
   },
   avatarDecrease: {
-    backgroundColor: '#0284C7',
+    backgroundColor: '#3B6B9A',
   },
   headerContent: {
     flex: 1,
@@ -376,10 +376,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   diffPillIncrease: {
-    backgroundColor: '#B45309',
+    backgroundColor: '#8A5A12',
   },
   diffPillDecrease: {
-    backgroundColor: '#0369A1',
+    backgroundColor: '#2F5A84',
   },
   diffPillText: {
     fontSize: 10,
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    borderColor: '#E6E2D9',
     alignItems: 'center',
   },
   contextItem: {
@@ -426,7 +426,7 @@ const styles = StyleSheet.create({
   contextDivider: {
     width: StyleSheet.hairlineWidth,
     height: '75%',
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#E6E2D9',
     marginHorizontal: 10,
   },
   optionsList: {
@@ -437,7 +437,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     backgroundColor: '#FFFFFF',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    borderColor: '#E6E2D9',
     gap: 6,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -446,13 +446,13 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   optionCardActive: {
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#E3EBF3',
     borderColor: COLORS.navy,
     borderWidth: 1.5,
   },
   optionCardDisabled: {
     opacity: 0.55,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#EDEAE3',
   },
   cardTopRow: {
     flexDirection: 'row',
@@ -471,7 +471,7 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 10,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -501,7 +501,7 @@ const styles = StyleSheet.create({
     color: COLORS.navy,
   },
   recommendedBadge: {
-    backgroundColor: '#15803D',
+    backgroundColor: '#24663F',
     paddingHorizontal: 6.5,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
@@ -521,11 +521,11 @@ const styles = StyleSheet.create({
   marketBadgeText: {
     fontSize: 8.5,
     fontFamily: FONT.bold,
-    color: '#0369A1',
+    color: '#2F5A84',
     letterSpacing: 0.4,
   },
   baselineBadge: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#EDEAE3',
     paddingHorizontal: 6.5,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
   baselineBadgeText: {
     fontSize: 8.5,
     fontFamily: FONT.bold,
-    color: '#475569',
+    color: '#57534C',
     letterSpacing: 0.4,
   },
   priceContainer: {

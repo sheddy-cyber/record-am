@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Text, TouchableOpacity, View, RefreshControl, BackHandler } from 'react-native';
+import { Alert, Text, TouchableOpacity, View, RefreshControl, BackHandler, ScrollView, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -20,7 +20,7 @@ import {
   roundAmount,
 } from '@/store/purchaseStore';
 import { supabase } from '@/lib/supabase';
-import { Button, Card, EmptyState, PermissionDenied, SectionHeader } from '@/components/ui';
+import { Button, Card, EmptyState, PermissionDenied, Pill, SectionHeader } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView, SelectField } from '@/components/forms';
 import { FlatSection, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, PRODUCT_UNITS } from '@/constants';
@@ -562,6 +562,12 @@ export default function RecordPurchaseScreen() {
     setAmountPaid(totals.totalAmount > 0 ? formatNumberInput(totals.totalAmount) : '');
   }, [amountPaidDirty, totals.totalAmount]);
 
+  const supplierSuggestions = useMemo(() => {
+    const q = supplierName.trim().toLowerCase();
+    const list = q ? suppliers.filter((sp) => sp.name.toLowerCase().includes(q)) : suppliers;
+    return list.slice(0, 8);
+  }, [suppliers, supplierName]);
+
   const handleSupplierSelect = (value: string) => {
     setSupplierId(value);
     const supplier = suppliers.find((entry) => entry.id === value);
@@ -767,10 +773,10 @@ export default function RecordPurchaseScreen() {
 
   if (ready && purchaseMissing) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Edit Goods Purchase"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
         />
         <EmptyState
@@ -785,10 +791,10 @@ export default function RecordPurchaseScreen() {
 
   if (!canManageGoods) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Goods Purchases"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <PermissionDenied
@@ -800,15 +806,11 @@ export default function RecordPurchaseScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
-        title={isEditing ? 'Edit Goods Purchase' : 'Record Goods Bought'}
-        subtitle={
-          isEditing
-            ? 'Review the supplier, goods, and payment before saving.'
-            : 'Save a supplier purchase. Your stock quantity will not change.'
-        }
-        theme="dark"
+        title={isEditing ? 'Edit purchase' : 'Goods bought'}
+        subtitle={isEditing ? 'Check the details, then save' : 'Records what you paid. Stock counts stay the same.'}
+       
         left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
       />
 
@@ -825,76 +827,52 @@ export default function RecordPurchaseScreen() {
           />
         }
       >
-        <View style={styles.flowCard}>
-          <View style={styles.flowIntro}>
-            <View style={styles.flowIcon}>
-              <Feather name="shopping-bag" size={18} color={COLORS.accentDark} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.flowTitle}>Purchase workspace</Text>
-              <Text style={styles.flowCopy}>Capture the supplier, goods, and what you paid in one clear record.</Text>
-            </View>
-            {cart.length > 0 ? (
-              <View style={styles.flowTotal}>
-                <Text style={styles.flowTotalLabel}>TOTAL</Text>
-                <Text style={styles.flowTotalValue}>{formatCurrency(totals.totalAmount)}</Text>
-              </View>
-            ) : null}
-          </View>
-          <View style={styles.flowSteps}>
-            {['Supplier', 'Goods', 'Payment'].map((step, index) => (
-              <View key={step} style={styles.flowStep}>
-                <View style={[styles.flowStepNumber, (index === 0 || cart.length > 0) && styles.flowStepNumberActive]}>
-                  {index === 0 && supplierName.trim() ? (
-                    <Feather name="check" size={12} color="#FFFFFF" />
-                  ) : (
-                    <Text style={[styles.flowStepNumberText, (index === 0 || cart.length > 0) && styles.flowStepNumberTextActive]}>
-                      {index + 1}
-                    </Text>
-                  )}
-                </View>
-                <Text style={styles.flowStepLabel}>{step}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-
         <View style={styles.section}>
-          <SectionHeader title="Supplier & date" />
+          <SectionHeader title="Supplier and date" />
           <Card style={{ gap: 14 }}>
             {lockedSupplierId ? (
               <FlatSection style={styles.lockedSupplier}>
                 <View style={styles.lockedSupplierIcon}>
-                  <Feather name="truck" size={17} color={COLORS.navy} />
+                  <Icon name="truck" size={17} color={COLORS.navy} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.lockedSupplierLabel}>SUPPLIER</Text>
+                  <Text style={styles.lockedSupplierLabel}>Supplier</Text>
                   <Text style={styles.lockedSupplierName}>{supplierName || 'Loading supplier...'}</Text>
                 </View>
               </FlatSection>
             ) : (
-              <>
-                <SelectField
-                  label="Choose saved supplier"
-                  value={supplierId}
-                  options={[
-                    { value: '', label: 'Enter a supplier name below' },
-                    ...suppliers.map((supplier) => ({ value: supplier.id, label: supplier.name })),
-                  ]}
-                  onChange={handleSupplierSelect}
-                  containerStyle={{ marginBottom: 0 }}
-                />
+              <View>
                 <InputField
-                  label="Supplier name"
+                  label="Supplier"
                   value={supplierName}
-                  onChangeText={setSupplierName}
-                  placeholder="e.g. Dangote Foods Ltd"
-                  hint="A new supplier will be saved to your supplier records."
-                  required
-                  leftIcon={<Feather name="truck" size={16} color={COLORS.text.muted} />}
+                  onChangeText={(text) => {
+                    setSupplierName(text);
+                    if (supplierId) setSupplierId('');
+                  }}
+                  placeholder="Who did you buy from?"
+                  autoCapitalize="words"
+                  hint={
+                    supplierId
+                      ? 'Saved supplier'
+                      : supplierName.trim()
+                      ? 'New supplier. It will be added to your suppliers.'
+                      : undefined
+                  }
                   containerStyle={{ marginBottom: 0 }}
                 />
-              </>
+                {!supplierId && supplierSuggestions.length > 0 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={{ gap: 8, paddingTop: 10 }}
+                  >
+                    {supplierSuggestions.map((supplier) => (
+                      <Pill key={supplier.id} label={supplier.name} onPress={() => handleSupplierSelect(supplier.id)} />
+                    ))}
+                  </ScrollView>
+                ) : null}
+              </View>
             )}
 
             <View>
@@ -903,7 +881,6 @@ export default function RecordPurchaseScreen() {
                 value={purchaseDate}
                 onChangeText={setPurchaseDate}
                 placeholder="YYYY-MM-DD"
-                leftIcon={<Feather name="calendar" size={16} color={COLORS.text.muted} />}
                 containerStyle={{ marginBottom: 0 }}
               />
               <TouchableOpacity
@@ -911,7 +888,7 @@ export default function RecordPurchaseScreen() {
                 activeOpacity={0.75}
                 style={styles.todayAction}
               >
-                <Feather name="calendar" size={13} color={COLORS.accentDark} />
+                <Icon name="calendar" size={13} color={COLORS.accentDark} />
                 <Text style={styles.todayActionText}>Use today</Text>
               </TouchableOpacity>
             </View>
@@ -923,8 +900,8 @@ export default function RecordPurchaseScreen() {
           <Card style={{ gap: 14 }}>
             <View style={styles.productIntro}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.productIntroTitle}>Find from your catalogue</Text>
-                <Text style={styles.productIntroCopy}>Tap an item to add it. Tap again to increase its quantity.</Text>
+                <Text style={styles.productIntroTitle}>From your stock list</Text>
+                <Text style={styles.productIntroCopy}>Tap to add. Tap again for one more.</Text>
               </View>
               <TouchableOpacity
                 onPress={() => {
@@ -934,7 +911,7 @@ export default function RecordPurchaseScreen() {
                 activeOpacity={0.75}
                 style={[styles.newItemToggle, showNewItemForm && styles.newItemToggleActive]}
               >
-                <Feather name={showNewItemForm ? 'x' : 'plus'} size={16} color={showNewItemForm ? COLORS.onAccent : COLORS.accentDark} />
+                <Icon name={showNewItemForm ? 'x' : 'plus'} size={15} color={showNewItemForm ? '#FFFFFF' : COLORS.text.primary} />
                 <Text style={[styles.newItemToggleText, showNewItemForm && styles.newItemToggleTextActive]}>
                   {showNewItemForm ? 'Close' : 'New item'}
                 </Text>
@@ -949,11 +926,10 @@ export default function RecordPurchaseScreen() {
                 setShowAllProducts(false);
               }}
               placeholder="Search by product name"
-              leftIcon={<Feather name="search" size={16} color={COLORS.text.muted} />}
               rightElement={
                 productSearch ? (
                   <TouchableOpacity onPress={() => setProductSearch('')} activeOpacity={0.7} hitSlop={8}>
-                    <Feather name="x-circle" size={17} color={COLORS.text.muted} />
+                    <Icon name="x-circle" size={17} color={COLORS.text.muted} />
                   </TouchableOpacity>
                 ) : undefined
               }
@@ -964,7 +940,7 @@ export default function RecordPurchaseScreen() {
               <View style={styles.newItemForm}>
                 <View style={styles.newItemFormHeading}>
                   <View style={styles.newItemFormIcon}>
-                    <Feather name="plus" size={15} color={COLORS.warning} />
+                    <Icon name="plus" size={15} color={COLORS.warning} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.newItemFormTitle}>Add a new catalogue item</Text>
@@ -995,7 +971,7 @@ export default function RecordPurchaseScreen() {
                     containerStyle={{ marginBottom: 0 }}
                   />
                 ) : null}
-                <Button title="Add to purchase" onPress={addNewItemToCart} variant="accent" size="sm" icon="plus" />
+                <Button title="Add to purchase" onPress={addNewItemToCart} size="sm" />
               </View>
             ) : null}
 
@@ -1012,7 +988,7 @@ export default function RecordPurchaseScreen() {
                       style={[styles.productRow, inCart && styles.productRowActive]}
                     >
                       <View style={[styles.productIcon, inCart && styles.productIconActive]}>
-                        <Feather name={inCart ? 'check' : 'package'} size={17} color={inCart ? COLORS.success : COLORS.navy} />
+                        <Icon name={inCart ? 'check' : 'box'} size={16} color={inCart ? COLORS.successText : COLORS.text.secondary} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.productName} numberOfLines={1}>{product.name}</Text>
@@ -1029,7 +1005,7 @@ export default function RecordPurchaseScreen() {
                         {inCart ? (
                           <Text style={styles.productAddActiveText}>{formatNumberInput(cartItem?.quantity ?? 0)}</Text>
                         ) : (
-                          <Feather name="plus" size={17} color={COLORS.accentDark} />
+                          <Icon name="plus" size={17} color={COLORS.text.primary} />
                         )}
                       </View>
                     </TouchableOpacity>
@@ -1038,7 +1014,7 @@ export default function RecordPurchaseScreen() {
               </View>
             ) : (
               <FlatSection style={styles.noProducts}>
-                <Feather name="search" size={18} color={COLORS.text.muted} />
+                <Icon name="search" size={18} color={COLORS.text.muted} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.noProductsTitle}>No matching products</Text>
                   <Text style={styles.noProductsCopy}>Create a new item above if it is not yet in your catalogue.</Text>
@@ -1058,11 +1034,11 @@ export default function RecordPurchaseScreen() {
         </View>
 
         <View style={styles.section}>
-          <SectionHeader title={`Purchase items${cart.length ? ` (${cart.length})` : ''}`} />
+          <SectionHeader title={cart.length ? `Items (${cart.length})` : 'Items'} />
           {cart.length === 0 ? (
             <FlatSection style={styles.emptyCart}>
               <View style={styles.emptyCartIcon}>
-                <Feather name="shopping-bag" size={21} color={COLORS.text.muted} />
+                <Icon name="shopping-bag" size={21} color={COLORS.text.muted} />
               </View>
               <Text style={styles.emptyCartTitle}>Your purchase is empty</Text>
               <Text style={styles.emptyCartCopy}>Add goods above to set quantities and supplier costs.</Text>
@@ -1073,7 +1049,7 @@ export default function RecordPurchaseScreen() {
                 <Card key={item.key} style={{ gap: 14 }}>
                   <View style={styles.cartItemHeader}>
                     <View style={[styles.productIcon, item.productDraft && styles.newProductIcon]}>
-                      <Feather name={item.productDraft ? 'star' : 'package'} size={17} color={item.productDraft ? COLORS.warning : COLORS.navy} />
+                      <Icon name={item.productDraft ? 'plus' : 'box'} size={16} color={item.productDraft ? COLORS.accentDark : COLORS.text.secondary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.cartItemName} numberOfLines={1}>{getItemName(item)}</Text>
@@ -1088,7 +1064,7 @@ export default function RecordPurchaseScreen() {
                       style={styles.removeItemAction}
                       accessibilityLabel={`Remove ${getItemName(item)}`}
                     >
-                      <Feather name="trash-2" size={16} color={COLORS.danger} />
+                      <Icon name="trash-2" size={16} color={COLORS.danger} />
                     </TouchableOpacity>
                   </View>
 
@@ -1103,10 +1079,10 @@ export default function RecordPurchaseScreen() {
                         rightElement={
                           <View style={styles.quantityStepper}>
                             <TouchableOpacity onPress={() => stepCartItemQuantity(item.key, -1)} hitSlop={6} style={styles.stepperButton}>
-                              <Feather name="minus" size={13} color={COLORS.text.secondary} />
+                              <Icon name="minus" size={13} color={COLORS.text.secondary} />
                             </TouchableOpacity>
                             <TouchableOpacity onPress={() => stepCartItemQuantity(item.key, 1)} hitSlop={6} style={styles.stepperButton}>
-                              <Feather name="plus" size={13} color={COLORS.text.secondary} />
+                              <Icon name="plus" size={13} color={COLORS.text.secondary} />
                             </TouchableOpacity>
                           </View>
                         }
@@ -1137,7 +1113,7 @@ export default function RecordPurchaseScreen() {
                   {prefillOriginals[item.key] &&
                   (item.quantity !== prefillOriginals[item.key].quantity || item.unit_cost !== prefillOriginals[item.key].unit_cost) ? (
                     <View style={styles.prefillWarning}>
-                      <Feather name="alert-triangle" size={14} color={COLORS.warning} />
+                      <Icon name="alert-triangle" size={14} color={COLORS.warning} />
                       <Text style={styles.prefillWarningText}>
                         Changed from stock entry: {prefillOriginals[item.key].quantity} at {formatCurrency(prefillOriginals[item.key].unit_cost)}.
                       </Text>
@@ -1151,7 +1127,7 @@ export default function RecordPurchaseScreen() {
 
         {cart.length > 0 ? (
           <View style={styles.section}>
-            <SectionHeader title="Payment & confirmation" />
+            <SectionHeader title="Payment" />
             <Card style={{ gap: 16 }}>
               <View style={styles.totalCard}>
                 <View style={styles.totalLine}>
@@ -1208,7 +1184,7 @@ export default function RecordPurchaseScreen() {
               {totals.amountOwed > 0 ? (
                 <View style={styles.balanceNotice}>
                   <View style={styles.balanceNoticeIcon}>
-                    <Feather name="clock" size={15} color={COLORS.warning} />
+                    <Icon name="clock" size={15} color={COLORS.warning} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.balanceNoticeTitle}>Supplier balance: {formatCurrency(totals.amountOwed)}</Text>
@@ -1224,7 +1200,7 @@ export default function RecordPurchaseScreen() {
                 placeholder="Optional note about the goods bought"
                 leftIcon={
                   <View style={styles.notesIcon}>
-                    <Feather name="file-text" size={16} color={COLORS.text.muted} />
+                    <Icon name="file-text" size={16} color={COLORS.text.muted} />
                   </View>
                 }
                 multiline
@@ -1234,7 +1210,7 @@ export default function RecordPurchaseScreen() {
               />
 
               <View style={styles.recordingNote}>
-                <Feather name="info" size={15} color={COLORS.navy} />
+                <Icon name="info" size={15} color={COLORS.navy} />
                 <Text style={styles.recordingNoteText}>This saves the supplier purchase only; it does not add these goods to stock.</Text>
               </View>
 
@@ -1404,8 +1380,8 @@ const styles = {
   },
   productIntroTitle: {
     color: COLORS.text.primary,
-    fontFamily: FONT.bold,
-    fontSize: 14,
+    fontFamily: FONT.semiBold,
+    fontSize: 15,
   },
   productIntroCopy: {
     color: COLORS.text.muted,
@@ -1416,34 +1392,31 @@ const styles = {
   },
   newItemToggle: {
     alignItems: 'center' as const,
-    backgroundColor: COLORS.accentLight,
-    borderColor: '#FDE047',
-    borderRadius: RADIUS.sm,
-    borderWidth: 1,
+    backgroundColor: COLORS.surface2,
+    borderRadius: RADIUS.full,
     flexDirection: 'row' as const,
     gap: 5,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    height: 34,
   },
   newItemToggleActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
+    backgroundColor: COLORS.ink,
   },
   newItemToggleText: {
-    color: COLORS.accentDark,
+    color: COLORS.text.primary,
     fontFamily: FONT.medium,
-    fontSize: 12,
+    fontSize: 13,
   },
   newItemToggleTextActive: {
     color: COLORS.onAccent,
   },
   newItemForm: {
-    backgroundColor: COLORS.warningLight,
-    borderColor: '#f7dfc8',
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
     gap: 12,
-    padding: 12,
+    padding: 14,
   },
   newItemFormHeading: {
     alignItems: 'flex-start' as const,
@@ -1477,53 +1450,53 @@ const styles = {
     alignItems: 'center' as const,
     backgroundColor: COLORS.card,
     borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row' as const,
-    gap: 10,
-    padding: 10,
+    gap: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
   },
   productRowActive: {
-    backgroundColor: COLORS.successLight,
-    borderColor: '#a9dfbf',
+    borderColor: COLORS.text.primary,
   },
   productIcon: {
     alignItems: 'center' as const,
-    backgroundColor: COLORS.infoLight,
-    borderRadius: RADIUS.sm,
-    height: 36,
+    backgroundColor: COLORS.surface2,
+    borderRadius: 10,
+    height: 34,
     justifyContent: 'center' as const,
-    width: 36,
+    width: 34,
   },
   productIconActive: {
-    backgroundColor: COLORS.card,
+    backgroundColor: COLORS.successLight,
   },
   newProductIcon: {
-    backgroundColor: COLORS.warningLight,
+    backgroundColor: COLORS.accentLight,
   },
   productName: {
     color: COLORS.text.primary,
     fontFamily: FONT.medium,
-    fontSize: 14,
+    fontSize: 15,
   },
   productMeta: {
     color: COLORS.text.muted,
     fontFamily: FONT.regular,
-    fontSize: 11,
-    marginTop: 3,
+    fontSize: 12.5,
+    marginTop: 2,
   },
   productAdd: {
     alignItems: 'center' as const,
-    backgroundColor: COLORS.accentLight,
+    backgroundColor: COLORS.surface2,
     borderRadius: RADIUS.full,
     height: 32,
     justifyContent: 'center' as const,
     width: 32,
   },
   productAddActive: {
-    backgroundColor: COLORS.success,
+    backgroundColor: COLORS.ink,
     minWidth: 32,
-    paddingHorizontal: 7,
+    paddingHorizontal: 8,
     width: undefined,
   },
   productAddActiveText: {
@@ -1653,8 +1626,8 @@ const styles = {
     lineHeight: 15,
   },
   totalCard: {
-    backgroundColor: COLORS.ink,
-    borderRadius: RADIUS.lg,
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
     gap: 8,
     padding: 15,
   },
@@ -1663,39 +1636,41 @@ const styles = {
     justifyContent: 'space-between' as const,
   },
   totalLabel: {
-    color: 'rgba(255,255,255,0.68)',
+    color: COLORS.text.secondary,
     fontFamily: FONT.regular,
-    fontSize: 13,
+    fontSize: 14,
   },
   totalValue: {
-    color: '#FFFFFF',
+    color: COLORS.text.primary,
     fontFamily: FONT.medium,
-    fontSize: 13,
+    fontSize: 14,
+    fontVariant: ['tabular-nums'] as 'tabular-nums'[],
   },
   totalDiscount: {
-    color: '#f7c59f',
+    color: COLORS.accentDark,
     fontFamily: FONT.medium,
-    fontSize: 13,
+    fontSize: 14,
   },
   totalNoDiscount: {
-    color: 'rgba(255,255,255,0.45)',
+    color: COLORS.text.muted,
     fontFamily: FONT.medium,
-    fontSize: 13,
+    fontSize: 14,
   },
   totalDivider: {
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    height: 1,
-    marginVertical: 2,
+    backgroundColor: COLORS.border,
+    height: StyleSheet.hairlineWidth,
+    marginVertical: 4,
   },
   totalHeading: {
-    color: '#FFFFFF',
-    fontFamily: FONT.bold,
+    color: COLORS.text.primary,
+    fontFamily: FONT.semiBold,
     fontSize: 16,
   },
   totalAmount: {
-    color: '#FFFFFF',
-    fontFamily: FONT.bold,
-    fontSize: 20,
+    color: COLORS.text.primary,
+    fontFamily: FONT.serif,
+    fontSize: 26,
+    fontVariant: ['tabular-nums'] as 'tabular-nums'[],
   },
   paymentFields: {
     flexDirection: 'row' as const,
@@ -1710,7 +1685,7 @@ const styles = {
   balanceNotice: {
     alignItems: 'flex-start' as const,
     backgroundColor: COLORS.warningLight,
-    borderColor: '#f7dfc8',
+    borderColor: '#E9D6AE',
     borderRadius: RADIUS.md,
     borderWidth: 1,
     flexDirection: 'row' as const,

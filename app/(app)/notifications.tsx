@@ -9,7 +9,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, formatDistanceToNow } from 'date-fns';
 import { useTabStore } from '@/store/tabStore';
@@ -27,7 +27,7 @@ import { dismissScreen } from '@/lib/navigation';
 const TYPE_CONFIG: Record<
   NotificationType,
   {
-    icon: keyof typeof Feather.glyphMap;
+    icon: IconName;
     bg: string;
     variant: 'danger' | 'warning' | 'info' | 'success' | 'neutral' | 'primary';
     label: string;
@@ -35,13 +35,13 @@ const TYPE_CONFIG: Record<
 > = {
   low_stock: {
     icon: 'package',
-    bg: '#DC2626',
+    bg: '#C2412D',
     variant: 'danger',
     label: 'Stock Alert',
   },
   mismatch: {
     icon: 'alert-triangle',
-    bg: '#D97706',
+    bg: '#B7791F',
     variant: 'warning',
     label: 'Sync Issue',
   },
@@ -53,13 +53,13 @@ const TYPE_CONFIG: Record<
   },
   daily_summary: {
     icon: 'pie-chart',
-    bg: '#15803D',
+    bg: '#24663F',
     variant: 'success',
     label: 'Daily Balance',
   },
   system: {
     icon: 'bell',
-    bg: '#475569',
+    bg: '#57534C',
     variant: 'neutral',
     label: 'Notice',
   },
@@ -198,11 +198,11 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Notifications"
         subtitle={unreadCount > 0 ? `${unreadCount} unread update${unreadCount > 1 ? 's' : ''}` : 'All caught up'}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={
           unreadCount > 0 ? (
@@ -221,7 +221,7 @@ export default function NotificationsScreen() {
                 borderColor: 'rgba(255,255,255,0.2)',
               }}
             >
-              <Feather name="check" size={13} color="#FFFFFF" />
+              <Icon name="check" size={13} color="#FFFFFF" />
               <Text
                 style={{
                   fontSize: 12,
@@ -385,7 +385,7 @@ export default function NotificationsScreen() {
                           justifyContent: 'center',
                         }}
                       >
-                        <Feather name={config.icon} size={18} color="#FFFFFF" />
+                        <Icon name={config.icon} size={18} color="#FFFFFF" />
                       </View>
 
                       <View style={{ flex: 1, gap: 3 }}>
@@ -446,7 +446,7 @@ export default function NotificationsScreen() {
                         <Text style={{ fontSize: 11.5, fontFamily: FONT.semiBold, color: COLORS.accentDark }}>
                           {getActionLabel(item)}
                         </Text>
-                        <Feather name="arrow-right" size={11} color={COLORS.accentDark} />
+                        <Icon name="arrow-right" size={11} color={COLORS.accentDark} />
                       </View>
 
                       <TouchableOpacity
@@ -457,7 +457,7 @@ export default function NotificationsScreen() {
                         }}
                         activeOpacity={0.7}
                       >
-                        <Feather name="trash-2" size={13} color={COLORS.text.muted} />
+                        <Icon name="trash-2" size={13} color={COLORS.text.muted} />
                       </TouchableOpacity>
                     </View>
                   </View>

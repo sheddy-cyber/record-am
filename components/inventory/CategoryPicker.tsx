@@ -10,7 +10,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import Toast from 'react-native-toast-message';
 
 import { BottomSheetModal } from '@/components/ui';
@@ -139,7 +139,7 @@ export function CategoryPicker({
               selectedCategory && styles.iconWrapperActive,
             ]}
           >
-            <Feather
+            <Icon
               name={selectedCategory ? 'tag' : 'folder'}
               size={14}
               color={selectedCategory ? COLORS.navy : COLORS.text.muted}
@@ -157,7 +157,7 @@ export function CategoryPicker({
             </Text>
           </View>
         </View>
-        <Feather name="chevron-down" size={17} color={COLORS.text.muted} />
+        <Icon name="chevron-down" size={17} color={COLORS.text.muted} />
       </TouchableOpacity>
 
       {/* ── Category Selection Modal ──────────────────────────── */}
@@ -170,7 +170,7 @@ export function CategoryPicker({
       >
         {/* Quick Create Input */}
         <View style={styles.createBox}>
-          <Text style={styles.createBoxTitle}>CREATE NEW CATEGORY</Text>
+          <Text style={styles.createBoxTitle}>Create new category</Text>
           <View style={styles.inputRow}>
             <TextInput
               value={newCatName}
@@ -214,7 +214,7 @@ export function CategoryPicker({
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
               <View style={styles.catIconContainer}>
-                <Feather name="folder" size={15} color={COLORS.text.muted} />
+                <Icon name="folder" size={15} color={COLORS.text.muted} />
               </View>
               <View>
                 <Text
@@ -229,7 +229,7 @@ export function CategoryPicker({
               </View>
             </View>
             {!categoryId ? (
-              <Feather name="check" size={18} color={COLORS.navy} />
+              <Icon name="check" size={18} color={COLORS.navy} />
             ) : null}
           </TouchableOpacity>
 
@@ -257,7 +257,7 @@ export function CategoryPicker({
                       isSelected && styles.catIconContainerSelected,
                     ]}
                   >
-                    <Feather
+                    <Icon
                       name="tag"
                       size={15}
                       color={isSelected ? COLORS.navy : COLORS.text.secondary}
@@ -278,7 +278,7 @@ export function CategoryPicker({
                   </View>
                 </View>
                 {isSelected ? (
-                  <Feather name="check" size={18} color={COLORS.navy} />
+                  <Icon name="check" size={18} color={COLORS.navy} />
                 ) : null}
               </TouchableOpacity>
             );
@@ -287,7 +287,7 @@ export function CategoryPicker({
           {/* Suggestions when list is small */}
           {categories.length < 3 && (
             <View style={styles.suggestionsContainer}>
-              <Text style={styles.suggestionsTitle}>QUICK SUGGESTIONS</Text>
+              <Text style={styles.suggestionsTitle}>Quick suggestions</Text>
               <View style={styles.chipsRow}>
                 {SUGGESTED_CATEGORIES.filter(
                   (s) => !categories.some((c) => c.name.toLowerCase() === s.toLowerCase())
@@ -298,7 +298,7 @@ export function CategoryPicker({
                     style={styles.suggestionChip}
                     activeOpacity={0.7}
                   >
-                    <Feather name="plus" size={11} color={COLORS.navy} />
+                    <Icon name="plus" size={11} color={COLORS.navy} />
                     <Text style={styles.suggestionChipText}>{suggestion}</Text>
                   </TouchableOpacity>
                 ))}
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: 'rgba(26, 25, 23, 0.55)',
     justifyContent: 'flex-end',
   },
   modalContent: {

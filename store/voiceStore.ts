@@ -1,22 +1,41 @@
 // ============================================================
-// RECORD AM - Voice Assistant Store
+// RECORD AM - Voice assistant store
+//
+// Flow: open → listening → (silence detected | tap) → processing → preview →
+// executing → completed. Every async step is tied to a session number so a
+// result that arrives after the sheet was closed or restarted is dropped
+// instead of resurrecting old state.
 // ============================================================
 
 import { create } from 'zustand';
+import Toast from 'react-native-toast-message';
 import { VoiceAction, VoiceAssistantState } from '@/types/voice';
 import {
+  buildTranscriptionPrompt,
+  hasDirectSpeechKey,
   RecordingSession,
-  speakVoiceFeedback,
+  SpeechKeys,
   startAudioRecording,
+  stopSpeech,
   transcribeAudioFile,
+  VoiceProxyUnavailableError,
 } from '@/lib/voice/audioService';
 import { parseVoiceCommand } from '@/lib/voice/parser';
 import { executeVoiceAction } from '@/lib/voice/actionExecutor';
+import { getAppSettings, saveAppSettings } from '@/lib/appSettings';
+import { haptics } from '@/lib/haptics';
 import { useBusinessStore } from './businessStore';
 import { useCustomerStore } from './customerStore';
 import { useAuthStore } from './authStore';
-import { getAppSettings, saveAppSettings } from '@/lib/appSettings';
-import Toast from 'react-native-toast-message';
+
+/** Hard ceiling for one utterance. */
+export const MAX_RECORDING_SECONDS = 30;
+/** Silence after speech that ends the recording automatically. */
+const END_OF_SPEECH_MS = 1300;
+/** If nothing is said at all, give up after this long. */
+const NO_SPEECH_TIMEOUT_MS = 7000;
+/** Loudness (0..1) above which we treat the input as speech. */
+const SPEECH_THRESHOLD = 0.4;
 
 interface VoiceStoreState {
   isOpen: boolean;
@@ -29,12 +48,14 @@ interface VoiceStoreState {
   error: string | null;
   autoConfirmSeconds: number;
   isAutoConfirmPaused: boolean;
+  /** True once the user has started speaking in the current recording. */
+  heardSpeech: boolean;
 
-  // Actions
   open: () => void;
   close: () => void;
   startListening: () => Promise<void>;
   stopListening: () => Promise<void>;
+  cancelListening: () => void;
   saveApiKeyAndTranscribe: (provider: 'groq' | 'gemini', key: string) => Promise<void>;
   processText: (text: string) => Promise<void>;
   confirmAction: () => Promise<void>;
@@ -43,385 +64,323 @@ interface VoiceStoreState {
   reset: () => void;
 }
 
-export const MAX_RECORDING_SECONDS = 10;
+// ── Module-level runtime (not render state) ──────────────────────────────────
+let session = 0;
+let recordingSession: RecordingSession | null = null;
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+let closeTimer: ReturnType<typeof setTimeout> | null = null;
+let inflight: AbortController | null = null;
+let startedAt = 0;
+let lastVoiceAt = 0;
+let loudFrames = 0;
+let smoothed = 0;
+let lastEmitted = 0;
 
-let activeRecordingSession: RecordingSession | null = null;
-let recordingIntervalTimer: any = null;
-let autoStopTimeoutTimer: any = null;
-
-function clearRecordingTimers() {
-  if (recordingIntervalTimer) {
-    clearInterval(recordingIntervalTimer);
-    recordingIntervalTimer = null;
-  }
-  if (autoStopTimeoutTimer) {
-    clearTimeout(autoStopTimeoutTimer);
-    autoStopTimeoutTimer = null;
-  }
+function clearTimers() {
+  if (tickTimer) clearInterval(tickTimer);
+  tickTimer = null;
+  if (closeTimer) clearTimeout(closeTimer);
+  closeTimer = null;
 }
 
-export const useVoiceStore = create<VoiceStoreState>((set, get) => ({
-  isOpen: false,
-  state: 'idle',
+function abortInflight() {
+  inflight?.abort();
+  inflight = null;
+}
+
+async function readKeys(): Promise<{ keys: SpeechKeys; settings: any }> {
+  const settings: any = await getAppSettings();
+  return {
+    settings,
+    keys: {
+      groqKey: process.env.EXPO_PUBLIC_GROQ_API_KEY || settings.groqApiKey || undefined,
+      geminiKey: process.env.EXPO_PUBLIC_GEMINI_API_KEY || settings.geminiApiKey || undefined,
+      openaiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY || settings.openaiApiKey || undefined,
+    },
+  };
+}
+
+function parseProvider(keys: SpeechKeys): { apiKey?: string; apiProvider: 'gemini' | 'groq' | 'openai' | 'proxy' } {
+  if (keys.groqKey) return { apiKey: keys.groqKey, apiProvider: 'groq' };
+  if (keys.geminiKey) return { apiKey: keys.geminiKey, apiProvider: 'gemini' };
+  if (keys.openaiKey) return { apiKey: keys.openaiKey, apiProvider: 'openai' };
+  return { apiProvider: 'proxy' };
+}
+
+function vocabulary() {
+  const products = useBusinessStore.getState().products;
+  const customers = useCustomerStore.getState().customers;
+  return buildTranscriptionPrompt(
+    products.filter((p) => p.is_active !== false).map((p) => p.name),
+    customers.slice(0, 40).map((c) => c.name),
+  );
+}
+
+const IDLE = {
+  state: 'idle' as VoiceAssistantState,
   transcription: '',
   audioLevel: 0,
   recordingSeconds: 0,
   lastAudioUri: null,
   action: null,
   error: null,
-  autoConfirmSeconds: 0,
-  isAutoConfirmPaused: true,
+  heardSpeech: false,
+};
 
-  open: () => {
-    clearRecordingTimers();
-    set({
-      isOpen: true,
-      state: 'idle',
-      transcription: '',
-      audioLevel: 0,
-      recordingSeconds: 0,
-      lastAudioUri: null,
-      action: null,
-      error: null,
-      autoConfirmSeconds: 0,
-      isAutoConfirmPaused: true,
-    });
-    // Immediately start listening on open for seamless Siri-like feel
-    get().startListening();
-  },
-
-  close: () => {
-    clearRecordingTimers();
-    if (activeRecordingSession) {
-      const session = activeRecordingSession;
-      activeRecordingSession = null;
-      try {
-        session.stop().catch(() => {});
-      } catch {}
-    }
-    set({
-      isOpen: false,
-      state: 'idle',
-      transcription: '',
-      audioLevel: 0,
-      recordingSeconds: 0,
-      lastAudioUri: null,
-      action: null,
-      error: null,
-    });
-  },
-
-  startListening: async () => {
-    clearRecordingTimers();
+export const useVoiceStore = create<VoiceStoreState>((set, get) => {
+  /** Turns text into a previewable action (shared by speech and typing). */
+  const understand = async (text: string, mySession: number) => {
+    const { keys, settings } = await readKeys();
+    if (mySession !== session) return;
+    const controller = new AbortController();
+    inflight = controller;
     try {
+      const action = await parseVoiceCommand(
+        text,
+        useBusinessStore.getState().products,
+        useCustomerStore.getState().customers,
+        { ...parseProvider(keys), branchId: useAuthStore.getState().currentBranch?.id, signal: controller.signal },
+      );
+      if (mySession !== session) return;
+      if (action.type === 'UNKNOWN') {
+        haptics.warning();
+        set({ state: 'error', action, error: action.suggestion || "I couldn't work out what to record from that." });
+        return;
+      }
+      haptics.selection();
       set({
-        state: 'listening',
-        transcription: '',
-        audioLevel: 0,
-        recordingSeconds: 0,
-        action: null,
+        state: 'preview',
+        action,
         error: null,
+        autoConfirmSeconds: Number(settings.voiceAutoConfirmSeconds ?? 0),
         isAutoConfirmPaused: false,
       });
+    } finally {
+      if (inflight === controller) inflight = null;
+    }
+  };
 
-      const session = await startAudioRecording((level) => {
-        set({ audioLevel: level });
-      });
+  return {
+    isOpen: false,
+    ...IDLE,
+    autoConfirmSeconds: 0,
+    isAutoConfirmPaused: true,
 
-      if (!session) {
-        set({
-          state: 'error',
-          error: 'Could not access microphone. Please check permissions.',
-        });
-        return;
+    open: () => {
+      session += 1;
+      clearTimers();
+      abortInflight();
+      set({ isOpen: true, ...IDLE, autoConfirmSeconds: 0, isAutoConfirmPaused: true });
+      void get().startListening();
+    },
+
+    close: () => {
+      session += 1;
+      clearTimers();
+      abortInflight();
+      const rec = recordingSession;
+      recordingSession = null;
+      rec?.cancel().catch(() => {});
+      void stopSpeech();
+      set({ isOpen: false, ...IDLE });
+    },
+
+    startListening: async () => {
+      session += 1;
+      const mySession = session;
+      clearTimers();
+      abortInflight();
+      if (recordingSession) {
+        const old = recordingSession;
+        recordingSession = null;
+        old.cancel().catch(() => {});
       }
+      set({ ...IDLE, state: 'listening', isAutoConfirmPaused: true });
 
-      activeRecordingSession = session;
+      startedAt = Date.now();
+      lastVoiceAt = 0;
+      loudFrames = 0;
+      smoothed = 0;
+      lastEmitted = 0;
 
-      // Start recording seconds ticker
-      recordingIntervalTimer = setInterval(() => {
-        const currentSecs = get().recordingSeconds;
-        const nextSecs = currentSecs + 1;
-        set({ recordingSeconds: nextSecs });
-        if (nextSecs >= MAX_RECORDING_SECONDS) {
-          clearRecordingTimers();
-          if (get().state === 'listening') {
-            get().stopListening();
+      try {
+        const rec = await startAudioRecording((level) => {
+          if (mySession !== session) return;
+          // Smooth the meter so the waveform breathes rather than flickers.
+          smoothed = smoothed * 0.55 + level * 0.45;
+          const now = Date.now();
+          if (level >= SPEECH_THRESHOLD) {
+            loudFrames += 1;
+            lastVoiceAt = now;
+            if (loudFrames >= 2 && !get().heardSpeech) set({ heardSpeech: true });
           }
+          if (Math.abs(smoothed - lastEmitted) > 0.03) {
+            lastEmitted = smoothed;
+            set({ audioLevel: smoothed });
+          }
+          // End of speech: the user spoke and has now been quiet for a beat.
+          if (get().heardSpeech && lastVoiceAt && now - lastVoiceAt > END_OF_SPEECH_MS && now - startedAt > 900) {
+            void get().stopListening();
+          }
+        });
+
+        if (mySession !== session) {
+          rec.cancel().catch(() => {});
+          return;
         }
-      }, 1000);
+        recordingSession = rec;
+        haptics.press();
 
-      // Auto-stop after max recording seconds
-      autoStopTimeoutTimer = setTimeout(() => {
-        if (get().state === 'listening') {
-          get().stopListening();
+        tickTimer = setInterval(() => {
+          if (mySession !== session) return;
+          const elapsed = Date.now() - startedAt;
+          set({ recordingSeconds: Math.floor(elapsed / 1000) });
+          if (!get().heardSpeech && elapsed > NO_SPEECH_TIMEOUT_MS) {
+            get().cancelListening();
+            set({ state: 'error', error: "I didn't hear anything. Tap the mic and speak, or type the command." });
+          } else if (elapsed >= MAX_RECORDING_SECONDS * 1000) {
+            void get().stopListening();
+          }
+        }, 250);
+      } catch (err: any) {
+        if (mySession !== session) return;
+        clearTimers();
+        set({ state: 'error', error: err?.message || 'The microphone could not be started.' });
+      }
+    },
+
+    cancelListening: () => {
+      clearTimers();
+      const rec = recordingSession;
+      recordingSession = null;
+      rec?.cancel().catch(() => {});
+      set({ audioLevel: 0 });
+    },
+
+    stopListening: async () => {
+      const rec = recordingSession;
+      if (!rec || get().state !== 'listening') return;
+      recordingSession = null;
+      clearTimers();
+      const mySession = session;
+      haptics.tap();
+      set({ state: 'processing', audioLevel: 0 });
+
+      try {
+        const uri = await rec.stop();
+        if (mySession !== session) return;
+        if (!uri) {
+          set({ state: 'error', error: 'Nothing was recorded. Please try again.' });
+          return;
         }
-      }, MAX_RECORDING_SECONDS * 1000);
-    } catch (err: any) {
-      clearRecordingTimers();
-      set({
-        state: 'error',
-        error: err.message || 'Microphone error.',
-      });
-    }
-  },
 
-  stopListening: async () => {
-    clearRecordingTimers();
-    if (!activeRecordingSession) return;
+        const { keys } = await readKeys();
+        if (mySession !== session) return;
 
-    set({ state: 'processing', audioLevel: 0 });
+        const controller = new AbortController();
+        inflight = controller;
+        let text = '';
+        try {
+          text = await transcribeAudioFile(uri, keys, vocabulary(), controller.signal);
+        } catch (err) {
+          if (err instanceof VoiceProxyUnavailableError && !hasDirectSpeechKey(keys)) {
+            if (mySession === session) {
+              set({ state: 'needs_key', lastAudioUri: uri, error: null });
+            }
+            return;
+          }
+          throw err;
+        } finally {
+          if (inflight === controller) inflight = null;
+        }
+        if (mySession !== session) return;
 
-    try {
-      const fileUri = await activeRecordingSession.stop();
-      activeRecordingSession = null;
+        if (!text) {
+          set({ state: 'error', error: "I couldn't make out any words. Try again a little closer to the phone." });
+          return;
+        }
+        set({ transcription: text });
+        await understand(text, mySession);
+      } catch (err: any) {
+        if (mySession !== session) return;
+        haptics.error();
+        set({ state: 'error', error: err?.message || 'Something went wrong while processing your voice.' });
+      }
+    },
 
-      if (!fileUri) {
-        set({ state: 'error', error: 'No audio recorded.' });
+    saveApiKeyAndTranscribe: async (provider, key) => {
+      const trimmed = key.trim();
+      if (!trimmed) return;
+      await saveAppSettings(provider === 'groq' ? { groqApiKey: trimmed } : { geminiApiKey: trimmed });
+
+      const uri = get().lastAudioUri;
+      const mySession = session;
+      if (!uri) {
+        set({ state: 'idle', error: null });
         return;
       }
-
-      // Check settings and env for cloud API keys
-      const settings: any = await getAppSettings();
-      const groqKey =
-        process.env.EXPO_PUBLIC_GROQ_API_KEY ||
-        settings.groqApiKey;
-      const openaiKey = process.env.EXPO_PUBLIC_OPENAI_API_KEY || settings.openaiApiKey;
-      const geminiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY || settings.geminiApiKey;
-
-      if (!groqKey && !geminiKey && !openaiKey) {
-        set({
-          state: 'needs_key',
-          lastAudioUri: fileUri,
-          error: 'Voice transcription requires a free Groq or Gemini API key.',
-        });
-        return;
-      }
-
-      const transcription = await transcribeAudioFile(fileUri, {
-        groqKey,
-        geminiKey,
-        openaiKey,
-      });
-
-      if (!transcription || !transcription.trim()) {
-        set({
-          state: 'error',
-          error: "Didn't catch any speech. Please tap the mic and try again.",
-        });
-        return;
-      }
-
-      set({ transcription, lastAudioUri: null });
-
-      // Parse with NLU engine
-      const products = useBusinessStore.getState().products;
-      const customers = useCustomerStore.getState().customers;
-
-      const chosenKey = geminiKey || groqKey || openaiKey;
-      const chosenProvider: 'groq' | 'gemini' | 'openai' = chosenKey?.startsWith('AIza')
-        ? 'gemini'
-        : chosenKey?.startsWith('sk-')
-        ? 'openai'
-        : 'groq';
-
-      const branchId = useAuthStore.getState().currentBranch?.id;
-
-      const action = await parseVoiceCommand(transcription, products, customers, {
-        apiKey: chosenKey,
-        apiProvider: chosenProvider,
-        branchId,
-      });
-
-      if (action.type === 'UNKNOWN') {
-        set({
-          state: 'error',
-          action,
-          error: action.suggestion || 'Could not recognize command.',
-        });
-        return;
-      }
-
-      set({
-        state: 'preview',
-        action,
-        autoConfirmSeconds: settings.voiceAutoConfirmSeconds ?? 0,
-        isAutoConfirmPaused: true,
-      });
-    } catch (err: any) {
-      activeRecordingSession = null;
-      set({
-        state: 'error',
-        error: err.message || 'Error processing audio.',
-      });
-    }
-  },
-
-  saveApiKeyAndTranscribe: async (provider: 'groq' | 'gemini', key: string) => {
-    const trimmed = key.trim();
-    if (!trimmed) return;
-
-    if (provider === 'groq') {
-      await saveAppSettings({ groqApiKey: trimmed });
-    } else {
-      await saveAppSettings({ geminiApiKey: trimmed });
-    }
-
-    const { lastAudioUri } = get();
-    if (lastAudioUri) {
       set({ state: 'processing', error: null });
       try {
-        const keys = provider === 'groq' ? { groqKey: trimmed } : { geminiKey: trimmed };
-        const transcription = await transcribeAudioFile(lastAudioUri, keys);
-
-        if (!transcription || !transcription.trim()) {
-          set({
-            state: 'error',
-            error: "Didn't hear any speech in the recording. Tap the mic to speak again.",
-          });
+        const keys: SpeechKeys = provider === 'groq' ? { groqKey: trimmed } : { geminiKey: trimmed };
+        const text = await transcribeAudioFile(uri, keys, vocabulary());
+        if (mySession !== session) return;
+        if (!text) {
+          set({ state: 'error', error: "I couldn't hear any words in that recording. Tap the mic to try again." });
           return;
         }
-
-        set({ transcription, lastAudioUri: null });
-
-        const products = useBusinessStore.getState().products;
-        const customers = useCustomerStore.getState().customers;
-
-        const branchId = useAuthStore.getState().currentBranch?.id;
-
-        const action = await parseVoiceCommand(transcription, products, customers, {
-          apiKey: trimmed,
-          apiProvider: provider,
-          branchId,
-        });
-
-        if (action.type === 'UNKNOWN') {
-          set({
-            state: 'error',
-            action,
-            error: action.suggestion || 'Could not understand command.',
-          });
-          return;
-        }
-
-        const settings: any = await getAppSettings();
-        set({
-          state: 'preview',
-          action,
-          autoConfirmSeconds: settings.voiceAutoConfirmSeconds ?? 5,
-          isAutoConfirmPaused: false,
-        });
+        set({ transcription: text, lastAudioUri: null });
+        await understand(text, mySession);
       } catch (err: any) {
-        set({
-          state: 'error',
-          error: err.message || 'Transcription failed with this key.',
-        });
+        if (mySession !== session) return;
+        set({ state: 'error', error: err?.message || 'That key did not work. Check it and try again.' });
       }
-    } else {
-      set({ state: 'idle', error: null });
-    }
-  },
+    },
 
-  processText: async (text: string) => {
-    if (!text.trim()) return;
-
-    set({ state: 'processing', transcription: text, error: null });
-
-    try {
-      const settings: any = await getAppSettings();
-      const apiKey =
-        process.env.EXPO_PUBLIC_GEMINI_API_KEY ||
-        process.env.EXPO_PUBLIC_GROQ_API_KEY ||
-        process.env.EXPO_PUBLIC_OPENAI_API_KEY ||
-        settings.geminiApiKey ||
-        settings.groqApiKey;
-
-      const products = useBusinessStore.getState().products;
-      const customers = useCustomerStore.getState().customers;
-
-      const branchId = useAuthStore.getState().currentBranch?.id;
-
-      const action = await parseVoiceCommand(text, products, customers, {
-        apiKey,
-        apiProvider: apiKey?.startsWith('AIza') ? 'gemini' : 'groq',
-        branchId,
-      });
-
-      if (action.type === 'UNKNOWN') {
-        set({
-          state: 'error',
-          action,
-          error: action.suggestion || 'Could not understand command. Check format.',
-        });
-        return;
+    processText: async (text) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      get().cancelListening();
+      session += 1;
+      const mySession = session;
+      set({ state: 'processing', transcription: trimmed, error: null, action: null });
+      try {
+        await understand(trimmed, mySession);
+      } catch (err: any) {
+        if (mySession !== session) return;
+        set({ state: 'error', error: err?.message || 'Could not process that command.' });
       }
+    },
 
-      set({
-        state: 'preview',
-        action,
-        autoConfirmSeconds: settings.voiceAutoConfirmSeconds ?? 0,
-        isAutoConfirmPaused: true,
-      });
-    } catch (err: any) {
-      set({
-        state: 'error',
-        error: err.message || 'Failed to process command.',
-      });
-    }
-  },
+    confirmAction: async () => {
+      const { action, state } = get();
+      if (!action || action.type === 'UNKNOWN' || state === 'executing') return;
+      const mySession = session;
+      set({ state: 'executing', isAutoConfirmPaused: true });
+      try {
+        const { settings } = await readKeys();
+        const result = await executeVoiceAction(action, settings.voiceTtsEnabled ?? true);
+        if (mySession !== session) return;
+        haptics.success();
+        set({ state: 'completed' });
+        Toast.show({ type: 'success', text1: 'Saved', text2: result.message });
+        closeTimer = setTimeout(() => {
+          if (mySession === session) get().close();
+        }, 1100);
+      } catch (err: any) {
+        if (mySession !== session) return;
+        haptics.error();
+        set({ state: 'error', error: err?.message || 'That could not be saved.' });
+      }
+    },
 
-  confirmAction: async () => {
-    const { action } = get();
-    if (!action || action.type === 'UNKNOWN') return;
+    pauseAutoConfirm: () => set({ isAutoConfirmPaused: true }),
+    resumeAutoConfirm: () => set({ isAutoConfirmPaused: false }),
 
-    set({ state: 'executing' });
-
-    try {
-      const settings: any = await getAppSettings();
-      const ttsEnabled = settings.voiceTtsEnabled ?? true;
-
-      const result = await executeVoiceAction(action, ttsEnabled);
-
-      set({ state: 'completed' });
-
-      Toast.show({
-        type: 'success',
-        text1: 'Action Completed',
-        text2: result.message,
-      });
-
-      // Auto close after 1.5 seconds
-      setTimeout(() => {
-        get().close();
-      }, 1500);
-    } catch (err: any) {
-      set({
-        state: 'error',
-        error: err.message || 'Execution failed.',
-      });
-    }
-  },
-
-  pauseAutoConfirm: () => {
-    set({ isAutoConfirmPaused: true });
-  },
-
-  resumeAutoConfirm: () => {
-    set({ isAutoConfirmPaused: false });
-  },
-
-  reset: () => {
-    clearRecordingTimers();
-    set({
-      state: 'idle',
-      transcription: '',
-      audioLevel: 0,
-      recordingSeconds: 0,
-      lastAudioUri: null,
-      action: null,
-      error: null,
-      autoConfirmSeconds: 5,
-      isAutoConfirmPaused: false,
-    });
-  },
-}));
+    reset: () => {
+      session += 1;
+      clearTimers();
+      abortInflight();
+      set({ ...IDLE, autoConfirmSeconds: 0, isAutoConfirmPaused: true });
+    },
+  };
+});

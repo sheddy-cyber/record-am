@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Alert, Modal, Pressable, RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -109,10 +109,10 @@ export default function CustomerDetailScreen() {
 
   if (!customer) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Customer Details"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <EmptyState
@@ -209,11 +209,11 @@ export default function CustomerDetailScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title={customer.name}
         subtitle={`${customerSales.length} recent sale${customerSales.length === 1 ? '' : 's'}`}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         right={
           <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -236,10 +236,10 @@ export default function CustomerDetailScreen() {
         <Card style={{ backgroundColor: COLORS.navy, padding: 18 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.full, backgroundColor: 'rgba(255, 255, 255, 0.12)' }}>
-              <Feather name="user" size={20} color="#ffffff" />
+              <Icon name="user" size={20} color="#ffffff" />
             </View>
             <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={{ fontFamily: FONT.semiBold, fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', letterSpacing: 0.8, textTransform: 'uppercase' }}>CUSTOMER ACCOUNT</Text>
+              <Text style={{ fontFamily: FONT.semiBold, fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', letterSpacing: 0.8, }}>Customer account</Text>
               <Text style={{ marginTop: 2, fontFamily: FONT.medium, fontSize: 13, color: '#ffffff' }}>
                 {customer.total_transactions ?? 0} sale{customer.total_transactions === 1 ? '' : 's'} recorded
               </Text>
@@ -247,7 +247,7 @@ export default function CustomerDetailScreen() {
           </View>
 
           <View style={{ marginTop: 20 }}>
-            <Text style={{ fontFamily: FONT.semiBold, fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', letterSpacing: 0.8, textTransform: 'uppercase' }}>CURRENT BALANCE</Text>
+            <Text style={{ fontFamily: FONT.semiBold, fontSize: 11, color: 'rgba(255, 255, 255, 0.7)', letterSpacing: 0.8, }}>Current balance</Text>
             <Text style={{ marginTop: 4, fontFamily: FONT.bold, fontSize: 32, color: (customer.outstanding_debt ?? 0) > 0 ? '#ff8585' : '#4ade80' }}>
               {formatCurrency(customer.outstanding_debt ?? 0)}
             </Text>
@@ -270,14 +270,14 @@ export default function CustomerDetailScreen() {
               backgroundColor: COLORS.accent,
             }}
           >
-            <Feather name="plus-circle" size={18} color={COLORS.onAccent} />
+            <Icon name="plus-circle" size={18} color={COLORS.onAccent} />
             <Text style={{ fontFamily: FONT.semiBold, fontSize: 14, color: COLORS.onAccent }}>Record Sale for {customer.name.split(' ')[0]}</Text>
           </TouchableOpacity>
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
             {[
-              { label: 'TOTAL SPENT', value: formatCurrency(customer.total_spent ?? 0), color: '#4ade80' },
-              { label: 'SALES COUNT', value: String(customer.total_transactions ?? 0), color: '#93c5fd' },
+              { label: 'Total spent', value: formatCurrency(customer.total_spent ?? 0), color: '#4ade80' },
+              { label: 'Sales count', value: String(customer.total_transactions ?? 0), color: '#A9C0D8' },
             ].map((stat) => (
               <View key={stat.label} style={{ flex: 1, padding: 12, borderWidth: 1, borderRadius: RADIUS.md, borderColor: 'rgba(255, 255, 255, 0.12)', backgroundColor: 'rgba(255, 255, 255, 0.08)' }}>
                 <Text style={{ fontFamily: FONT.semiBold, fontSize: 10, color: 'rgba(255, 255, 255, 0.6)', letterSpacing: 0.5 }}>{stat.label}</Text>
@@ -296,13 +296,13 @@ export default function CustomerDetailScreen() {
               customer.address ? { icon: 'map-pin' as const, label: customer.address } : null,
             ].filter(Boolean).map((detail) => (
               <View key={detail!.label} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 9 }}>
-                <Feather name={detail!.icon} size={14} color={COLORS.text.muted} style={{ marginTop: 2 }} />
+                <Icon name={detail!.icon} size={14} color={COLORS.text.muted} style={{ marginTop: 2 }} />
                 <Text style={{ flex: 1, fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>{detail!.label}</Text>
               </View>
             ))}
             {customer.notes ? (
               <View style={{ paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border }}>
-                <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>NOTE</Text>
+                <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Note</Text>
                 <Text style={{ marginTop: 4, fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary, fontStyle: 'italic' }}>
                   “{customer.notes}”
                 </Text>
@@ -318,8 +318,8 @@ export default function CustomerDetailScreen() {
               {activeDebts.map((debt, index) => (
                 <View key={debt.id}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 11 }}>
-                    <View style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FEF3F2' }}>
-                      <Feather name="alert-circle" size={17} color={COLORS.danger} />
+                    <View style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#F8E5E1' }}>
+                      <Icon name="alert-circle" size={17} color={COLORS.danger} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.primary }}>{format(new Date(debt.created_at), 'MMM d, yyyy')}</Text>
@@ -341,7 +341,7 @@ export default function CustomerDetailScreen() {
           {customerSales.length === 0 ? (
             <Card style={{ alignItems: 'center', paddingVertical: 22 }}>
               <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.surface2 }}>
-                <Feather name="shopping-bag" size={18} color={COLORS.text.muted} />
+                <Icon name="shopping-bag" size={18} color={COLORS.text.muted} />
               </View>
               <Text style={{ marginTop: 10, fontFamily: FONT.medium, color: COLORS.text.primary, fontSize: 13 }}>No sales recorded yet</Text>
               <Text style={{ marginTop: 3, fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 12, textAlign: 'center' }}>Record a sale to keep this customer’s balance and history up to date.</Text>
@@ -353,7 +353,7 @@ export default function CustomerDetailScreen() {
                 <View key={sale.id}>
                   <TouchableOpacity onPress={() => openEditSale(sale.id)} activeOpacity={0.75} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 11 }}>
                     <View style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: RADIUS.full, backgroundColor: COLORS.navyLight }}>
-                      <Feather name="shopping-bag" size={16} color={COLORS.ink} />
+                      <Icon name="shopping-bag" size={16} color={COLORS.ink} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>{getSaleItemsSummary(sale, products)}</Text>
@@ -394,7 +394,7 @@ export default function CustomerDetailScreen() {
           activeOpacity={0.8}
           style={{ minHeight: 50, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isPrinting ? 0.55 : 1 }}
         >
-          <Feather name="printer" size={16} color={COLORS.navy} />
+          <Icon name="printer" size={16} color={COLORS.navy} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isPrinting ? 'Preparing statement…' : 'Print customer statement'}</Text>
             <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Balance and recent sales records</Text>
@@ -407,7 +407,7 @@ export default function CustomerDetailScreen() {
           activeOpacity={0.8}
           style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isSharingPDF ? 0.55 : 1 }}
         >
-          <Feather name="share-2" size={16} color={COLORS.navy} />
+          <Icon name="share-2" size={16} color={COLORS.navy} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isSharingPDF ? 'Preparing PDF…' : 'Share as PDF'}</Text>
             <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Save statement to device</Text>
@@ -422,7 +422,7 @@ export default function CustomerDetailScreen() {
           activeOpacity={0.8}
           style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
         >
-          <Feather name="edit-2" size={16} color={COLORS.text.secondary} />
+          <Icon name="edit-2" size={16} color={COLORS.text.secondary} />
           <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>Edit customer details</Text>
         </TouchableOpacity>
 
@@ -432,9 +432,9 @@ export default function CustomerDetailScreen() {
             await handleDelete();
           }}
           activeOpacity={0.8}
-          style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: '#F5C2BA', backgroundColor: '#FEF3F2' }}
+          style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: 1, borderRadius: RADIUS.md, borderColor: '#EECAC2', backgroundColor: '#F8E5E1' }}
         >
-          <Feather name="trash-2" size={16} color={COLORS.danger} />
+          <Icon name="trash-2" size={16} color={COLORS.danger} />
           <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.danger }}>Remove customer</Text>
         </TouchableOpacity>
 

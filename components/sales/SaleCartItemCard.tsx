@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { Card } from '@/components/ui';
 import { InputField } from '@/components/forms';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
@@ -71,13 +71,13 @@ export const SaleCartItemCard: React.FC<SaleCartItemCardProps> = ({
             justifyContent: 'center',
           }}
         >
-          <Feather name="trash-2" size={15} color={COLORS.danger} />
+          <Icon name="trash-2" size={15} color={COLORS.danger} />
         </TouchableOpacity>
       </View>
 
       {unitOptions.length > 1 && (
         <View style={{ gap: 6 }}>
-          <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: COLORS.text.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: COLORS.text.muted, letterSpacing: 0.5 }}>
             Sell As
           </Text>
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
@@ -152,7 +152,7 @@ export const SaleCartItemCard: React.FC<SaleCartItemCardProps> = ({
                 justifyContent: 'center',
               }}
             >
-              <Feather name="minus" size={16} color={isMin ? COLORS.text.muted : COLORS.text.primary} />
+              <Icon name="minus" size={16} color={isMin ? COLORS.text.muted : COLORS.text.primary} />
             </TouchableOpacity>
 
             <TextInput
@@ -186,7 +186,7 @@ export const SaleCartItemCard: React.FC<SaleCartItemCardProps> = ({
                 justifyContent: 'center',
               }}
             >
-              <Feather name="plus" size={16} color={COLORS.text.primary} />
+              <Icon name="plus" size={16} color={COLORS.text.primary} />
             </TouchableOpacity>
           </View>
         </View>

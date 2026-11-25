@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Button, LoadingScreen } from '@/components/ui';
 import { BrandWordmark, ScreenShell } from '@/components/layout';
@@ -74,10 +74,10 @@ export default function AuthCallbackScreen() {
   if (!error) return <LoadingScreen message="Verifying secure link…" />;
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="dark">
+    <ScreenShell backgroundColor={COLORS.surface} >
       <View style={styles.content}>
         <BrandWordmark />
-        <View style={styles.icon}><Feather name="alert-circle" size={28} color={COLORS.danger} /></View>
+        <View style={styles.icon}><Icon name="alert-circle" size={28} color={COLORS.danger} /></View>
         <Text style={styles.title}>We couldn&apos;t verify that link</Text>
         <Text style={styles.message}>{error}</Text>
         <Button title="Back to sign in" onPress={() => router.replace('/(auth)/login')} size="lg" style={styles.button} />
@@ -92,7 +92,7 @@ export default function AuthCallbackScreen() {
 const styles = StyleSheet.create({
   content: { flex: 1, padding: 28, justifyContent: 'center', alignItems: 'center' },
   icon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.dangerLight, alignItems: 'center', justifyContent: 'center', marginTop: 48, marginBottom: 20 },
-  title: { color: COLORS.text.primary, fontFamily: FONT.bold, fontSize: 24, textAlign: 'center', marginBottom: 10 },
+  title: { color: COLORS.text.primary, fontFamily: FONT.serif, fontSize: 28, lineHeight: 34, textAlign: 'center', marginBottom: 10 },
   message: { color: COLORS.text.secondary, fontFamily: FONT.regular, fontSize: 15, lineHeight: 22, textAlign: 'center' },
   button: { width: '100%', marginTop: 30 },
   secondaryAction: { padding: 18, marginTop: 2 },

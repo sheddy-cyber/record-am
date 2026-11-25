@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { Button, Card, Divider, SectionHeader } from '@/components/ui';
 import { InputField, SelectField } from '@/components/forms';
 import { COLORS, CURRENCY_SYMBOL, FONT, PAYMENT_METHODS, RADIUS } from '@/constants';
@@ -155,7 +155,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
               padding: 12,
             }}
           >
-            <Feather name="alert-triangle" size={16} color={COLORS.warning} />
+            <Icon name="alert-triangle" size={16} color={COLORS.warning} />
             <Text style={{ flex: 1, fontSize: 12, fontFamily: FONT.medium, color: COLORS.warning, lineHeight: 18 }}>
               Outstanding balance: <Text style={{ fontFamily: FONT.bold }}>{formatCurrency(amountOwed)}</Text>. Will be recorded as customer debt.
             </Text>
@@ -227,7 +227,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                     justifyContent: 'center',
                   }}
                 >
-                  <Feather name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
+                  <Icon name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
@@ -238,7 +238,7 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                   </Text>
                 </View>
               </View>
-              <Feather name="plus-circle" size={18} color={COLORS.navy} />
+              <Icon name="plus-circle" size={18} color={COLORS.navy} />
             </TouchableOpacity>
           ) : null
         ) : null}
@@ -325,20 +325,20 @@ export const SaleCheckoutCard: React.FC<SaleCheckoutCardProps> = ({
                 <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                   + Add bank for transfer portion
                 </Text>
-                <Feather name="plus" size={14} color={COLORS.navy} />
+                <Icon name="plus" size={14} color={COLORS.navy} />
               </TouchableOpacity>
             ) : null}
 
             {isSplitMismatch ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.dangerLight, padding: 8, borderRadius: RADIUS.sm }}>
-                <Feather name="alert-circle" size={14} color={COLORS.danger} />
+                <Icon name="alert-circle" size={14} color={COLORS.danger} />
                 <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.danger, flex: 1 }}>
                   Split sum ({formatCurrency(splitSum)}) does not match amount paid ({formatCurrency(effectivePaid)})
                 </Text>
               </View>
             ) : (
               <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.success }}>
-                ✓ Split balanced: Cash {formatCurrency(parsedCash)} + Transfer {formatCurrency(parsedTransfer)}
+                Split balanced: cash {formatCurrency(parsedCash)} + Transfer {formatCurrency(parsedTransfer)}
               </Text>
             )}
           </View>

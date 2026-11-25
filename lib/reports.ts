@@ -6,6 +6,27 @@ import { cleanSaleNotes, getPaymentBreakdown, isDebtForgiven } from '@/lib/recor
 import { CURRENCY_SYMBOL } from '@/constants';
 import { Branch, Business, Customer, Sale, Supplier } from '@/types';
 
+const methodLabel = (method: string) =>
+  ({ cash: 'Cash', transfer: 'Bank transfer', pos: 'POS', mobile_money: 'Mobile money', mixed: 'Split payment', other: 'Other' } as Record<string, string>)[method] ??
+  method.replace('_', ' ');
+
+// Shared look for every printed or exported document: Record Am's type,
+// paper-white headers (no ink-heavy bands), sentence-case labels.
+const DOC_THEME = `
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; -webkit-font-smoothing: antialiased; }
+  * { text-transform: none !important; }
+  .header { background: #FFFFFF !important; border-bottom: 1px solid #E6E2D9 !important; border-radius: 0 !important; box-shadow: none !important; }
+  .header, .header * { color: #1A1917 !important; }
+  .header p, .header small, .header [class*="sub"], .header [class*="meta"], .header [class*="date"], .header [class*="period"], .header [class*="lbl"] { color: #6B675F !important; }
+  h1, .biz-name, .header .title { font-family: 'Newsreader', Georgia, 'Times New Roman', serif !important; font-weight: 500 !important; letter-spacing: -0.3px !important; }
+  table { font-variant-numeric: tabular-nums; }
+  th, thead td { background: #F5F3EE !important; color: #57534C !important; font-weight: 600 !important; border-color: #E6E2D9 !important; }
+  .report-badge { background: #EDEAE3 !important; color: #1A1917 !important; border-color: #E6E2D9 !important; }
+</style>`;
+
 export function generateReceiptHTML(sale: Sale, business: Business, branch: Branch): string {
   const currency = business.currency_symbol ?? CURRENCY_SYMBOL;
   const formatMoney = (value: number) =>
@@ -57,25 +78,25 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
 
   const statusColor =
     isRepayment
-      ? '#1E3A8A'
+      ? '#1A1917'
       : isForgiven
-        ? '#1E3A8A'
+        ? '#1A1917'
         : (sale.payment_status === 'paid' || hasHigherPayment)
-          ? '#059669'
+          ? '#2E7D4F'
           : sale.payment_status === 'partial'
-            ? '#D97706'
-            : '#DC2626';
+            ? '#B7791F'
+            : '#C2412D';
 
   const statusLabel =
     isRepayment
-      ? 'SETTLEMENT'
+      ? 'Debt payment'
       : isForgiven
-        ? 'DEBT FORGIVEN'
+        ? 'Debt forgiven'
         : (sale.payment_status === 'paid' || hasHigherPayment)
-          ? 'PAID IN FULL'
+          ? 'Paid in full'
           : sale.payment_status === 'partial'
-            ? 'PARTIALLY PAID'
-            : 'CREDIT / UNPAID';
+            ? 'Part paid'
+            : 'On credit';
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -87,11 +108,11 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    background: #f1f5f9;
+    background: #EDEAE3;
     display: flex;
     justify-content: center;
     padding: 24px 16px;
-    color: #0f172a;
+    color: #1A1917;
     -webkit-font-smoothing: antialiased;
   }
   .receipt {
@@ -99,12 +120,12 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     width: 100%;
     max-width: 400px;
     border-radius: 16px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #E6E2D9;
     overflow: hidden;
-    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+    box-shadow: 0 4px 20px rgba(26, 25, 23, 0.08);
   }
   .header {
-    background: #1E3A8A;
+    background: #1A1917;
     padding: 24px 20px 20px;
     text-align: center;
     color: #ffffff;
@@ -121,28 +142,28 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     line-height: 1.4;
   }
   .receipt-ribbon {
-    background: #f8fafc;
+    background: #F5F3EE;
     padding: 12px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E6E2D9;
   }
   .receipt-lbl {
     font-size: 9.5px;
     font-weight: 700;
-    color: #94a3b8;
+    color: #8A857B;
     letter-spacing: 0.6px;
   }
   .receipt-num {
     font-size: 13px;
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
     margin-top: 1px;
   }
   .receipt-date {
     font-size: 10.5px;
-    color: #94a3b8;
+    color: #8A857B;
     margin-top: 2px;
   }
   .status-pill {
@@ -157,8 +178,8 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     letter-spacing: 0.4px;
   }
   .customer-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #F5F3EE;
+    border: 1px solid #E6E2D9;
     border-radius: 10px;
     padding: 10px 14px;
     margin: 14px 20px 0;
@@ -166,18 +187,18 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   .customer-lbl {
     font-size: 9px;
     font-weight: 700;
-    color: #94a3b8;
+    color: #8A857B;
     letter-spacing: 0.6px;
   }
   .customer-name {
     font-size: 13px;
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
     margin-top: 2px;
   }
   .customer-phone {
     font-size: 11px;
-    color: #475569;
+    color: #57534C;
     margin-top: 1px;
   }
   .section {
@@ -187,10 +208,10 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     display: flex;
     justify-content: space-between;
     padding-bottom: 6px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E6E2D9;
     font-size: 9.5px;
     font-weight: 700;
-    color: #94a3b8;
+    color: #8A857B;
     letter-spacing: 0.8px;
   }
   table {
@@ -199,27 +220,27 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   }
   .item-row td {
     padding: 9px 0;
-    border-bottom: 1px solid #f1f5f9;
+    border-bottom: 1px solid #EDEAE3;
   }
   .item-name {
     font-size: 13px;
     font-weight: 600;
-    color: #0f172a;
+    color: #1A1917;
   }
   .item-sub {
     font-size: 11px;
-    color: #94a3b8;
+    color: #8A857B;
     margin-top: 2px;
   }
   .item-total {
     text-align: right;
     font-size: 13.5px;
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
     vertical-align: top;
   }
   .perforation {
-    border-top: 1px dashed #cbd5e1;
+    border-top: 1px dashed #D3CEC2;
     margin: 4px 20px;
   }
   .summary-section {
@@ -231,11 +252,11 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     align-items: center;
     padding: 4px 0;
     font-size: 12.5px;
-    color: #475569;
+    color: #57534C;
   }
   .total-box {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #F5F3EE;
+    border: 1px solid #E6E2D9;
     border-radius: 10px;
     padding: 10px 14px;
     margin: 8px 0;
@@ -246,26 +267,26 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   .total-box .lbl {
     font-size: 14px;
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
   }
   .total-box .val {
     font-size: 19px;
     font-weight: 800;
-    color: #1E3A8A;
+    color: #1A1917;
   }
   .paid-val {
-    color: #10b981;
+    color: #2E7D4F;
     font-weight: 700;
   }
   .owed-box {
-    background: #fef2f2;
-    border: 1px solid #fecaca;
+    background: #F8E5E1;
+    border: 1px solid #EECAC2;
     border-radius: 8px;
     padding: 8px 12px;
     margin: 6px 0;
     display: flex;
     justify-content: space-between;
-    color: #ef4444;
+    color: #C2412D;
     font-weight: 700;
     font-size: 12.5px;
   }
@@ -274,34 +295,34 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
     justify-content: space-between;
     padding-top: 8px;
     margin-top: 4px;
-    border-top: 1px solid #f1f5f9;
+    border-top: 1px solid #EDEAE3;
     font-size: 11.5px;
-    color: #94a3b8;
+    color: #8A857B;
   }
   .payment-method-val {
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
   }
   .footer {
-    background: #f8fafc;
-    border-top: 1px solid #e2e8f0;
+    background: #F5F3EE;
+    border-top: 1px solid #E6E2D9;
     padding: 18px 20px;
     text-align: center;
   }
   .footer .thanks {
     font-size: 12px;
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
   }
   .footer .note {
     background: #ffffff;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #E6E2D9;
     border-radius: 6px;
     padding: 6px 12px;
     display: inline-block;
     font-size: 11px;
     font-style: italic;
-    color: #475569;
+    color: #57534C;
     margin-top: 8px;
     max-width: 90%;
   }
@@ -315,22 +336,22 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   }
   .bar {
     height: 24px;
-    background: #0f172a;
+    background: #1A1917;
   }
   .barcode-num {
     font-size: 9.5px;
-    color: #94a3b8;
+    color: #8A857B;
     letter-spacing: 2px;
   }
   .powered {
     font-size: 9.5px;
     font-weight: 700;
-    color: #94a3b8;
+    color: #8A857B;
     letter-spacing: 1px;
     margin-top: 12px;
   }
 </style>
-</head>
+${DOC_THEME}</head>
 <body>
 <div class="receipt">
   <div class="header">
@@ -341,7 +362,7 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
 
   <div class="receipt-ribbon">
     <div>
-      <div class="receipt-lbl">RECEIPT</div>
+      <div class="receipt-lbl">Receipt</div>
       <div class="receipt-num">${sale.sale_number}</div>
       <div class="receipt-date">${format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}</div>
     </div>
@@ -352,15 +373,15 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
 
   ${((sale.customer as any)?.name || sale.amount_owed > 0) ? `
   <div class="customer-card">
-    <div class="customer-lbl">BILLED TO</div>
+    <div class="customer-lbl">Customer</div>
     <div class="customer-name">${(sale.customer as any)?.name ?? 'Walk-in Customer'}</div>
     ${(sale.customer as any)?.phone ? `<div class="customer-phone">${(sale.customer as any).phone}</div>` : ''}
   </div>` : ''}
 
   <div class="section">
     <div class="table-header">
-      <span>ITEM</span>
-      <span>AMOUNT</span>
+      <span>Item</span>
+      <span>Amount</span>
     </div>
     <table>${itemRows}</table>
   </div>
@@ -370,7 +391,7 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
   <div class="summary-section">
     ${sale.discount_amount > 0 && !hasHigherPayment ? `
     <div class="totals-row"><span>Subtotal</span><span>${formatMoney(sale.subtotal)}</span></div>
-    <div class="totals-row" style="color:#ef4444;"><span>Discount</span><span>- ${formatMoney(sale.discount_amount)}</span></div>` : ''}
+    <div class="totals-row" style="color:#C2412D;"><span>Discount</span><span>- ${formatMoney(sale.discount_amount)}</span></div>` : ''}
     ${sale.tax_amount > 0 ? `<div class="totals-row"><span>Tax</span><span>${formatMoney(sale.tax_amount)}</span></div>` : ''}
     
     <div class="total-box">
@@ -388,56 +409,29 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
       <span>Balance Owed</span>
       <span>${formatMoney(sale.amount_owed)}</span>
     </div>` : isForgiven ? `
-    <div class="owed-box" style="background:#f0f9ff;border-color:#bae6fd;color:#1E3A8A;">
+    <div class="owed-box" style="background:#E3EBF3;border-color:#C9D7E6;color:#1A1917;">
       <span>Debt Status</span>
       <span>FORGIVEN (₦0 DUE)</span>
     </div>` : ''}
 
     <div class="payment-method-row">
       <span>Payment Method</span>
-      <span class="payment-method-val">${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}</span>
+      <span class="payment-method-val">${methodLabel(sale.payment_method)}${sale.bank_name ? ` (${sale.bank_name})` : ''}</span>
     </div>
 
     ${sale.payment_method === 'mixed' ? `
-    <div class="totals-row" style="font-size:11px;color:#64748b;padding-left:12px;">
+    <div class="totals-row" style="font-size:11px;color:#6B675F;padding-left:12px;">
       <span>• Cash</span><span>${formatMoney(getPaymentBreakdown(sale).cash)}</span>
     </div>
-    <div class="totals-row" style="font-size:11px;color:#64748b;padding-left:12px;">
+    <div class="totals-row" style="font-size:11px;color:#6B675F;padding-left:12px;">
       <span>• Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}</span><span>${formatMoney(getPaymentBreakdown(sale).transfer)}</span>
     </div>` : ''}
   </div>
 
   <div class="footer">
-    <div class="thanks">Thank you for your business!</div>
+    <div class="thanks">Thank you for your business</div>
     ${cleanSaleNotes(sale.notes) ? `<div class="note">"${cleanSaleNotes(sale.notes)}"</div>` : ''}
-    <div class="barcode">
-      <div class="bar" style="width:2px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:3px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:2px;"></div>
-      <div class="bar" style="width:4px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:3px;"></div>
-      <div class="bar" style="width:2px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:4px;"></div>
-      <div class="bar" style="width:2px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:3px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:2px;"></div>
-      <div class="bar" style="width:3px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:2px;"></div>
-      <div class="bar" style="width:4px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:2px;"></div>
-      <div class="bar" style="width:1px;background:transparent;"></div>
-      <div class="bar" style="width:3px;"></div>
-    </div>
-    <div class="barcode-num">${sale.sale_number}</div>
-    <div class="powered">POWERED BY RECORD AM</div>
+    <div class="powered">Recorded with Record Am</div>
   </div>
 </div>
 </body>
@@ -464,7 +458,7 @@ export interface DailyReportData {
 export function generateDailyReportHTML(data: DailyReportData): string {
   const currency = data.business.currency_symbol ?? CURRENCY_SYMBOL;
   const formatMoney = (value: number) => `${currency}${value.toLocaleString('en-NG', { minimumFractionDigits: 2 })}`;
-  const profitColor = data.netProfit >= 0 ? '#238B5B' : '#C44536';
+  const profitColor = data.netProfit >= 0 ? '#2E7D4F' : '#C2412D';
   const discrepancy = data.cashActual !== undefined ? data.cashActual - data.cashExpected : 0;
 
   return `<!DOCTYPE html>
@@ -475,44 +469,44 @@ export function generateDailyReportHTML(data: DailyReportData): string {
 <title>Daily Report - ${format(new Date(data.date), 'MMMM d, yyyy')}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f0e4; padding: 20px; }
-  .report { background: #fffdf8; max-width: 600px; margin: 0 auto; border: 1px solid #d8ceb7; overflow: hidden; }
-  .header { background: #14211C; padding: 28px 28px 24px; }
-  .header h1 { font-size: 20px; font-weight: 800; color: #fffdf8; margin-bottom: 4px; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F5F3EE; padding: 20px; }
+  .report { background: #FFFFFF; max-width: 600px; margin: 0 auto; border: 1px solid #E6E2D9; overflow: hidden; }
+  .header { background: #1A1917; padding: 28px 28px 24px; }
+  .header h1 { font-size: 20px; font-weight: 800; color: #FFFFFF; margin-bottom: 4px; }
   .header p { font-size: 13px; color: rgba(255,253,248,0.65); }
   .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 20px; }
-  .metric { background: #f5f0e4; border: 1px solid #d8ceb7; padding: 14px; }
-  .metric .label { font-size: 11px; color: #7D877F; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .metric .value { font-size: 20px; font-weight: 800; color: #1B201D; }
+  .metric { background: #F5F3EE; border: 1px solid #E6E2D9; padding: 14px; }
+  .metric .label { font-size: 11px; color: #8A857B; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .metric .value { font-size: 20px; font-weight: 800; color: #1A1917; }
   .section { padding: 0 20px 20px; }
-  .section h2 { font-size: 13px; font-weight: 700; color: #4C5A52; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; border-top: 1px solid #ebe4d2; padding-top: 16px; }
-  .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f0ede3; font-size: 14px; color: #4C5A52; }
-  .row .val { font-weight: 700; color: #1B201D; }
-  .cash-box { background: ${data.cashActual !== undefined ? (Math.abs(discrepancy) < 1 ? '#DCEFE5' : discrepancy > 0 ? '#DCE8F3' : '#F6DFDA') : '#f5f0e4'}; border: 1px solid #d8ceb7; padding: 16px; margin: 0 20px 20px; }
-  .footer { text-align: center; padding: 16px; border-top: 1px dashed #d8ceb7; }
-  .footer p { font-size: 12px; color: #7D877F; }
+  .section h2 { font-size: 13px; font-weight: 700; color: #57534C; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; border-top: 1px solid #EDEAE3; padding-top: 16px; }
+  .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #EEEBE4; font-size: 14px; color: #57534C; }
+  .row .val { font-weight: 700; color: #1A1917; }
+  .cash-box { background: ${data.cashActual !== undefined ? (Math.abs(discrepancy) < 1 ? '#E6F0E9' : discrepancy > 0 ? '#E3EBF3' : '#F8E5E1') : '#F5F3EE'}; border: 1px solid #E6E2D9; padding: 16px; margin: 0 20px 20px; }
+  .footer { text-align: center; padding: 16px; border-top: 1px dashed #E6E2D9; }
+  .footer p { font-size: 12px; color: #8A857B; }
 </style>
-</head>
+${DOC_THEME}</head>
 <body>
 <div class="report">
   <div class="header">
     <h1>${data.business.name}</h1>
     <p>${data.branch.name} - Daily Report - ${format(new Date(data.date), 'EEEE, MMMM d, yyyy')}</p>
-    <p style="margin-top:8px;color:${data.isClosed ? '#DCEFE5' : '#F6E2C7'};font-weight:700;font-size:13px;">
+    <p style="margin-top:8px;color:${data.isClosed ? '#E6F0E9' : '#F6EDDA'};font-weight:700;font-size:13px;">
       ${data.isClosed ? 'Day Closed & Balanced' : 'Day Still Open'}
     </p>
   </div>
 
   <div class="metrics">
-    <div class="metric"><div class="label">Total Revenue</div><div class="value" style="color:#14211C;">${formatMoney(data.totalSales)}</div></div>
+    <div class="metric"><div class="label">Total Revenue</div><div class="value" style="color:#1A1917;">${formatMoney(data.totalSales)}</div></div>
     <div class="metric"><div class="label">Net Profit</div><div class="value" style="color:${profitColor};">${formatMoney(data.netProfit)}</div></div>
-    <div class="metric"><div class="label">Total Expenses</div><div class="value" style="color:#C44536;">${formatMoney(data.totalExpenses)}</div></div>
-    <div class="metric"><div class="label">Discounts Given</div><div class="value" style="color:#D97706;">${formatMoney(data.totalDiscounts ?? 0)}</div></div>
+    <div class="metric"><div class="label">Total Expenses</div><div class="value" style="color:#C2412D;">${formatMoney(data.totalExpenses)}</div></div>
+    <div class="metric"><div class="label">Discounts Given</div><div class="value" style="color:#B7791F;">${formatMoney(data.totalDiscounts ?? 0)}</div></div>
   </div>
 
   <div class="section">
     <h2>Sales by Payment Method</h2>
-    ${data.salesByMethod.map((method) => `<div class="row"><span>${method.method.replace('_', ' ').toUpperCase()}</span><span class="val">${formatMoney(method.amount)}</span></div>`).join('') || '<p style="color:#7D877F;font-size:13px;">No sales</p>'}
+    ${data.salesByMethod.map((method) => `<div class="row"><span>${methodLabel(method.method)}</span><span class="val">${formatMoney(method.amount)}</span></div>`).join('') || '<p style="color:#8A857B;font-size:13px;">No sales</p>'}
   </div>
 
   ${data.topProducts.length > 0 ? `
@@ -520,20 +514,20 @@ export function generateDailyReportHTML(data: DailyReportData): string {
     <h2>Top Products</h2>
     ${data.topProducts.map((product, index) => `
     <div class="row">
-      <span>${index + 1}. ${product.name} <span style="color:#7D877F;font-size:12px;">(x${product.qty})</span></span>
+      <span>${index + 1}. ${product.name} <span style="color:#8A857B;font-size:12px;">(x${product.qty})</span></span>
       <span class="val">${formatMoney(product.revenue)}</span>
     </div>`).join('')}
   </div>` : ''}
 
   <div class="cash-box">
-    <div style="font-size:13px;font-weight:700;color:#1B201D;margin-bottom:10px;">Cash Reconciliation</div>
+    <div style="font-size:13px;font-weight:700;color:#1A1917;margin-bottom:10px;">Cash Reconciliation</div>
     <div class="row" style="border:none;"><span>Expected Cash</span><span class="val">${formatMoney(data.cashExpected)}</span></div>
     ${data.cashActual !== undefined ? `
     <div class="row" style="border:none;"><span>Actual Cash Counted</span><span class="val">${formatMoney(data.cashActual)}</span></div>
-    <div class="row" style="border:none;font-weight:700;color:${Math.abs(discrepancy) < 1 ? '#238B5B' : discrepancy > 0 ? '#2F6EA8' : '#C44536'};">
+    <div class="row" style="border:none;font-weight:700;color:${Math.abs(discrepancy) < 1 ? '#2E7D4F' : discrepancy > 0 ? '#3B6B9A' : '#C2412D'};">
       <span>${Math.abs(discrepancy) < 1 ? 'Balanced' : discrepancy > 0 ? 'Surplus' : 'Shortage'}</span>
       <span>${discrepancy >= 0 ? '+' : ''}${formatMoney(discrepancy)}</span>
-    </div>` : '<div style="font-size:12px;color:#7D877F;">Day not yet closed</div>'}
+    </div>` : '<div style="font-size:12px;color:#8A857B;">Day not yet closed</div>'}
   </div>
 
   <div class="footer">
@@ -584,24 +578,24 @@ export async function shareReceiptViaWhatsApp(sale: Sale, business: Business, br
     .join('\n');
 
   const message =
-    `🧾 *RECEIPT · ${sale.sale_number}*\n` +
+    `*Receipt ${sale.sale_number}*\n` +
     `*${business.name}*${branch.name ? ` · ${branch.name}` : ''}\n` +
     `${format(new Date(sale.created_at), 'MMM d, yyyy · h:mm a')}\n` +
     ((sale.customer as any)?.name ? `Customer: ${(sale.customer as any).name}\n` : '') +
     `\n────────────────────\n` +
-    `*ITEMS*\n${itemLines}\n` +
+    `*Items*\n${itemLines}\n` +
     `────────────────────\n` +
     (sale.discount_amount > 0 && !hasHigherPayment ? `Subtotal: ${formatMoney(sale.subtotal)}\nDiscount: -${formatMoney(sale.discount_amount)}\n` : '') +
-    `*TOTAL: ${formatMoney(effectiveTotal)}*\n` +
-    `*PAID: ${formatMoney(effectivePaid)}* ✅\n` +
-    (!hasHigherPayment && !isForgiven && sale.amount_owed > 0 ? `*BALANCE OWED: ${formatMoney(sale.amount_owed)}* ⚠️\n` : '') +
-    (isForgiven ? `*DEBT STATUS: FORGIVEN (₦0 DUE)* 🕊️\n` : '') +
-    `Payment Method: ${sale.payment_method.replace('_', ' ').toUpperCase()}${sale.bank_name ? ` (${sale.bank_name})` : ''}\n` +
+    `*Total: ${formatMoney(effectiveTotal)}*\n` +
+    `Paid: ${formatMoney(effectivePaid)}\n` +
+    (!hasHigherPayment && !isForgiven && sale.amount_owed > 0 ? `*Balance owed: ${formatMoney(sale.amount_owed)}*\n` : '') +
+    (isForgiven ? `Debt forgiven, nothing is due.\n` : '') +
+    `Payment Method: ${methodLabel(sale.payment_method)}${sale.bank_name ? ` (${sale.bank_name})` : ''}\n` +
     (sale.payment_method === 'mixed'
       ? `  • Cash: ${formatMoney(getPaymentBreakdown(sale).cash)}\n  • Transfer${sale.bank_name ? ` (${sale.bank_name})` : ''}: ${formatMoney(getPaymentBreakdown(sale).transfer)}\n`
       : '') +
     (cleanSaleNotes(sale.notes) ? `\nNote: "${cleanSaleNotes(sale.notes)}"\n` : '') +
-    `\n_Thank you for your business!_\n_Powered by Record Am_`;
+    `\nThank you for your business.`;
 
   try {
     await Share.share({
@@ -725,51 +719,51 @@ export function generateStaffShiftReportHTML(data: StaffShiftReportData): string
   <meta charset="utf-8">
   <title>Staff Shift Summary - ${data.date}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #1e293b; background: #ffffff; }
-    .header { background: #1E3A8A; color: #ffffff; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; color: #2B2925; background: #ffffff; }
+    .header { background: #1A1917; color: #ffffff; padding: 20px; border-radius: 12px; margin-bottom: 20px; }
     .header h1 { margin: 0; font-size: 20px; font-weight: 800; }
     .header p { margin: 4px 0 0; opacity: 0.9; font-size: 13px; }
-    .status { margin-top: 10px; font-weight: 700; font-size: 12px; color: ${data.isClosed ? '#4ade80' : '#facc15'}; }
+    .status { margin-top: 10px; font-weight: 700; font-size: 12px; color: ${data.isClosed ? '#6FB08A' : '#C4613F'}; }
     .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
-    .metric { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
-    .metric .label { font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-    .metric .val { font-size: 20px; font-weight: 800; color: #1E3A8A; margin-top: 4px; }
-    .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    .card h2 { font-size: 13px; margin: 0 0 10px; text-transform: uppercase; color: #334155; letter-spacing: 0.5px; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; font-weight: 700; }
-    .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .metric { background: #F5F3EE; border: 1px solid #E6E2D9; border-radius: 10px; padding: 14px; }
+    .metric .label { font-size: 11px; color: #6B675F; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric .val { font-size: 20px; font-weight: 800; color: #1A1917; margin-top: 4px; }
+    .card { background: #ffffff; border: 1px solid #E6E2D9; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .card h2 { font-size: 13px; margin: 0 0 10px; text-transform: uppercase; color: #3D3A35; letter-spacing: 0.5px; border-bottom: 1px solid #EDEAE3; padding-bottom: 8px; font-weight: 700; }
+    .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #EDEAE3; font-size: 13px; }
     .row:last-child { border-bottom: none; }
-    .row .val { font-weight: 700; color: #0f172a; }
-    .footer { text-align: center; color: #94a3b8; font-size: 11px; margin-top: 24px; }
+    .row .val { font-weight: 700; color: #1A1917; }
+    .footer { text-align: center; color: #8A857B; font-size: 11px; margin-top: 24px; }
   </style>
-</head>
+${DOC_THEME}</head>
 <body>
   <div class="header">
     <h1>Staff Register & Shift Summary</h1>
     <p>${data.business.name} · ${data.branch.name}</p>
     <p>${format(new Date(data.date), 'EEEE, MMMM d, yyyy')}${data.staffName ? ` · Prepared by ${data.staffName}` : ''}</p>
-    <div class="status">${data.isClosed ? '✓ Register Closed by Management' : '• Register Active / Open'}</div>
+    <div class="status">${data.isClosed ? 'Register closed by management' : 'Register open'}</div>
   </div>
 
   <div class="metrics">
     <div class="metric">
       <div class="label">Total Collections</div>
       <div class="val">${formatMoney(data.totalSales)}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;">${data.totalTransactions} transaction${data.totalTransactions === 1 ? '' : 's'}</div>
+      <div style="font-size:11px;color:#6B675F;margin-top:2px;">${data.totalTransactions} transaction${data.totalTransactions === 1 ? '' : 's'}</div>
     </div>
     <div class="metric">
       <div class="label">Cash in Till / Drawer</div>
-      <div class="val" style="color:#1E3A8A;">${formatMoney(data.totalCash)}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;">Count in drawer</div>
+      <div class="val" style="color:#1A1917;">${formatMoney(data.totalCash)}</div>
+      <div style="font-size:11px;color:#6B675F;margin-top:2px;">Count in drawer</div>
     </div>
     <div class="metric">
       <div class="label">POS Card Payments</div>
-      <div class="val" style="color:#d97706;">${formatMoney(data.totalPos)}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;">Terminal slips total</div>
+      <div class="val" style="color:#B7791F;">${formatMoney(data.totalPos)}</div>
+      <div style="font-size:11px;color:#6B675F;margin-top:2px;">Terminal slips total</div>
     </div>
     <div class="metric">
       <div class="label">Bank Transfers</div>
-      <div class="val" style="color:#0284c7;">${formatMoney(data.totalTransfer)}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;">Verified transfer alerts</div>
+      <div class="val" style="color:#3B6B9A;">${formatMoney(data.totalTransfer)}</div>
+      <div style="font-size:11px;color:#6B675F;margin-top:2px;">Verified transfer alerts</div>
     </div>
   </div>
 
@@ -799,7 +793,7 @@ export function generateStaffShiftReportHTML(data: StaffShiftReportData): string
   <div class="card">
     <div class="row" style="font-weight:600;">
       <span>Total Discounts Granted on Sales</span>
-      <span class="val" style="color:#d97706;">-${formatMoney(data.totalDiscounts)}</span>
+      <span class="val" style="color:#B7791F;">-${formatMoney(data.totalDiscounts)}</span>
     </div>
   </div>` : ''}
 
@@ -892,7 +886,7 @@ function escapeHtml(text: string): string {
 
 export function generateInventoryStockHTML(data: InventoryPrintData): string {
   const isAll = data.filterType === 'all';
-  const filterLabel = isAll ? 'ALL STOCK ITEMS' : 'LOW & OUT OF STOCK ITEMS';
+  const filterLabel = isAll ? 'All stock' : 'Low and out of stock';
   const printedAt = format(new Date(), 'MMM d, yyyy - h:mm a');
 
   const rowsHTML: string[] = [];
@@ -910,16 +904,16 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
         : item.quantity.toFixed(2).replace(/\.00$/, '');
 
       let badge = '';
-      let qtyColor = '#0f172a';
+      let qtyColor = '#1A1917';
       if (item.quantity <= 0) {
-        badge = '<span class="badge-out">OUT</span>';
-        qtyColor = '#dc2626';
+        badge = '<span class="badge-out">Out</span>';
+        qtyColor = '#C2412D';
       } else if (item.quantity <= item.reorderLevel) {
-        badge = '<span class="badge-low">LOW</span>';
-        qtyColor = '#d97706';
+        badge = '<span class="badge-low">Low</span>';
+        qtyColor = '#B7791F';
       }
 
-      return `<span style="color:${qtyColor};font-weight:700;">${formattedCount}</span> <span style="font-size:9.5px;font-weight:400;color:#64748b;">${escapeHtml(item.unit || '')}</span> ${badge}`;
+      return `<span style="color:${qtyColor};font-weight:700;">${formattedCount}</span> <span style="font-size:9.5px;font-weight:400;color:#6B675F;">${escapeHtml(item.unit || '')}</span> ${badge}`;
     };
 
     const leftTDs = `
@@ -963,7 +957,7 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    color: #1e293b;
+    color: #2B2925;
     background: #ffffff;
     padding: 0;
     font-size: 11px;
@@ -975,19 +969,19 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    border-bottom: 2px solid #0f172a;
+    border-bottom: 2px solid #1A1917;
     padding-bottom: 8px;
     margin-bottom: 8px;
   }
   .biz-info h1 {
     font-size: 17px;
     font-weight: 800;
-    color: #0f172a;
+    color: #1A1917;
     letter-spacing: -0.2px;
   }
   .biz-info p {
     font-size: 11px;
-    color: #475569;
+    color: #57534C;
     margin-top: 1px;
   }
   .report-meta {
@@ -1001,19 +995,19 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
     letter-spacing: 0.5px;
     padding: 3px 8px;
     border-radius: 4px;
-    background: #0f172a;
+    background: #1A1917;
     color: #ffffff;
     margin-bottom: 3px;
   }
   .report-date {
     font-size: 10px;
-    color: #64748b;
+    color: #6B675F;
   }
   .summary-bar {
     display: flex;
     justify-content: space-between;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #F5F3EE;
+    border: 1px solid #E6E2D9;
     border-radius: 4px;
     padding: 5px 12px;
     margin-bottom: 10px;
@@ -1024,10 +1018,10 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
     align-items: center;
     gap: 4px;
   }
-  .summary-item .label { color: #64748b; }
-  .summary-item .value { font-weight: 700; color: #0f172a; }
-  .summary-item .value.low { color: #d97706; }
-  .summary-item .value.out { color: #dc2626; }
+  .summary-item .label { color: #6B675F; }
+  .summary-item .value { font-weight: 700; color: #1A1917; }
+  .summary-item .value.low { color: #B7791F; }
+  .summary-item .value.out { color: #C2412D; }
 
   table.stock-table {
     width: 100%;
@@ -1042,35 +1036,35 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
     break-inside: avoid;
   }
   th {
-    background: #0f172a;
+    background: #1A1917;
     color: #ffffff;
     font-weight: 700;
     font-size: 9.5px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     padding: 4px 6px;
-    border: 1px solid #0f172a;
+    border: 1px solid #1A1917;
   }
   td {
     padding: 3.5px 6px;
     font-size: 10px;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E6E2D9;
     vertical-align: middle;
   }
   tr:nth-child(even) td {
-    background-color: #f8fafc;
+    background-color: #F5F3EE;
   }
   .col-num {
     width: 24px;
     text-align: center;
     font-weight: 700;
-    color: #64748b;
+    color: #6B675F;
     font-size: 9px;
   }
   .col-name {
     text-align: left;
     font-weight: 500;
-    color: #0f172a;
+    color: #1A1917;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1086,7 +1080,7 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
     border-bottom: none;
     background: transparent !important;
     padding: 0;
-    border-right: 1.5px solid #cbd5e1;
+    border-right: 1.5px solid #D3CEC2;
   }
   th.col-divider {
     border: none;
@@ -1095,8 +1089,8 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
   .badge-low {
     display: inline-block;
     font-size: 8px;
-    color: #b45309;
-    background: #fef3c7;
+    color: #8A5A12;
+    background: #F6EDDA;
     padding: 0.5px 3px;
     border-radius: 2px;
     margin-left: 2px;
@@ -1105,8 +1099,8 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
   .badge-out {
     display: inline-block;
     font-size: 8px;
-    color: #b91c1c;
-    background: #fee2e2;
+    color: #A3321F;
+    background: #F5DAD4;
     padding: 0.5px 3px;
     border-radius: 2px;
     margin-left: 2px;
@@ -1115,14 +1109,14 @@ export function generateInventoryStockHTML(data: InventoryPrintData): string {
   .footer {
     margin-top: 10px;
     padding-top: 6px;
-    border-top: 1px dashed #cbd5e1;
+    border-top: 1px dashed #D3CEC2;
     display: flex;
     justify-content: space-between;
     font-size: 9px;
-    color: #94a3b8;
+    color: #8A857B;
   }
 </style>
-</head>
+${DOC_THEME}</head>
 <body>
   <div class="header">
     <div class="biz-info">
@@ -1251,7 +1245,7 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   const rowsHTML = data.items
     .map((item) => {
       const margin = item.revenue > 0 ? ((item.profit / item.revenue) * 100).toFixed(1) + '%' : '0%';
-      const profitColor = item.profit >= 0 ? '#16a34a' : '#dc2626';
+      const profitColor = item.profit >= 0 ? '#2E7D4F' : '#C2412D';
       return `
       <tr>
         <td class="col-rank">${item.rank}</td>
@@ -1278,14 +1272,14 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    color: #1e293b;
+    color: #2B2925;
     background: #ffffff;
     padding: 0;
     font-size: 11px;
     line-height: 1.35;
   }
   .header {
-    border-bottom: 2px solid #1E3A8A;
+    border-bottom: 2px solid #1A1917;
     padding-bottom: 10px;
     margin-bottom: 12px;
     display: flex;
@@ -1295,12 +1289,12 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   .business-name {
     font-size: 18px;
     font-weight: 800;
-    color: #1E3A8A;
+    color: #1A1917;
     letter-spacing: -0.2px;
   }
   .branch-name {
     font-size: 11px;
-    color: #64748b;
+    color: #6B675F;
     margin-top: 2px;
   }
   .report-title-box {
@@ -1309,19 +1303,19 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   .report-title {
     font-size: 14px;
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
     letter-spacing: 0.5px;
     text-transform: uppercase;
   }
   .meta-info {
     font-size: 10px;
-    color: #64748b;
+    color: #6B675F;
     margin-top: 3px;
   }
   .summary-bar {
     display: flex;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: #F5F3EE;
+    border: 1px solid #E6E2D9;
     border-radius: 6px;
     padding: 10px 14px;
     margin-bottom: 12px;
@@ -1336,21 +1330,21 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
     font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: #64748b;
+    color: #6B675F;
     font-weight: 600;
     margin-bottom: 2px;
   }
   .summary-item .value {
     font-size: 13px;
     font-weight: 700;
-    color: #0f172a;
+    color: #1A1917;
   }
   .summary-item .value.profit {
-    color: #16a34a;
+    color: #2E7D4F;
   }
   .filter-note {
     font-size: 10px;
-    color: #475569;
+    color: #57534C;
     margin-bottom: 8px;
   }
   table {
@@ -1362,7 +1356,7 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
     display: table-header-group;
   }
   th {
-    background: #1E3A8A;
+    background: #1A1917;
     color: #ffffff;
     font-size: 10px;
     font-weight: 700;
@@ -1381,10 +1375,10 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
     page-break-inside: avoid;
   }
   tbody tr {
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid #E6E2D9;
   }
   tbody tr:nth-child(even) {
-    background-color: #f8fafc;
+    background-color: #F5F3EE;
   }
   td {
     padding: 6px 8px;
@@ -1393,11 +1387,11 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   td.col-rank {
     text-align: center;
     font-weight: 700;
-    color: #1E3A8A;
+    color: #1A1917;
   }
   td.col-name {
     font-weight: 500;
-    color: #0f172a;
+    color: #1A1917;
   }
   td.col-qty {
     text-align: right;
@@ -1408,19 +1402,19 @@ export function generateProductAnalysisHTML(data: ProductAnalysisPrintData): str
   }
   td.col-margin {
     text-align: right;
-    color: #64748b;
+    color: #6B675F;
   }
   .footer {
     display: flex;
     justify-content: space-between;
     font-size: 9.5px;
-    color: #94a3b8;
-    border-top: 1px solid #e2e8f0;
+    color: #8A857B;
+    border-top: 1px solid #E6E2D9;
     padding-top: 6px;
     margin-top: 8px;
   }
 </style>
-</head>
+${DOC_THEME}</head>
 <body>
   <div class="header">
     <div>
@@ -1559,12 +1553,12 @@ const STOCK_MOVEMENT_PRINT_LABELS: Record<string, string> = {
 };
 
 const STOCK_MOVEMENT_PRINT_COLORS: Record<string, string> = {
-  stock_in: '#238B5B',
-  stock_out: '#C44536',
-  adjustment: '#2F6EA8',
-  transfer: '#C87A22',
-  damage: '#C44536',
-  wastage: '#C87A22',
+  stock_in: '#2E7D4F',
+  stock_out: '#C2412D',
+  adjustment: '#3B6B9A',
+  transfer: '#B7791F',
+  damage: '#C2412D',
+  wastage: '#B7791F',
 };
 
 /** Creates a concise, printer-friendly list that mirrors the stock history filters. */
@@ -1581,7 +1575,7 @@ export function generateStockMovementReportHTML(data: StockMovementPrintData): s
   const rows = data.items
     .map((item, index) => {
       const typeLabel = STOCK_MOVEMENT_PRINT_LABELS[item.type] ?? 'Movement';
-      const typeColor = STOCK_MOVEMENT_PRINT_COLORS[item.type] ?? '#4C5A52';
+      const typeColor = STOCK_MOVEMENT_PRINT_COLORS[item.type] ?? '#57534C';
       const cost = item.totalCost && item.totalCost > 0 ? formatMoney(item.totalCost) : '—';
       const reference = item.reference ? `<div class="reference">${escapeHtml(item.reference)}</div>` : '';
 
@@ -1606,34 +1600,34 @@ export function generateStockMovementReportHTML(data: StockMovementPrintData): s
   <style>
     * { box-sizing: border-box; }
     @page { margin: 16mm 12mm; }
-    body { margin: 0; color: #1B201D; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; }
-    .header { background: #14211C; color: #FFFDF8; padding: 22px 24px; border-radius: 8px 8px 0 0; }
+    body { margin: 0; color: #1A1917; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; }
+    .header { background: #1A1917; color: #FFFFFF; padding: 22px 24px; border-radius: 8px 8px 0 0; }
     .business { font-size: 21px; font-weight: 800; line-height: 1.2; }
     .branch { margin-top: 4px; color: rgba(255,253,248,.68); font-size: 11px; }
     .report-title { margin-top: 18px; font-size: 16px; font-weight: 800; }
     .period { margin-top: 4px; color: rgba(255,253,248,.7); font-size: 11px; }
-    .summary { display: flex; border: 1px solid #D8CEB7; border-top: 0; }
-    .metric { flex: 1; padding: 14px 18px; border-right: 1px solid #D8CEB7; }
+    .summary { display: flex; border: 1px solid #E6E2D9; border-top: 0; }
+    .metric { flex: 1; padding: 14px 18px; border-right: 1px solid #E6E2D9; }
     .metric:last-child { border-right: 0; }
-    .metric-label { color: #7D877F; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
-    .metric-value { margin-top: 4px; color: #1B201D; font-size: 17px; font-weight: 800; }
-    .filter-note { padding: 12px 0 10px; color: #7D877F; font-size: 10px; }
+    .metric-label { color: #8A857B; font-size: 9px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
+    .metric-value { margin-top: 4px; color: #1A1917; font-size: 17px; font-weight: 800; }
+    .filter-note { padding: 12px 0 10px; color: #8A857B; font-size: 10px; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th { padding: 9px 7px; background: #F5F0E4; border-bottom: 1px solid #D8CEB7; color: #4C5A52; font-size: 9px; font-weight: 800; letter-spacing: .55px; text-align: left; text-transform: uppercase; }
-    td { padding: 10px 7px; border-bottom: 1px solid #ECE7DB; color: #4C5A52; vertical-align: middle; }
-    .number { width: 5%; color: #7D877F; }
+    th { padding: 9px 7px; background: #F5F3EE; border-bottom: 1px solid #E6E2D9; color: #57534C; font-size: 9px; font-weight: 800; letter-spacing: .55px; text-align: left; text-transform: uppercase; }
+    td { padding: 10px 7px; border-bottom: 1px solid #EDEAE3; color: #57534C; vertical-align: middle; }
+    .number { width: 5%; color: #8A857B; }
     .date { width: 16%; font-size: 10px; }
-    .date span { display: block; margin-top: 2px; color: #9AA39D; font-size: 9px; }
+    .date span { display: block; margin-top: 2px; color: #8A857B; font-size: 9px; }
     .item { width: 31%; }
-    .item strong { display: block; color: #1B201D; font-size: 11px; }
-    .reference { margin-top: 3px; color: #7D877F; font-size: 9px; overflow-wrap: anywhere; }
+    .item strong { display: block; color: #1A1917; font-size: 11px; }
+    .reference { margin-top: 3px; color: #8A857B; font-size: 9px; overflow-wrap: anywhere; }
     .type { display: inline-block; padding: 3px 6px; border: 1px solid; border-radius: 999px; font-size: 8px; font-weight: 800; white-space: nowrap; }
-    .quantity { width: 16%; color: #1B201D; font-weight: 800; text-align: right; white-space: nowrap; }
-    .quantity span { color: #7D877F; font-size: 9px; font-weight: 400; }
-    .cost { width: 14%; color: #1B201D; font-weight: 700; text-align: right; white-space: nowrap; }
-    .footer { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 10px; border-top: 1px dashed #D8CEB7; color: #7D877F; font-size: 9px; }
+    .quantity { width: 16%; color: #1A1917; font-weight: 800; text-align: right; white-space: nowrap; }
+    .quantity span { color: #8A857B; font-size: 9px; font-weight: 400; }
+    .cost { width: 14%; color: #1A1917; font-weight: 700; text-align: right; white-space: nowrap; }
+    .footer { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 10px; border-top: 1px dashed #E6E2D9; color: #8A857B; font-size: 9px; }
   </style>
-</head>
+${DOC_THEME}</head>
 <body>
   <section class="header">
     <div class="business">${escapeHtml(data.business.name)}</div>
@@ -1643,8 +1637,8 @@ export function generateStockMovementReportHTML(data: StockMovementPrintData): s
   </section>
   <section class="summary">
     <div class="metric"><div class="metric-label">Listed items</div><div class="metric-value">${data.items.length}</div></div>
-    <div class="metric"><div class="metric-label">Units in</div><div class="metric-value" style="color:#238B5B;">+${formatQty(data.totalReceived)}</div></div>
-    <div class="metric"><div class="metric-label">Units out</div><div class="metric-value" style="color:#C44536;">-${formatQty(data.totalIssued)}</div></div>
+    <div class="metric"><div class="metric-label">Units in</div><div class="metric-value" style="color:#2E7D4F;">+${formatQty(data.totalReceived)}</div></div>
+    <div class="metric"><div class="metric-label">Units out</div><div class="metric-value" style="color:#C2412D;">-${formatQty(data.totalIssued)}</div></div>
   </section>
   ${data.searchQuery ? `<div class="filter-note">Search filter: “${escapeHtml(data.searchQuery)}”</div>` : '<div class="filter-note">All items matching the selected filters</div>'}
   <table>
@@ -1723,34 +1717,34 @@ export function generateCounterpartyStatementHTML(data: CounterpartyStatementPri
   <style>
     * { box-sizing: border-box; }
     @page { margin: 16mm 12mm; }
-    body { margin: 0; color: #1B201D; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; }
-    .header { padding: 22px 24px; border-radius: 8px 8px 0 0; color: #FFFDF8; background: #14211C; }
+    body { margin: 0; color: #1A1917; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; }
+    .header { padding: 22px 24px; border-radius: 8px 8px 0 0; color: #FFFFFF; background: #1A1917; }
     .business { font-size: 20px; font-weight: 800; }
     .branch { margin-top: 4px; color: rgba(255,253,248,.68); font-size: 11px; }
     .report { margin-top: 19px; font-size: 15px; font-weight: 800; }
     .person { margin-top: 4px; color: rgba(255,253,248,.82); font-size: 13px; font-weight: 600; }
     .contact { margin-top: 4px; color: rgba(255,253,248,.63); font-size: 10px; line-height: 1.4; }
-    .metrics { display: flex; border: 1px solid #D8CEB7; border-top: 0; }
-    .metric { flex: 1; min-height: 67px; padding: 13px 17px; border-right: 1px solid #D8CEB7; }
+    .metrics { display: flex; border: 1px solid #E6E2D9; border-top: 0; }
+    .metric { flex: 1; min-height: 67px; padding: 13px 17px; border-right: 1px solid #E6E2D9; }
     .metric:last-child { border-right: 0; }
-    .label { color: #7D877F; font-size: 9px; font-weight: 700; letter-spacing: .65px; text-transform: uppercase; }
-    .value { margin-top: 4px; color: #1B201D; font-size: 16px; font-weight: 800; }
-    .due-value { color: #C44536; }
-    .note { padding: 13px 0 9px; color: #7D877F; font-size: 10px; }
+    .label { color: #8A857B; font-size: 9px; font-weight: 700; letter-spacing: .65px; text-transform: uppercase; }
+    .value { margin-top: 4px; color: #1A1917; font-size: 16px; font-weight: 800; }
+    .due-value { color: #C2412D; }
+    .note { padding: 13px 0 9px; color: #8A857B; font-size: 10px; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th { padding: 9px 7px; color: #4C5A52; background: #F5F0E4; border-bottom: 1px solid #D8CEB7; font-size: 9px; font-weight: 800; letter-spacing: .5px; text-align: left; text-transform: uppercase; }
-    td { padding: 10px 7px; border-bottom: 1px solid #ECE7DB; color: #4C5A52; vertical-align: middle; }
+    th { padding: 9px 7px; color: #57534C; background: #F5F3EE; border-bottom: 1px solid #E6E2D9; font-size: 9px; font-weight: 800; letter-spacing: .5px; text-align: left; text-transform: uppercase; }
+    td { padding: 10px 7px; border-bottom: 1px solid #EDEAE3; color: #57534C; vertical-align: middle; }
     .date { width: 16%; white-space: nowrap; }
     .record { width: 38%; }
-    .record strong { display: block; color: #1B201D; font-size: 11px; }
-    .record span { display: block; margin-top: 3px; color: #7D877F; font-size: 9px; }
-    .amount { width: 15%; color: #1B201D; font-weight: 700; text-align: right; white-space: nowrap; }
-    .paid { color: #238B5B; }
-    .due { color: #C44536; }
-    .empty { padding: 24px 0; color: #7D877F; text-align: center; }
-    .footer { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 10px; border-top: 1px dashed #D8CEB7; color: #7D877F; font-size: 9px; }
+    .record strong { display: block; color: #1A1917; font-size: 11px; }
+    .record span { display: block; margin-top: 3px; color: #8A857B; font-size: 9px; }
+    .amount { width: 15%; color: #1A1917; font-weight: 700; text-align: right; white-space: nowrap; }
+    .paid { color: #2E7D4F; }
+    .due { color: #C2412D; }
+    .empty { padding: 24px 0; color: #8A857B; text-align: center; }
+    .footer { display: flex; justify-content: space-between; margin-top: 16px; padding-top: 10px; border-top: 1px dashed #E6E2D9; color: #8A857B; font-size: 9px; }
   </style>
-</head>
+${DOC_THEME}</head>
 <body>
   <section class="header">
     <div class="business">${escapeHtml(data.business.name)}</div>

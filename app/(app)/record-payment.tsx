@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Text, TouchableOpacity, View, RefreshControl } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -226,10 +226,10 @@ export default function RecordPaymentScreen() {
 
   if (!selectedDebt) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Record Payment"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <EmptyState
@@ -250,11 +250,11 @@ export default function RecordPaymentScreen() {
   const accountLabel = isPos ? 'POS Terminal / Bank' : 'Bank Paid To';
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Record Payment"
         subtitle={selectedDebt.customer_name}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
       <KeyboardAwareScrollView
@@ -273,7 +273,7 @@ export default function RecordPaymentScreen() {
         <Card style={{ padding: 18, marginBottom: 20 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
             <View>
-              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.muted, letterSpacing: 0.5 }}>
                 Outstanding Balance
               </Text>
               <Text style={{ fontSize: 32, fontFamily: FONT.bold, color: COLORS.danger, marginTop: 4 }}>
@@ -289,7 +289,7 @@ export default function RecordPaymentScreen() {
                 paddingVertical: 6,
                 borderRadius: RADIUS.full,
                 borderWidth: 1,
-                borderColor: '#FDE047',
+                borderColor: '#EBCDBE',
               }}
             >
               <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.accentDark }}>
@@ -379,7 +379,7 @@ export default function RecordPaymentScreen() {
                       justifyContent: 'center',
                     }}
                   >
-                    <Feather name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
+                    <Icon name={isPos ? 'credit-card' : 'send'} size={15} color={COLORS.navy} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
@@ -390,7 +390,7 @@ export default function RecordPaymentScreen() {
                     </Text>
                   </View>
                 </View>
-                <Feather name="plus-circle" size={18} color={COLORS.navy} />
+                <Icon name="plus-circle" size={18} color={COLORS.navy} />
               </TouchableOpacity>
             )
           ) : null}
@@ -478,20 +478,20 @@ export default function RecordPaymentScreen() {
                   <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                     + Add bank for transfer portion
                   </Text>
-                  <Feather name="plus" size={14} color={COLORS.navy} />
+                  <Icon name="plus" size={14} color={COLORS.navy} />
                 </TouchableOpacity>
               )}
 
               {Math.abs(Number(((parseFloat(cashAmount) || 0) + (parseFloat(transferAmount) || 0)).toFixed(2)) - Number((parseFloat(repayAmount) || 0).toFixed(2))) > 0.01 ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.dangerLight, padding: 8, borderRadius: RADIUS.sm }}>
-                  <Feather name="alert-circle" size={14} color={COLORS.danger} />
+                  <Icon name="alert-circle" size={14} color={COLORS.danger} />
                   <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.danger, flex: 1 }}>
                     Split ({formatCurrency((parseFloat(cashAmount) || 0) + (parseFloat(transferAmount) || 0))}) does not match amount ({formatCurrency(parseFloat(repayAmount) || 0)})
                   </Text>
                 </View>
               ) : (
                 <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.success }}>
-                  ✓ Cash: {formatCurrency(parseFloat(cashAmount) || 0)} · Transfer: {formatCurrency(parseFloat(transferAmount) || 0)}
+                  Cash {formatCurrency(parseFloat(cashAmount) || 0)} · Transfer: {formatCurrency(parseFloat(transferAmount) || 0)}
                 </Text>
               )}
             </View>

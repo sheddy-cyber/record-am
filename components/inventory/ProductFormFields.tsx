@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { InputField, SelectField, Toggle } from '@/components/forms';
 import { Card, RoleGate, SectionHeader } from '@/components/ui';
 import { CategoryPicker } from '@/components/inventory/CategoryPicker';
@@ -77,7 +77,7 @@ export function ProductFormFields({
 
   const stockFields = !isService ? (
     <View style={{ gap: 14 }}>
-      <SectionHeader title={stockQuantityFirst ? 'Restock Quantity' : 'Stock Levels'} />
+      <SectionHeader title={stockQuantityFirst ? 'Incoming stock' : 'Stock'} />
       <Card style={{ gap: 14 }}>
         <InputField
           label={stockQuantityLabel}
@@ -109,7 +109,7 @@ export function ProductFormFields({
       {stockQuantityFirst ? stockFields : null}
 
       <View style={{ gap: 14 }}>
-        <SectionHeader title="Basic Details" />
+        <SectionHeader title="Details" />
         <Card style={{ gap: 14 }}>
           <InputField
             label="Product or Service Name"
@@ -169,7 +169,7 @@ export function ProductFormFields({
                       gap: 4,
                     }}
                   >
-                    <Feather name="maximize" size={15} color={COLORS.ink} />
+                    <Icon name="maximize" size={15} color={COLORS.ink} />
                     <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.ink }}>Scan</Text>
                   </TouchableOpacity>
                 ) : undefined

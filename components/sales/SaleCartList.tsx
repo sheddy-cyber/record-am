@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { SectionHeader } from '@/components/ui';
 import { COLORS, FONT, RADIUS, SHADOW } from '@/constants';
 import { CartItem } from '@/types';
@@ -67,7 +67,7 @@ export const SaleCartList: React.FC<SaleCartListProps> = ({
             ...SHADOW.sm,
           }}
         >
-          <Feather name="shopping-bag" size={24} color={COLORS.text.muted} />
+          <Icon name="shopping-bag" size={24} color={COLORS.text.muted} />
           <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center' }}>
             Tap products above to build customer order
           </Text>

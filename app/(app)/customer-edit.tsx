@@ -87,10 +87,10 @@ export default function CustomerEditScreen() {
 
   if (!customer) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Edit Customer"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <EmptyState
@@ -104,11 +104,11 @@ export default function CustomerEditScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Edit Customer"
         subtitle={customer.name}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
       <KeyboardAwareScrollView

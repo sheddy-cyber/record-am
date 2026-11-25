@@ -88,10 +88,10 @@ export default function SupplierEditScreen() {
 
   if (!canManageGoods) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Edit Supplier"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <PermissionDenied
@@ -105,10 +105,10 @@ export default function SupplierEditScreen() {
 
   if (!supplier) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Edit Supplier"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <EmptyState
@@ -122,11 +122,11 @@ export default function SupplierEditScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Edit Supplier"
         subtitle={supplier.name}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
       <KeyboardAwareScrollView

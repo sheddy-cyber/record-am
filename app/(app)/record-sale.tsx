@@ -7,7 +7,9 @@ import {
   View,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { parseJsonParam, SalePrefill } from '@/lib/voice/handoff';
+import { useBranchSubtitle } from '@/components/branches/BranchSwitcher';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -90,14 +92,17 @@ export default function RecordSaleScreen() {
     customerPhone: prefilledCustomerPhone,
     scan,
     barcode: prefilledBarcode,
+    voicePrefill,
   } = useLocalSearchParams<{
     saleId?: string;
     customerName?: string;
     customerPhone?: string;
     scan?: string;
     barcode?: string;
+    voicePrefill?: string;
   }>();
   const isEditing = Boolean(saleId);
+  const branchSubtitle = useBranchSubtitle();
   const [loadingSale, setLoadingSale] = useState(false);
   const originalQuantitiesByProduct = useRef<Map<string, number>>(new Map());
   const prevCartTotalRef = useRef<number | null>(null);
@@ -309,6 +314,40 @@ export default function RecordSaleScreen() {
       isMounted = false;
     };
   }, [saleId, currentBusiness, currentBranch, buildCartItem]);
+
+  // Opened from a voice preview ("Edit"): rebuild the dictated cart so the
+  // user adjusts it rather than starting over.
+  const voicePrefillAppliedRef = useRef(false);
+  useEffect(() => {
+    if (saleId || voicePrefillAppliedRef.current || !voicePrefill || products.length === 0) return;
+    const payload = parseJsonParam<SalePrefill>(voicePrefill);
+    if (!payload) return;
+    voicePrefillAppliedRef.current = true;
+
+    const nextCart: CartItem[] = [];
+    const nextInputs: Record<string, string> = {};
+    for (const line of payload.items ?? []) {
+      const product = products.find((p) => p.id === line.productId);
+      if (!product) continue;
+      nextCart.push(buildCartItem(product, line.quantity || 1, line.unit || product.unit, line.discountAmount || 0, line.unitPrice));
+      nextInputs[product.id] = String(line.quantity || 1);
+    }
+    if (nextCart.length) {
+      setCart(nextCart);
+      setQuantityInputs(nextInputs);
+    }
+    if (payload.customerName) setCustomerName(payload.customerName);
+    if (payload.customerPhone) setCustomerPhone(payload.customerPhone);
+    if (payload.paymentMethod) setPaymentMethod(payload.paymentMethod as PaymentMethod);
+    if (payload.notes) setSaleNotes(payload.notes);
+    if (payload.cashAmount !== undefined) setCashAmount(String(payload.cashAmount));
+    if (payload.transferAmount !== undefined) setTransferAmount(String(payload.transferAmount));
+    const total = nextCart.reduce((sum, item) => sum + item.total_price, 0);
+    if (payload.amountPaid !== undefined && payload.amountPaid < total) {
+      autoAdjustAmountPaidRef.current = false;
+      setAmountPaid(String(payload.amountPaid));
+    }
+  }, [saleId, voicePrefill, products, buildCartItem]);
 
   const searchableProducts = useMemo(
     () => products.filter((product) => product.is_active),
@@ -1017,15 +1056,11 @@ export default function RecordSaleScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title={isEditing ? 'Edit Sale' : 'Record Sale'}
-        subtitle={
-          isEditing
-            ? 'Modify items, customer, or payment details.'
-            : 'Search products, build the cart, and check out.'
-        }
-        theme="dark"
+        subtitle={isEditing ? 'Editing a past sale' : branchSubtitle}
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         right={
           <HeaderAction

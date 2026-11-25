@@ -1,112 +1,89 @@
 // ============================================================
-// RECORD AM - Studio Audio Level Meter (Light Mode)
-// Clean, hardware-inspired sound visualizer void of AI cliches
+// RECORD AM - Live level meter
+// A strip of bars that scrolls with the last ~2 seconds of mic level, the way
+// a voice memo does. While the app is thinking, the bars settle into a slow
+// ripple so the user knows it is still working.
 // ============================================================
 
-import React, { useEffect, useRef } from 'react';
-import { View, Animated, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, View } from 'react-native';
 import { COLORS } from '@/constants';
+import { useVoiceStore } from '@/store/voiceStore';
 
-interface VoiceWaveAnimationProps {
-  isListening: boolean;
-  audioLevel: number; // 0 to 1
-  size?: number;
-}
+const BARS = 32;
+const MIN = 4;
+const MAX = 56;
 
-export const VoiceWaveAnimation: React.FC<VoiceWaveAnimationProps> = ({
-  isListening,
-  audioLevel,
-}) => {
-  // 7 vertical audio frequency bars
-  const barHeights = [
-    useRef(new Animated.Value(6)).current,
-    useRef(new Animated.Value(10)).current,
-    useRef(new Animated.Value(16)).current,
-    useRef(new Animated.Value(22)).current,
-    useRef(new Animated.Value(16)).current,
-    useRef(new Animated.Value(10)).current,
-    useRef(new Animated.Value(6)).current,
-  ];
+export function VoiceWaveAnimation({ mode }: { mode: 'listening' | 'thinking' | 'idle' }) {
+  const level = useVoiceStore((s) => s.audioLevel);
+  const [history, setHistory] = useState<number[]>(() => Array(BARS).fill(0));
 
   useEffect(() => {
-    if (!isListening) {
-      barHeights.forEach((b) => {
-        Animated.timing(b, {
-          toValue: 6,
-          duration: 200,
-          useNativeDriver: false,
-        }).start();
-      });
-      return;
-    }
+    if (mode !== 'listening') return;
+    setHistory((prev) => [...prev.slice(1), level]);
+  }, [level, mode]);
 
-    // Dynamic scale driven by audioLevel (normalized 0 to 1)
-    const factor = Math.max(0.2, Math.min(1.0, audioLevel || 0.4));
-    const targetHeights = [
-      8 + factor * 14,
-      12 + factor * 22,
-      18 + factor * 28,
-      24 + factor * 32,
-      18 + factor * 28,
-      12 + factor * 20,
-      8 + factor * 12,
-    ];
+  useEffect(() => {
+    if (mode === 'listening') setHistory(Array(BARS).fill(0));
+  }, [mode]);
 
-    const anims = barHeights.map((bar, i) =>
-      Animated.spring(bar, {
-        toValue: targetHeights[i],
-        friction: 5,
-        tension: 80,
-        useNativeDriver: false,
-      })
-    );
-
-    Animated.parallel(anims).start();
-  }, [isListening, audioLevel]);
+  if (mode === 'thinking') return <Ripple />;
 
   return (
-    <View style={styles.meterContainer}>
-      {barHeights.map((barAnim, idx) => {
-        const isCenter = idx === 3;
+    <View style={{ height: MAX, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3.5 }}>
+      {history.map((v, i) => {
+        // Older samples fade slightly so the eye reads the newest edge.
+        const age = i / (BARS - 1);
+        const h = mode === 'idle' ? MIN : Math.max(MIN, Math.round(MIN + v * (MAX - MIN)));
         return (
-          <Animated.View
-            key={idx}
-            style={[
-              styles.bar,
-              {
-                height: barAnim,
-                backgroundColor: isListening
-                  ? isCenter
-                    ? COLORS.ink
-                    : '#3B82F6'
-                  : '#CBD5E1',
-              },
-            ]}
+          <View
+            key={i}
+            style={{
+              width: 4,
+              height: h,
+              borderRadius: 2,
+              backgroundColor: v > 0.05 && mode === 'listening' ? COLORS.accent : COLORS.borderDark,
+              opacity: 0.35 + age * 0.65,
+            }}
           />
         );
       })}
     </View>
   );
-};
+}
 
-const styles = StyleSheet.create({
-  meterContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    height: 44,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  bar: {
-    width: 3.5,
-    minHeight: 6,
-    maxHeight: 38,
-    borderRadius: 2,
-  },
-});
+function Ripple() {
+  const t = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(t, { toValue: 1, duration: 1400, easing: Easing.linear, useNativeDriver: true }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [t]);
+  return (
+    <View style={{ height: MAX, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3.5 }}>
+      {Array.from({ length: BARS }).map((_, i) => {
+        // A gentle travelling wave: each bar is the same sine, shifted in phase.
+        const phase = i / BARS;
+        const samples = Array.from({ length: 9 }, (__, k) => k / 8);
+        const scaleY = t.interpolate({
+          inputRange: samples,
+          outputRange: samples.map((x) => 1 + 1.5 * Math.max(0, Math.sin((x - phase) * Math.PI * 2))),
+        });
+        return (
+          <Animated.View
+            key={i}
+            style={{
+              width: 4,
+              height: 8,
+              borderRadius: 2,
+              backgroundColor: COLORS.text.faint,
+              transform: [{ scaleY }],
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}

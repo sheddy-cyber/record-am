@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { COLORS, FONT, RADIUS, SP } from '@/constants';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -115,7 +115,7 @@ export function BarcodeScannerModal({
         {!permission?.granted ? (
           <View style={styles.permissionContainer}>
             <View style={styles.permissionIconCircle}>
-              <Feather name="camera" size={36} color={COLORS.ink} />
+              <Icon name="camera" size={36} color={COLORS.ink} />
             </View>
             <Text style={styles.permissionTitle}>Camera Access Required</Text>
             <Text style={styles.permissionSubtitle}>
@@ -166,7 +166,7 @@ export function BarcodeScannerModal({
                   onPress={onClose}
                   activeOpacity={0.7}
                 >
-                  <Feather name="x" size={22} color="#FFFFFF" />
+                  <Icon name="x" size={22} color="#FFFFFF" />
                 </TouchableOpacity>
 
                 <View style={styles.headerCenter}>
@@ -178,7 +178,7 @@ export function BarcodeScannerModal({
                   onPress={() => setTorch((prev) => !prev)}
                   activeOpacity={0.7}
                 >
-                  <Feather name={torch ? 'zap' : 'zap-off'} size={20} color={torch ? COLORS.onAccent : '#FFFFFF'} />
+                  <Icon name={torch ? 'zap' : 'zap-off'} size={20} color={torch ? COLORS.onAccent : '#FFFFFF'} />
                 </TouchableOpacity>
               </View>
               <Text style={styles.overlaySubtitle}>{subtitle}</Text>
@@ -193,7 +193,7 @@ export function BarcodeScannerModal({
                       : styles.feedbackBannerSuccess,
                   ]}
                 >
-                  <Feather
+                  <Icon
                     name={
                       scanFeedback.type === 'error'
                         ? 'alert-circle'
@@ -240,7 +240,7 @@ export function BarcodeScannerModal({
                   onPress={onClose}
                   activeOpacity={0.8}
                 >
-                  <Feather name="check" size={18} color={COLORS.ink} />
+                  <Icon name="check" size={18} color={COLORS.ink} />
                   <Text style={styles.doneScanButtonText}>
                     {doneButtonLabel || 'Done Scanning'}
                   </Text>
@@ -253,7 +253,7 @@ export function BarcodeScannerModal({
                     value={manualCode}
                     onChangeText={setManualCode}
                     placeholder="Type or paste barcode..."
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor="#8A857B"
                     keyboardType="default"
                     autoFocus
                     style={styles.manualTextInput}
@@ -269,7 +269,7 @@ export function BarcodeScannerModal({
                     style={styles.manualCancelButton}
                     onPress={() => setShowManualInput(false)}
                   >
-                    <Feather name="x" size={18} color="#FFFFFF" />
+                    <Icon name="x" size={18} color="#FFFFFF" />
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -278,7 +278,7 @@ export function BarcodeScannerModal({
                   onPress={() => setShowManualInput(true)}
                   activeOpacity={0.75}
                 >
-                  <Feather name="edit-3" size={16} color="#FFFFFF" />
+                  <Icon name="edit-3" size={16} color="#FFFFFF" />
                   <Text style={styles.manualPromptText}>Can't scan? Type code manually</Text>
                 </TouchableOpacity>
               )}
@@ -376,7 +376,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   overlaySubtitle: {
-    color: '#cbd5e1',
+    color: '#D3CEC2',
     fontSize: 13,
     fontFamily: FONT.regular,
     textAlign: 'center',
@@ -494,7 +494,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     width: '100%',
-    backgroundColor: '#1e293b',
+    backgroundColor: '#2B2925',
     borderRadius: RADIUS.md,
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -534,13 +534,13 @@ const styles = StyleSheet.create({
     maxWidth: '92%',
   },
   feedbackBannerSuccess: {
-    backgroundColor: 'rgba(16, 185, 129, 0.94)',
+    backgroundColor: 'rgba(46, 125, 79, 0.94)',
   },
   feedbackBannerError: {
-    backgroundColor: 'rgba(239, 68, 68, 0.94)',
+    backgroundColor: 'rgba(194, 65, 45, 0.94)',
   },
   feedbackBannerInfo: {
-    backgroundColor: 'rgba(2, 132, 199, 0.94)',
+    backgroundColor: 'rgba(59, 107, 154, 0.94)',
   },
   feedbackBannerText: {
     color: '#FFFFFF',

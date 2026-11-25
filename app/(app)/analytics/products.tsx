@@ -1,8 +1,8 @@
 import React, { useDeferredValue, useMemo, useState } from 'react';
-import { View, Text, FlatList, TextInput, TouchableOpacity, ScrollView, Modal, Pressable } from 'react-native';
+import { View, Text, FlatList, TextInput, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useAnalyticsStore, TopProduct } from '@/store/analyticsStore';
@@ -10,7 +10,7 @@ import { hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
 import { ScreenShell, ScreenHeader, HeaderAction } from '@/components/layout';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL } from '@/constants';
-import { Button, BottomSheetModal, EmptyState, PermissionDenied } from '@/components/ui';
+import { Button, BottomSheetModal, EmptyState, IconButton, PermissionDenied, Pill } from '@/components/ui';
 import { ProductAnalysisPrintData, printProductAnalysis, shareProductAnalysisPDF } from '@/lib/reports';
 
 const fmtCount = (n: number) => n.toLocaleString();
@@ -151,46 +151,31 @@ export default function AnalyticsProductsScreen() {
     // For simplicity, if maxVal > 0, we do itemVal / maxVal, but floor at 0 for negative profits.
     const pct = maxVal > 0 ? Math.max(0, itemVal) / maxVal : 0;
 
+    const last = index === sortedAndFiltered.length - 1;
     return (
-      <View style={{ paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-            <View
-              style={{
-                width: 28,
-                height: 28,
-                borderWidth: 1,
-                borderRadius: RADIUS.md,
-                borderColor: COLORS.ink + '20',
-                backgroundColor: COLORS.ink + '12',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: COLORS.ink }}>{index + 1}</Text>
+      <View style={[rowStyles.row, index === 0 && rowStyles.first, last && rowStyles.last]}>
+        <View style={[rowStyles.inner, !last && rowStyles.divider]}>
+          <Text style={rowStyles.rank}>{index + 1}</Text>
+          <View style={{ flex: 1, gap: 6 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+              <Text style={rowStyles.name} numberOfLines={1}>
+                {item.product_name}
+              </Text>
+              <Text style={rowStyles.value}>
+                {sortField === 'quantity'
+                  ? `${fmtCount(item.total_qty)} sold`
+                  : sortField === 'revenue'
+                  ? fmt(item.total_revenue)
+                  : fmt(item.total_profit)}
+              </Text>
             </View>
-            <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary, flex: 1 }} numberOfLines={1}>
-              {item.product_name}
+            <View style={rowStyles.track}>
+              <View style={[rowStyles.fill, { width: `${Math.max(pct > 0 ? 3 : 0, pct * 100)}%` }]} />
+            </View>
+            <Text style={rowStyles.detail}>
+              {fmtCount(item.total_qty)} sold · {fmt(item.total_revenue)} revenue · {fmt(item.total_profit)} profit
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-              {fmtCount(item.total_qty)} sold
-            </Text>
-            <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
-              {fmt(item.total_revenue)} rev • {fmt(item.total_profit)} profit
-            </Text>
-          </View>
-        </View>
-        <View style={{ height: 6, backgroundColor: '#F3F4F6', borderRadius: 3, overflow: 'hidden' }}>
-          <View
-            style={{
-              height: 6,
-              backgroundColor: COLORS.ink,
-              width: `${pct * 100}%`,
-              borderRadius: 3,
-            }}
-          />
         </View>
       </View>
     );
@@ -198,7 +183,7 @@ export default function AnalyticsProductsScreen() {
 
   if (!canViewAnalytics) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Product Analytics"
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
@@ -212,115 +197,61 @@ export default function AnalyticsProductsScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <ScreenHeader 
-        title="Product Analytics" 
+    <ScreenShell>
+      <ScreenHeader
+        title="Products"
+        large
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+        subtitle={`${sortedAndFiltered.length} sold in this period`}
         right={
-          <HeaderAction 
-            icon="printer" 
+          <IconButton
+            icon="printer"
+            variant="outline"
+            accessibilityLabel="Print or share"
             onPress={() => {
               if (sortedAndFiltered.length === 0) {
-                Toast.show({ type: 'info', text1: 'No products to print' });
+                Toast.show({ type: 'info', text1: 'Nothing to print yet' });
                 return;
               }
               setPrintModalVisible(true);
-            }} 
+            }}
           />
         }
       />
-      
-      <View style={{ paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.surface }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            backgroundColor: COLORS.card,
-            paddingHorizontal: 16,
-            paddingVertical: 12,
-            borderRadius: RADIUS.full,
-            borderWidth: 1,
-            borderColor: COLORS.border,
-          }}
-        >
-          <Feather name="search" size={18} color={COLORS.text.muted} />
+
+      <View style={{ paddingHorizontal: 20, paddingBottom: 12, gap: 10 }}>
+        <View style={rowStyles.search}>
+          <Icon name="search" size={17} color={COLORS.text.muted} />
           <TextInput
-            placeholder="Search products..."
+            placeholder="Search products"
             placeholderTextColor={COLORS.text.muted}
             value={search}
             onChangeText={setSearch}
-            style={{
-              flex: 1,
-              marginLeft: 10,
-              fontFamily: FONT.regular,
-              fontSize: 15,
-              color: COLORS.text.primary,
-              padding: 0,
-            }}
+            style={rowStyles.searchInput}
           />
-          {search ? (
-            <Feather
-              name="x-circle"
-              size={18}
-              color={COLORS.text.muted}
-              onPress={() => setSearch('')}
-            />
-          ) : null}
+          {search ? <Icon name="x-circle" size={17} color={COLORS.text.muted} onPress={() => setSearch('')} /> : null}
         </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 12 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {[
-              { id: 'quantity', label: 'Quantity Sold' },
-              { id: 'revenue', label: 'Revenue' },
-              { id: 'profit', label: 'Gross Profit' },
-            ].map((option) => {
-              const isActive = sortField === option.id;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  onPress={() => toggleSort(option.id as SortField)}
-                  activeOpacity={0.8}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: 14,
-                    paddingVertical: 8,
-                    borderWidth: 1,
-                    borderRadius: RADIUS.md,
-                    borderColor: isActive ? COLORS.ink : COLORS.border,
-                    backgroundColor: isActive ? COLORS.ink : COLORS.surface,
-                    gap: 6,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      fontFamily: FONT.medium,
-                      color: isActive ? COLORS.text.inverse : COLORS.text.secondary,
-                    }}
-                  >
-                    {option.label}
-                  </Text>
-                  {isActive && (
-                    <Feather
-                      name={sortOrder === 'desc' ? 'arrow-down' : 'arrow-up'}
-                      size={14}
-                      color={COLORS.text.inverse}
-                    />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          {[
+            { id: 'quantity', label: 'Quantity' },
+            { id: 'revenue', label: 'Revenue' },
+            { id: 'profit', label: 'Profit' },
+          ].map((option) => (
+            <Pill
+              key={option.id}
+              label={sortField === option.id ? `${option.label} ${sortOrder === 'desc' ? '↓' : '↑'}` : option.label}
+              active={sortField === option.id}
+              onPress={() => toggleSort(option.id as SortField)}
+            />
+          ))}
+        </View>
       </View>
 
       <FlatList
         data={sortedAndFiltered}
         keyExtractor={(item) => item.product_id}
         renderItem={renderItem}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
         ListEmptyComponent={
           <EmptyState
             icon="package"
@@ -334,8 +265,8 @@ export default function AnalyticsProductsScreen() {
         onClose={() => {
           if (!isPrinting && !isSharingPDF) setPrintModalVisible(false);
         }}
-        title="Print Product Analytics"
-        subtitle="Executive A4 performance sheet"
+        title="Print product report"
+        subtitle="An A4 summary of the list you are looking at"
         showCloseButton={!isPrinting && !isSharingPDF}
       >
         {/* Summary Details Card */}
@@ -388,8 +319,8 @@ export default function AnalyticsProductsScreen() {
         {/* Action Buttons */}
         <View style={{ gap: 8 }}>
           <Button
-            title="Print Report"
-            variant="accent"
+            title="Print"
+            variant="primary"
             size="md"
             loading={isPrinting}
             disabled={isSharingPDF}
@@ -411,3 +342,34 @@ export default function AnalyticsProductsScreen() {
     </ScreenShell>
   );
 }
+
+const rowStyles = StyleSheet.create({
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: 13,
+    backgroundColor: COLORS.surface2,
+    paddingHorizontal: 12,
+  },
+  searchInput: { flex: 1, fontFamily: FONT.regular, fontSize: 15.5, color: COLORS.text.primary, paddingVertical: 0 },
+  row: {
+    marginHorizontal: 20,
+    backgroundColor: COLORS.card,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    paddingLeft: 14,
+  },
+  first: { borderTopLeftRadius: 18, borderTopRightRadius: 18, borderTopWidth: StyleSheet.hairlineWidth },
+  last: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18, borderBottomWidth: StyleSheet.hairlineWidth },
+  inner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, paddingRight: 16 },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  rank: { width: 22, fontSize: 15, fontFamily: FONT.serif, color: COLORS.text.muted, textAlign: 'center' },
+  name: { fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary, flexShrink: 1 },
+  value: { fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary, fontVariant: ['tabular-nums'] },
+  track: { height: 4, borderRadius: 2, backgroundColor: COLORS.surface2, overflow: 'hidden' },
+  fill: { height: 4, borderRadius: 2, backgroundColor: COLORS.accent },
+  detail: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, fontVariant: ['tabular-nums'] },
+});

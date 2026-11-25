@@ -1,11 +1,12 @@
 import { Redirect, Stack } from 'expo-router';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { useEffect, useRef, useState } from 'react';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useSupplierStore } from '@/store/supplierStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { LoadingScreen } from '@/components/ui';
+import { COLORS } from '@/constants';
 
 import { useDebtStore } from '@/store/debtStore';
 import { useSaleStore } from '@/store/saleStore';
@@ -14,14 +15,18 @@ import { canViewFinancialData, hasPermission } from '@/lib/permissions';
 import { readCachedRows, replaceCachedRows } from '@/lib/offlineStore';
 
 function Bootloader({ children }: { children: React.ReactNode }) {
-  const { currentBusiness, currentBranch, userRole } = useAuthStore();
+  // Subscribe to IDs only: the auth refresh on launch replaces these objects with
+  // equal copies, which used to re-run the whole boot (and every fetch) for nothing.
+  const businessId = useAuthStore((s) => s.currentBusiness?.id);
+  const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const userRole = useAuthStore((s) => s.userRole);
   const [isBooted, setIsBooted] = useState(false);
   const hasShownAppRef = useRef(false);
   const canViewCosts = canViewFinancialData(userRole);
   const canViewPurchases = hasPermission(userRole, 'purchases.view');
 
   useEffect(() => {
-    if (!currentBusiness) {
+    if (!businessId) {
       // If there's no business yet, we can't boot data. 
       // But we must allow rendering so login/creation screens can show.
       setIsBooted(true);
@@ -39,32 +44,32 @@ function Bootloader({ children }: { children: React.ReactNode }) {
     const boot = async () => {
       // 1. Hydrate stores synchronously from AsyncStorage cache (takes ~5-10ms)
       await Promise.all([
-        useCustomerStore.getState().hydrateCache(currentBusiness.id),
+        useCustomerStore.getState().hydrateCache(businessId),
         canViewPurchases
-          ? useSupplierStore.getState().hydrateCache(currentBusiness.id)
+          ? useSupplierStore.getState().hydrateCache(businessId)
           : (async () => {
               useSupplierStore.getState().reset();
-              await replaceCachedRows({ businessId: currentBusiness.id }, 'suppliers', []);
+              await replaceCachedRows({ businessId: businessId }, 'suppliers', []);
             })(),
-        useBusinessStore.getState().hydrateCache(currentBusiness.id, canViewCosts),
+        useBusinessStore.getState().hydrateCache(businessId, canViewCosts),
         canViewCosts
           ? Promise.resolve()
           : (async () => {
               const items = await readCachedRows<{ id: string; cost_price?: number }>(
-                { businessId: currentBusiness.id },
+                { businessId: businessId },
                 'sale_items',
               ).catch(() => []);
               if (items.some((item) => Number(item.cost_price ?? 0) > 0)) {
                 await replaceCachedRows(
-                  { businessId: currentBusiness.id },
+                  { businessId: businessId },
                   'sale_items',
                   items.map((item) => ({ ...item, cost_price: 0 })),
                 );
               }
             })(),
-        currentBranch && useDebtStore.getState().hydrateCache(currentBusiness.id, currentBranch.id),
-        useSaleStore.getState().loadPinnedProductIds(currentBusiness.id),
-        useDashboardStore.getState().loadRevenueVisibility(currentBusiness.id),
+        branchId && useDebtStore.getState().hydrateCache(businessId, branchId),
+        useSaleStore.getState().loadPinnedProductIds(businessId),
+        useDashboardStore.getState().loadRevenueVisibility(businessId),
       ]);
       
       // 2. Allow UI to render with fully loaded cache
@@ -73,16 +78,16 @@ function Bootloader({ children }: { children: React.ReactNode }) {
       setIsBooted(true);
 
       // 3. Trigger background network syncs silently (these handle their own errors)
-      useBusinessStore.getState().fetchBranches(currentBusiness.id).catch(() => {});
-      useCustomerStore.getState().fetchCustomers(currentBusiness.id).catch(() => {});
+      useBusinessStore.getState().fetchBranches(businessId).catch(() => {});
+      useCustomerStore.getState().fetchCustomers(businessId).catch(() => {});
       if (canViewPurchases) {
-        useSupplierStore.getState().fetchSuppliers(currentBusiness.id).catch(() => {});
+        useSupplierStore.getState().fetchSuppliers(businessId).catch(() => {});
       }
-      useBusinessStore.getState().fetchProducts(currentBusiness.id, canViewCosts).catch(() => {});
-      useBusinessStore.getState().fetchCategories(currentBusiness.id).catch(() => {});
-      if (currentBranch) {
-        useDebtStore.getState().fetchDebts(currentBusiness.id, currentBranch.id).catch(() => {});
-        useSaleStore.getState().loadSoldProductQuantities(currentBusiness.id, currentBranch.id).catch(() => {});
+      useBusinessStore.getState().fetchProducts(businessId, canViewCosts).catch(() => {});
+      useBusinessStore.getState().fetchCategories(businessId).catch(() => {});
+      if (branchId) {
+        useDebtStore.getState().fetchDebts(businessId, branchId).catch(() => {});
+        useSaleStore.getState().loadSoldProductQuantities(businessId, branchId).catch(() => {});
       }
     };
 
@@ -90,27 +95,38 @@ function Bootloader({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [canViewCosts, canViewPurchases, currentBusiness, currentBranch]);
+  }, [canViewCosts, canViewPurchases, businessId, branchId]);
 
   if (!isBooted) {
     // Show nothing or a splash screen equivalent while cache reads (should be imperceptible)
-    return <LoadingScreen message="" />;
+    return <LoadingScreen />;
   }
 
   return <>{children}</>;
 }
 
 export default function AppLayout() {
-  const { session, currentBusiness, isInitialized } = useAuthStore();
+  const hasSession = useAuthStore((s) => Boolean(s.session));
+  const hasBusiness = useAuthStore((s) => Boolean(s.currentBusiness));
+  const isInitialized = useAuthStore((s) => s.isInitialized);
 
-  if (isInitialized && !session && !currentBusiness) {
+  if (isInitialized && !hasSession && !hasBusiness) {
     return <Redirect href="/(auth)/login" />;
   }
 
   return (
     <View style={{ flex: 1 }}>
       <Bootloader>
-        <Stack screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 150 }}>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            // Native push on iOS (with swipe-back); a quick fade-up on Android.
+            animation: Platform.OS === 'ios' ? 'default' : 'fade_from_bottom',
+            animationDuration: 220,
+            gestureEnabled: true,
+            contentStyle: { backgroundColor: COLORS.surface },
+          }}
+        >
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="record-sale" />
           <Stack.Screen name="add-stock" />

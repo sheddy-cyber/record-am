@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandMark, BrandWordmark, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS } from '@/constants';
@@ -26,10 +26,10 @@ export default function AboutScreen() {
   ];
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title={`About ${BRAND.name}`}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
@@ -91,12 +91,11 @@ export default function AboutScreen() {
               fontSize: 12,
               fontFamily: FONT.bold,
               color: COLORS.accentDark,
-              textTransform: 'uppercase',
               letterSpacing: 1,
               marginBottom: 8,
             }}
           >
-            OUR PURPOSE
+            Our purpose
           </Text>
           <Text
             style={{
@@ -116,12 +115,11 @@ export default function AboutScreen() {
             fontSize: 12,
             fontFamily: FONT.bold,
             color: COLORS.accentDark,
-            textTransform: 'uppercase',
             letterSpacing: 1,
             marginBottom: 20,
           }}
         >
-          WHAT IT HELPS YOU DO
+          What it helps you do
         </Text>
 
         <View style={{ gap: 20, marginBottom: 36 }}>
@@ -148,7 +146,7 @@ export default function AboutScreen() {
                   marginTop: 2,
                 }}
               >
-                <Feather name={item.icon as keyof typeof Feather.glyphMap} size={20} color={COLORS.ink} />
+                <Icon name={item.icon as IconName} size={20} color={COLORS.ink} />
               </View>
 
               <View style={{ flex: 1 }}>

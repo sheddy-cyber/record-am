@@ -1,89 +1,99 @@
-import React, { useRef } from "react";
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  ViewStyle,
-  Platform,
-  Animated,
-  Image,
-  ImageStyle,
-  TextStyle,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { StatusBar } from "expo-status-bar";
-import { Feather } from "@expo/vector-icons";
-import { BRAND, COLORS, FONT, RADIUS, SP, TYPE } from "@/constants";
+import React from 'react';
+import { Image, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import Svg, { Circle, Path } from 'react-native-svg';
+import { Icon, IconName } from '@/components/icons';
+import { PressableScale } from '@/components/ui';
+import { BRAND, COLORS, FONT, PALETTE, RADIUS, SP, TYPE } from '@/constants';
 
-type StatusBarMode = "light" | "dark";
+type StatusBarMode = 'light' | 'dark';
+
+const DARK_BACKGROUNDS = new Set<string>([COLORS.ink, COLORS.primary, '#0F172A', '#1E3A8A']);
 
 // ─── Screen Shell ───────────────────────────────────────────────────────────
 export function ScreenShell({
   children,
   backgroundColor = COLORS.surface,
-  statusBarStyle = "dark",
 }: {
   children: React.ReactNode;
   backgroundColor?: string;
+  /** @deprecated the app is light throughout; kept for call-site compatibility. */
   statusBarStyle?: StatusBarMode;
 }) {
   const insets = useSafeAreaInsets();
+  const bg = DARK_BACKGROUNDS.has(backgroundColor) ? COLORS.surface : backgroundColor;
   return (
-    <View style={{ flex: 1, backgroundColor, paddingBottom: insets.bottom }}>
-      <StatusBar style={statusBarStyle} />
+    <View style={{ flex: 1, backgroundColor: bg, paddingBottom: insets.bottom }}>
+      <StatusBar style="dark" />
       {children}
     </View>
   );
 }
 
-// ─── Brand Mark (Logo) ──────────────────────────────────────────────────────
-export function BrandMark({
-  size = 48,
-  style,
-  badge = false,
-  badgeBg = '#efefd0',
-}: {
-  size?: number;
-  style?: ImageStyle;
-  badge?: boolean;
-  badgeBg?: string;
-}) {
-  const borderRadius = Math.max(8, Math.round(size * 0.22));
+// ─── Brand ──────────────────────────────────────────────────────────────────
+// The mark is drawn, not bitmapped, so it stays crisp at every size.
+// Geometry mirrors scripts/generate-brand-assets.js.
 
-  if (badge) {
-    return (
-      <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius,
-          backgroundColor: badgeBg,
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: 4,
-        }}
-      >
-        <Image
-          source={require("@/assets/logo.png")}
-          style={[{ width: '100%', height: '100%', resizeMode: "contain" }, style]}
-        />
-      </View>
-    );
+const SQUIRCLE = (() => {
+  const n = 5;
+  const steps = 96;
+  const pts: string[] = [];
+  for (let i = 0; i < steps; i++) {
+    const t = (i / steps) * Math.PI * 2;
+    const c = Math.cos(t);
+    const s = Math.sin(t);
+    const x = 50 + 50 * Math.sign(c) * Math.pow(Math.abs(c), 2 / n);
+    const y = 50 + 50 * Math.sign(s) * Math.pow(Math.abs(s), 2 / n);
+    pts.push(`${x.toFixed(2)} ${y.toFixed(2)}`);
   }
+  return `M${pts.join(' L')} Z`;
+})();
 
+export function BrandGlyph({ size = 24, color = PALETTE.clay }: { size?: number; color?: string }) {
   return (
-    <Image
-      source={require("@/assets/logo.png")}
-      style={[{ width: size, height: size, resizeMode: "contain" }, style]}
-    />
+    <Svg width={size} height={size} viewBox="28 26 44 52">
+      <Path d="M37.5 70 V50.5 C37.5 40.5 44.5 33.5 55 33.5" fill="none" stroke={color} strokeWidth={11} strokeLinecap="round" />
+      <Circle cx={62.5} cy={64.5} r={6.8} fill={color} />
+    </Svg>
   );
 }
 
-// ─── Brand Wordmark ─────────────────────────────────────────────────────────
+export function BrandMark({
+  size = 48,
+  tone = 'clay',
+}: {
+  size?: number;
+  tone?: 'clay' | 'ink' | 'paper';
+  /** @deprecated */
+  style?: unknown;
+  /** @deprecated */
+  badge?: boolean;
+  /** @deprecated */
+  badgeBg?: string;
+}) {
+  const bg = tone === 'clay' ? PALETTE.clay : tone === 'ink' ? PALETTE.ink : PALETTE.white;
+  const fg = tone === 'paper' ? PALETTE.clay : '#FAF6EF';
+  return (
+    <Svg width={size} height={size} viewBox="0 0 100 100">
+      <Path d={SQUIRCLE} fill={bg} />
+      <Path
+        d="M37.5 70 V50.5 C37.5 40.5 44.5 33.5 55 33.5"
+        transform="translate(50 52) scale(1.18) translate(-50 -52)"
+        fill="none"
+        stroke={fg}
+        strokeWidth={11}
+        strokeLinecap="round"
+      />
+      <Circle cx={62.5} cy={64.5} r={6.8} fill={fg} transform="translate(50 52) scale(1.18) translate(-50 -52)" />
+    </Svg>
+  );
+}
+
 export function BrandWordmark({
-  invert = false,
   size = 24,
   showTagline = false,
+  invert = false,
 }: {
   invert?: boolean;
   size?: number;
@@ -94,23 +104,15 @@ export function BrandWordmark({
       <Text
         style={{
           fontSize: size,
-          fontFamily: FONT.bold,
+          fontFamily: FONT.serif,
           color: invert ? COLORS.text.inverse : COLORS.text.primary,
-          letterSpacing: 0,
-          includeFontPadding: false,
+          letterSpacing: -size * 0.025,
         }}
       >
         {BRAND.name}
       </Text>
       {showTagline ? (
-        <Text
-          style={{
-            fontSize: 12,
-            fontFamily: FONT.regular,
-            color: invert ? "rgba(250,250,248,0.55)" : COLORS.text.muted,
-            marginTop: 2,
-          }}
-        >
+        <Text style={{ ...TYPE.caption, color: invert ? 'rgba(250,249,246,0.6)' : COLORS.text.muted, marginTop: 2 }}>
           {BRAND.tagline}
         </Text>
       ) : null}
@@ -118,156 +120,141 @@ export function BrandWordmark({
   );
 }
 
-// ─── Business Avatar ──────────────────────────────────────────────────────────
-export function BusinessAvatar({
-  name,
-  logoUrl,
-  size = 40,
-}: {
-  name: string;
-  logoUrl?: string | null;
-  size?: number;
-}) {
+// ─── Business Avatar ────────────────────────────────────────────────────────
+export function BusinessAvatar({ name, logoUrl, size = 40 }: { name: string; logoUrl?: string | null; size?: number }) {
   const [imageError, setImageError] = React.useState(false);
-
-  React.useEffect(() => {
-    setImageError(false);
-  }, [logoUrl]);
+  React.useEffect(() => setImageError(false), [logoUrl]);
 
   const initials = (name || '')
     .trim()
-    .split(' ')
+    .split(/\s+/)
     .filter(Boolean)
     .map((w) => w.charAt(0))
     .slice(0, 2)
     .join('')
     .toUpperCase();
 
+  const frame: ViewStyle = {
+    width: size,
+    height: size,
+    borderRadius: Math.round(size * 0.3),
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.accentLight,
+  };
+
   if (logoUrl && !imageError) {
     return (
+      <View style={[frame, { backgroundColor: COLORS.card, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border }]}>
+        <Image source={{ uri: logoUrl }} style={{ width: size, height: size }} resizeMode="cover" onError={() => setImageError(true)} />
+      </View>
+    );
+  }
+
+  return (
+    <View style={frame}>
+      <Text style={{ fontSize: size * 0.4, fontFamily: FONT.serif, color: COLORS.accentDark }}>{initials || 'B'}</Text>
+    </View>
+  );
+}
+
+// ─── Screen Header ──────────────────────────────────────────────────────────
+// Pushed screens get a compact bar (back · title · actions). Root screens get a
+// large serif title, Apple-style, with actions aligned to the top edge.
+export function ScreenHeader({
+  title,
+  subtitle,
+  right,
+  left,
+  style,
+  titleStyle,
+  large,
+  eyebrow,
+}: {
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  left?: React.ReactNode;
+  /** @deprecated headers are light throughout */
+  theme?: 'dark' | 'light';
+  style?: ViewStyle;
+  titleStyle?: TextStyle;
+  /** Force the large-title layout. Defaults to true when there is no `left` element. */
+  large?: boolean;
+  /** Small line shown above a large title (e.g. today's date). */
+  eyebrow?: string;
+}) {
+  const insets = useSafeAreaInsets();
+  const isLarge = large ?? !left;
+
+  if (isLarge) {
+    return (
       <View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          overflow: 'hidden',
-          backgroundColor: 'rgba(239, 239, 208, 0.15)',
-          borderWidth: 1,
-          borderColor: 'rgba(239, 239, 208, 0.35)',
-        }}
+        style={[
+          { backgroundColor: COLORS.surface, paddingTop: insets.top + (left ? 4 : 10), paddingHorizontal: SP.page, paddingBottom: 14 },
+          style,
+        ]}
       >
-        <Image
-          source={{ uri: logoUrl }}
-          style={{ width: size, height: size }}
-          resizeMode="cover"
-          onError={() => setImageError(true)}
-        />
+        <StatusBar style="dark" />
+        {left ? <View style={{ marginLeft: -6, marginBottom: 4, alignSelf: 'flex-start' }}>{left}</View> : null}
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+          <View style={{ flex: 1, paddingTop: 2 }}>
+            {eyebrow ? (
+              <Text style={{ ...TYPE.footnote, fontFamily: FONT.medium, color: COLORS.text.muted, marginBottom: 2 }} numberOfLines={1}>
+                {eyebrow}
+              </Text>
+            ) : null}
+            <Text
+              style={[{ ...TYPE.largeTitle, color: COLORS.text.primary }, titleStyle, { color: COLORS.text.primary }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              {title}
+            </Text>
+            {subtitle ? (
+              <Text style={{ ...TYPE.callout, color: COLORS.text.muted, marginTop: 2 }} numberOfLines={1}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+          {right ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>{right}</View> : null}
+        </View>
       </View>
     );
   }
 
   return (
     <View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: 'rgba(239, 239, 208, 0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(239, 239, 208, 0.3)',
-      }}
-    >
-      <Text
-        style={{
-          fontSize: size * 0.45,
-          fontFamily: FONT.bold,
-          color: COLORS.text.inverse,
-          letterSpacing: 1,
-        }}
-      >
-        {initials || 'B'}
-      </Text>
-    </View>
-  );
-}
-
-// ─── Screen Header ──────────────────────────────────────────────────────────
-export function ScreenHeader({
-  title,
-  subtitle,
-  right,
-  left,
-  theme = "dark",
-  style,
-  titleStyle,
-}: {
-  title: string;
-  subtitle?: string;
-  right?: React.ReactNode;
-  left?: React.ReactNode;
-  theme?: "dark" | "light";
-  style?: ViewStyle;
-  titleStyle?: TextStyle;
-}) {
-  const insets = useSafeAreaInsets();
-  const isDark = theme === "dark";
-  const bg = isDark ? COLORS.ink : COLORS.card;
-  const titleColor = isDark ? '#FFFFFF' : COLORS.text.primary;
-  const subtitleColor = isDark ? "rgba(255, 255, 255, 0.65)" : COLORS.text.muted;
-  const statusBarStyle: StatusBarMode = isDark ? "light" : "dark";
-  return (
-    <View
       style={[
         {
-          backgroundColor: bg,
-          paddingTop: insets.top + 12,
-          paddingHorizontal: SP.page,
-          paddingBottom: 16,
-          borderBottomWidth: isDark ? 0 : 1,
-          borderBottomColor: COLORS.border,
+          backgroundColor: COLORS.surface,
+          paddingTop: insets.top + 6,
+          paddingHorizontal: SP.page - 6,
+          paddingBottom: 10,
         },
         style,
       ]}
     >
-      <StatusBar style={statusBarStyle} backgroundColor={bg} />
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-        }}
-      >
-        {left ? <View style={{ minWidth: 38 }}>{left}</View> : null}
+      <StatusBar style="dark" />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 44 }}>
+        {left ? <View>{left}</View> : null}
         <View style={{ flex: 1, justifyContent: 'center' }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text 
-              style={[{ ...TYPE.h2, color: titleColor, letterSpacing: -0.3 }, titleStyle]}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {title}
-            </Text>
-          </View>
+          <Text
+            style={[{ fontSize: 17.5, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3 }, titleStyle, { color: COLORS.text.primary }]}
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
           {subtitle ? (
-            <Text
-              style={{
-                fontSize: 12.5,
-                fontFamily: FONT.regular,
-                color: subtitleColor,
-                marginTop: 2,
-              }}
-              numberOfLines={1}
-            >
+            <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 }} numberOfLines={1}>
               {subtitle}
             </Text>
           ) : null}
         </View>
-        {right ? (
-          <View style={{ minWidth: 38, alignItems: "flex-end" }}>{right}</View>
-        ) : null}
+        {right ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>{right}</View> : null}
       </View>
     </View>
   );
@@ -278,162 +265,83 @@ export function HeaderAction({
   icon,
   label,
   onPress,
-  theme = "dark",
+  accessibilityLabel,
 }: {
-  icon?: keyof typeof Feather.glyphMap;
+  icon?: IconName;
   label?: string;
   onPress: () => void;
-  theme?: "dark" | "light";
+  /** @deprecated */
+  theme?: 'dark' | 'light';
+  accessibilityLabel?: string;
 }) {
-  const isDark = theme === "dark";
-
+  const isBack = icon === 'arrow-left' || icon === 'chevron-left';
+  const glyph: IconName | undefined = isBack ? 'chevron-left' : icon;
   return (
-    <TouchableOpacity
+    <PressableScale
       onPress={onPress}
-      activeOpacity={0.75}
-      delayPressIn={0}
+      activeScale={0.92}
+      accessibilityLabel={accessibilityLabel ?? label ?? (isBack ? 'Back' : undefined)}
       style={{
-        minHeight: 36,
-        minWidth: 36,
-        paddingHorizontal: label ? 14 : 10,
-        borderRadius: RADIUS.full,
-        backgroundColor: isDark ? "rgba(255, 255, 255, 0.12)" : COLORS.surface2,
-        borderWidth: 1,
-        borderColor: isDark ? "rgba(255, 255, 255, 0.18)" : COLORS.border,
-        alignItems: "center",
-        justifyContent: "center",
-        flexDirection: "row",
+        height: 38,
+        minWidth: 38,
+        paddingHorizontal: label ? 14 : 0,
+        borderRadius: 19,
+        backgroundColor: isBack && !label ? 'transparent' : COLORS.surface2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'row',
         gap: 6,
       }}
     >
-      {icon ? (
-        <Feather
-          name={icon}
-          size={15}
-          color={isDark ? '#FFFFFF' : COLORS.text.primary}
-        />
-      ) : null}
+      {glyph ? <Icon name={glyph} size={isBack ? 24 : 17} color={COLORS.text.primary} /> : null}
       {label ? (
-        <Text
-          style={{
-            fontSize: 12.5,
-            fontFamily: FONT.medium,
-            color: isDark ? '#FFFFFF' : COLORS.text.primary,
-            letterSpacing: -0.1,
-          }}
-        >
-          {label}
-        </Text>
+        <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary, letterSpacing: -0.1 }}>{label}</Text>
       ) : null}
-    </TouchableOpacity>
+    </PressableScale>
   );
 }
 
-// ─── Overlay Header — glassmorphic X-close design ──────────────────────────
-// Replaces the old arrow-left navigation with a top-right X button.
-// Background uses a soft translucent wash over the surface, creating depth
-// without heavy shadows.
-export function OverlayHeader({
-  title,
-  subtitle,
-  onClose,
-}: {
-  title: string;
-  subtitle?: string;
-  onClose: () => void;
-}) {
+// ─── Overlay Header (modal screens) ─────────────────────────────────────────
+export function OverlayHeader({ title, subtitle, onClose }: { title: string; subtitle?: string; onClose: () => void }) {
   const insets = useSafeAreaInsets();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.85,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-  };
-
   return (
-    <View
-      style={{
-        paddingTop: insets.top,
-        paddingHorizontal: SP.page,
-        paddingBottom: 12,
-      }}
-    >
-      {/* X close button — top-right, self-contained */}
-      <View style={{ alignItems: "flex-end", marginBottom: 8 }}>
-        <TouchableOpacity
+    <View style={{ paddingTop: insets.top + 8, paddingHorizontal: SP.page, paddingBottom: 12 }}>
+      <StatusBar style="dark" />
+      <View style={{ alignItems: 'flex-end', marginBottom: 4 }}>
+        <PressableScale
           onPress={onClose}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-          activeOpacity={0.7}
-        >
-          <Animated.View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: RADIUS.full,
-              alignItems: "center",
-              justifyContent: "center",
-              transform: [{ scale: scaleAnim }],
-            }}
-          >
-            <Feather name="x" size={28} color={COLORS.text.primary} />
-          </Animated.View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Title block — flush left, spacious */}
-      <View>
-        <Text
+          activeScale={0.9}
+          accessibilityLabel="Close"
           style={{
-            ...TYPE.h2,
-            color: COLORS.text.primary,
-            letterSpacing: -0.4,
+            width: 34,
+            height: 34,
+            borderRadius: 17,
+            backgroundColor: COLORS.surface2,
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text
-            style={{
-              fontSize: 13,
-              fontFamily: FONT.regular,
-              color: COLORS.text.muted,
-              marginTop: 4,
-              lineHeight: 18,
-            }}
-          >
-            {subtitle}
-          </Text>
-        ) : null}
+          <Icon name="x" size={17} color={COLORS.text.secondary} />
+        </PressableScale>
       </View>
+      <Text style={{ ...TYPE.largeTitle, fontSize: 30, color: COLORS.text.primary }}>{title}</Text>
+      {subtitle ? (
+        <Text style={{ ...TYPE.callout, color: COLORS.text.muted, marginTop: 4 }}>{subtitle}</Text>
+      ) : null}
     </View>
   );
 }
 
 // ─── Flat Section (bordered container) ──────────────────────────────────────
-export function FlatSection({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: ViewStyle;
-}) {
+export function FlatSection({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
   return (
     <View
       style={[
         {
           backgroundColor: COLORS.card,
           borderRadius: RADIUS.lg,
-          borderWidth: 1,
+          borderCurve: 'continuous',
+          borderWidth: StyleSheet.hairlineWidth,
           borderColor: COLORS.border,
         },
         style,
@@ -444,19 +352,11 @@ export function FlatSection({
   );
 }
 
-// ─── Glass Modal Shell ───────────────────────────────────────────────────────
-// Wraps modal content in a glassmorphic container. Use inside <Modal> components
-// instead of plain ScreenShell for the elevated overlay feel.
-export function GlassModalShell({
-  children,
-  statusBarStyle = "dark",
-}: {
-  children: React.ReactNode;
-  statusBarStyle?: StatusBarMode;
-}) {
+// ─── Modal Shell ────────────────────────────────────────────────────────────
+export function GlassModalShell({ children }: { children: React.ReactNode; statusBarStyle?: StatusBarMode }) {
   return (
-    <View style={{ flex: 1, backgroundColor: "rgba(245,248,252,0.96)" }}>
-      <StatusBar style={statusBarStyle} />
+    <View style={{ flex: 1, backgroundColor: COLORS.surface }}>
+      <StatusBar style="dark" />
       {children}
     </View>
   );

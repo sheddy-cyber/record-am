@@ -1,6 +1,7 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ViewStyle, TextInputProps, StyleSheet, Pressable } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, View, Text, TextInput, ScrollView, ViewStyle, TextInputProps, StyleSheet, Pressable } from 'react-native';
+import { haptics } from '@/lib/haptics';
+import { Icon } from '@/components/icons';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BottomSheetModal } from '@/components/ui/BottomSheetModal';
 import { useKeyboardAwareScroll, formatAmountInput } from './keyboard';
@@ -69,7 +70,7 @@ export const InputField: React.FC<InputFieldProps> = ({
           accessibilityRole="button"
           accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
         >
-          <Feather name={showPassword ? 'eye-off' : 'eye'} size={18} color={COLORS.text.muted} />
+          <Icon name={showPassword ? 'eye-off' : 'eye'} size={19} color={COLORS.text.muted} />
         </Pressable>
       );
     }
@@ -88,33 +89,39 @@ export const InputField: React.FC<InputFieldProps> = ({
 
   return (
     <View style={[{ marginBottom: SP.card }, containerStyle]}>
-      <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, marginBottom: 6 }}>
-        {label}
-        {required ? <Text style={{ fontFamily: FONT.regular, color: COLORS.danger }}> *</Text> : null}
-      </Text>
-      <View
+      {label ? (
+        <Text style={labelStyle}>
+          {label}
+          {required ? <Text style={{ color: COLORS.accent }}> *</Text> : null}
+        </Text>
+      ) : null}
+      <Pressable
+        onPress={() => inputRef.current?.focus()}
         style={{
           flexDirection: 'row',
-          alignItems: 'center',
+          alignItems: props.multiline ? 'flex-start' : 'center',
           gap: 10,
-          borderRadius: RADIUS.md,
-          borderWidth: focused ? 1 : StyleSheet.hairlineWidth,
+          borderRadius: 14,
+          borderCurve: 'continuous',
+          borderWidth: 1,
           paddingHorizontal: 14,
-          backgroundColor: COLORS.card,
-          borderColor: error ? COLORS.danger : focused ? COLORS.accent : COLORS.border,
-          minHeight: 50,
+          backgroundColor: props.editable === false ? COLORS.surface2 : COLORS.card,
+          borderColor: error ? COLORS.danger : focused ? COLORS.text.primary : COLORS.border,
+          minHeight: 52,
           overflow: 'hidden',
         }}
       >
         {leftIcon}
-        {displayPrefix ? <Text style={{ fontSize: 14.5, fontFamily: FONT.medium, color: COLORS.text.secondary }}>{displayPrefix}</Text> : null}
+        {displayPrefix ? (
+          <Text style={{ fontSize: 16, fontFamily: FONT.medium, color: COLORS.text.muted }}>{displayPrefix}</Text>
+        ) : null}
         <TextInput
           ref={inputRef}
           secureTextEntry={effectiveSecureTextEntry}
           underlineColorAndroid="transparent"
           selectionColor={COLORS.accent}
-          cursorColor={COLORS.accent}
-          placeholderTextColor={COLORS.text.muted}
+          cursorColor={COLORS.text.primary}
+          placeholderTextColor={COLORS.text.faint}
           importantForAutofill="no"
           value={displayValue}
           onChangeText={handleChangeText}
@@ -122,14 +129,15 @@ export const InputField: React.FC<InputFieldProps> = ({
           style={[
             {
               flex: 1,
-              fontSize: 15,
-              fontFamily: FONT.regular,
+              fontSize: 16,
+              fontFamily: isAmount ? FONT.medium : FONT.regular,
               color: COLORS.text.primary,
-              paddingVertical: props.multiline ? 12 : 0,
+              paddingVertical: props.multiline ? 14 : 0,
               textAlignVertical: props.multiline ? 'top' : 'center',
               includeFontPadding: false,
               backgroundColor: 'transparent',
-              height: props.multiline ? undefined : '100%',
+              minHeight: props.multiline ? 88 : 50,
+              fontVariant: isAmount ? ['tabular-nums'] : undefined,
             },
             props.style,
           ]}
@@ -144,14 +152,22 @@ export const InputField: React.FC<InputFieldProps> = ({
             onBlur?.(event);
           }}
         />
-        {displaySuffix ? <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted }}>{displaySuffix}</Text> : null}
+        {displaySuffix ? <Text style={{ fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted }}>{displaySuffix}</Text> : null}
         {renderRightElement()}
-      </View>
-      {error ? <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.danger, marginTop: 5 }}>{error}</Text> : null}
-      {!error && hint ? <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 5 }}>{hint}</Text> : null}
+      </Pressable>
+      {error ? <Text style={{ ...TYPE.footnote, color: COLORS.dangerText, marginTop: 6, marginLeft: 2 }}>{error}</Text> : null}
+      {!error && hint ? <Text style={{ ...TYPE.footnote, color: COLORS.text.muted, marginTop: 6, marginLeft: 2, lineHeight: 16 }}>{hint}</Text> : null}
     </View>
   );
 };
+
+const labelStyle = {
+  fontSize: 13.5,
+  fontFamily: FONT.medium,
+  color: COLORS.text.secondary,
+  marginBottom: 7,
+  marginLeft: 2,
+} as const;
 
 // ─── Select Field ───────────────────────────────────────────────────────────
 
@@ -187,76 +203,87 @@ export const SelectField: React.FC<SelectFieldProps> = ({
 
   return (
     <View style={[{ marginBottom: SP.card }, containerStyle]}>
-      <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, marginBottom: 6 }}>
-        {label}
-        {required ? <Text style={{ fontFamily: FONT.regular, color: COLORS.danger }}> *</Text> : null}
-      </Text>
-      <TouchableOpacity
-        style={{
+      {label ? (
+        <Text style={labelStyle}>
+          {label}
+          {required ? <Text style={{ color: COLORS.accent }}> *</Text> : null}
+        </Text>
+      ) : null}
+      <Pressable
+        style={({ pressed }) => ({
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
-          borderRadius: RADIUS.md,
-          borderWidth: open ? 1 : StyleSheet.hairlineWidth,
+          borderRadius: 14,
+          borderCurve: 'continuous',
+          borderWidth: 1,
           paddingHorizontal: 14,
-          minHeight: 50,
-          backgroundColor: COLORS.card,
-          borderColor: error ? COLORS.danger : open ? COLORS.accent : COLORS.border,
-        }}
-        onPress={() => setOpen(!open)}
-        activeOpacity={0.7}
+          minHeight: 52,
+          backgroundColor: pressed ? COLORS.surface2 : COLORS.card,
+          borderColor: error ? COLORS.danger : open ? COLORS.text.primary : COLORS.border,
+        })}
+        onPress={() => setOpen(true)}
       >
-        <Text style={{ fontSize: 15, fontFamily: FONT.regular, color: selected ? COLORS.text.primary : COLORS.text.muted, flex: 1 }}>
+        <Text
+          numberOfLines={1}
+          style={{ fontSize: 16, fontFamily: FONT.regular, color: selected ? COLORS.text.primary : COLORS.text.faint, flex: 1 }}
+        >
           {selected ? selected.label : placeholder}
         </Text>
-        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={17} color={COLORS.text.muted} />
-      </TouchableOpacity>
+        <Icon name="chevron-down" size={17} color={COLORS.text.muted} />
+      </Pressable>
 
-      <BottomSheetModal
-        visible={open}
-        onClose={() => setOpen(false)}
-        title={label}
-        maxHeight={460}
-      >
-        <ScrollView style={{ maxHeight: 340 }} keyboardShouldPersistTaps="handled">
-          {options.map((option, index) => {
-            const isSelected = option.value === value;
-            return (
-              <TouchableOpacity
-                key={option.value}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  paddingHorizontal: 8,
-                  paddingVertical: 14,
-                  borderBottomWidth: index < options.length - 1 ? StyleSheet.hairlineWidth : 0,
-                  borderBottomColor: COLORS.borderSubtle,
-                  backgroundColor: isSelected ? COLORS.accentLight : 'transparent',
-                  borderRadius: RADIUS.md,
-                }}
-                activeOpacity={0.7}
-                onPress={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 14.5,
-                    fontFamily: isSelected ? FONT.bold : FONT.regular,
-                    color: isSelected ? COLORS.accentDark : COLORS.text.primary,
+      <BottomSheetModal visible={open} onClose={() => setOpen(false)} title={label} maxHeight="75%">
+        <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <View
+            style={{
+              backgroundColor: COLORS.card,
+              borderRadius: 18,
+              borderCurve: 'continuous',
+              overflow: 'hidden',
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: COLORS.border,
+            }}
+          >
+            {options.map((option, index) => {
+              const isSelected = option.value === value;
+              return (
+                <Pressable
+                  key={option.value}
+                  style={({ pressed }) => ({
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    paddingHorizontal: 16,
+                    minHeight: 50,
+                    borderBottomWidth: index < options.length - 1 ? StyleSheet.hairlineWidth : 0,
+                    borderBottomColor: COLORS.border,
+                    backgroundColor: pressed ? COLORS.surface2 : 'transparent',
+                  })}
+                  onPress={() => {
+                    haptics.selection();
+                    onChange(option.value);
+                    setOpen(false);
                   }}
                 >
-                  {option.label}
-                </Text>
-                {isSelected ? <Feather name="check" size={16} color={COLORS.accentDark} /> : null}
-              </TouchableOpacity>
-            );
-          })}
+                  <Text
+                    style={{
+                      fontSize: 15.5,
+                      fontFamily: isSelected ? FONT.semiBold : FONT.regular,
+                      color: COLORS.text.primary,
+                      flex: 1,
+                    }}
+                  >
+                    {option.label}
+                  </Text>
+                  {isSelected ? <Icon name="check" size={18} color={COLORS.accent} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
         </ScrollView>
       </BottomSheetModal>
-      {error ? <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.danger, marginTop: 5 }}>{error}</Text> : null}
+      {error ? <Text style={{ ...TYPE.footnote, color: COLORS.dangerText, marginTop: 6, marginLeft: 2 }}>{error}</Text> : null}
     </View>
   );
 };
@@ -268,42 +295,66 @@ export const Toggle: React.FC<{
   value: boolean;
   onChange: (v: boolean) => void;
   description?: string;
-}> = ({ label, value, onChange, description }) => (
-  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SP.card, paddingVertical: 2 }}>
+  disabled?: boolean;
+}> = ({ label, value, onChange, description, disabled }) => (
+  <Pressable
+    disabled={disabled}
+    onPress={() => {
+      haptics.selection();
+      onChange(!value);
+    }}
+    style={{
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: SP.card,
+      paddingVertical: 2,
+      opacity: disabled ? 0.5 : 1,
+    }}
+  >
     <View style={{ flex: 1, marginRight: SP.card }}>
-      <Text style={{ fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary, letterSpacing: -0.1 }}>{label}</Text>
+      <Text style={{ fontSize: 15.5, fontFamily: FONT.regular, color: COLORS.text.primary, letterSpacing: -0.15 }}>{label}</Text>
       {description ? (
-        <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2, lineHeight: 17 }}>{description}</Text>
+        <Text style={{ ...TYPE.footnote, color: COLORS.text.muted, marginTop: 3, lineHeight: 17 }}>{description}</Text>
       ) : null}
     </View>
-    <TouchableOpacity
+    <Switch value={value} />
+  </Pressable>
+);
+
+/** Visual switch. Wrap it in something pressable; it animates on its own. */
+export function Switch({ value }: { value: boolean }) {
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(anim, { toValue: value ? 1 : 0, speed: 22, bounciness: 5, useNativeDriver: false }).start();
+  }, [value, anim]);
+  return (
+    <Animated.View
       style={{
         width: 50,
-        height: 28,
-        borderRadius: RADIUS.full,
-        padding: 3,
+        height: 30,
+        borderRadius: 15,
+        padding: 2,
         justifyContent: 'center',
-        backgroundColor: value ? COLORS.ink : COLORS.borderDark,
+        backgroundColor: anim.interpolate({ inputRange: [0, 1], outputRange: [COLORS.borderDark, COLORS.ink] }),
       }}
-      onPress={() => onChange(!value)}
-      activeOpacity={0.8}
     >
-      <View
+      <Animated.View
         style={{
-          width: 22,
-          height: 22,
-          borderRadius: RADIUS.full,
+          width: 26,
+          height: 26,
+          borderRadius: 13,
           backgroundColor: '#FFFFFF',
-          transform: [{ translateX: value ? 22 : 0 }],
+          transform: [{ translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [0, 20] }) }],
           shadowColor: '#000',
-          shadowOffset: { width: 0, height: 1 },
+          shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.15,
-          shadowRadius: 2,
+          shadowRadius: 3,
           elevation: 2,
         }}
       />
-    </TouchableOpacity>
-  </View>
-);
+    </Animated.View>
+  );
+}
 
 export { KeyboardAwareScrollView, KeyboardAwareTextInput } from './keyboard';

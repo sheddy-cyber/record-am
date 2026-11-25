@@ -10,7 +10,7 @@ import {
   Text,
   TouchableOpacity,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -397,7 +397,7 @@ export default function UpdateStockScreen() {
       <RoleGate allowedRoles={['owner', 'manager']}>
         {parsedSelling > 0 && parsedCost === 0 && !isService ? (
           <View style={[styles.marginContainer, styles.marginNeutral]}>
-            <Feather name="info" size={13} color={COLORS.text.muted} />
+            <Icon name="info" size={13} color={COLORS.text.muted} />
             <Text style={styles.marginTextNeutral}>
               No cost price set (100% of selling price recorded as profit)
             </Text>
@@ -407,21 +407,21 @@ export default function UpdateStockScreen() {
         {parsedSelling > 0 && parsedCost > 0 && marginData ? (
           marginData.status === 'profit' ? (
             <View style={[styles.marginContainer, styles.marginProfit]}>
-              <Feather name="trending-up" size={14} color="#1e8449" />
+              <Icon name="trending-up" size={14} color="#1e8449" />
               <Text style={styles.marginTextProfit}>
                 +{CURRENCY_SYMBOL}{formatCount(marginData.profitPerUnit)} profit/unit ({marginData.marginPercentage}% margin)
               </Text>
             </View>
           ) : marginData.status === 'loss' ? (
             <View style={[styles.marginContainer, styles.marginLoss]}>
-              <Feather name="alert-triangle" size={14} color={COLORS.danger} />
+              <Icon name="alert-triangle" size={14} color={COLORS.danger} />
               <Text style={styles.marginTextLoss}>
-                ⚠ Selling at a loss of {CURRENCY_SYMBOL}{formatCount(Math.abs(marginData.profitPerUnit))}/unit ({Math.abs(marginData.marginPercentage)}% negative margin)
+                Selling at a loss of {CURRENCY_SYMBOL}{formatCount(Math.abs(marginData.profitPerUnit))}/unit ({Math.abs(marginData.marginPercentage)}% negative margin)
               </Text>
             </View>
           ) : (
             <View style={[styles.marginContainer, styles.marginNeutral]}>
-              <Feather name="minus-circle" size={14} color={COLORS.text.secondary} />
+              <Icon name="minus-circle" size={14} color={COLORS.text.secondary} />
               <Text style={styles.marginTextSecondary}>
                 Break-even ({CURRENCY_SYMBOL}0.00 profit/unit)
               </Text>
@@ -437,43 +437,13 @@ export default function UpdateStockScreen() {
     return (
       <TouchableOpacity
         onPress={() => router.push({ pathname: '/(app)/record-damage', params: { productId: product.id } })}
-        activeOpacity={0.75}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingVertical: 9,
-          paddingHorizontal: 12,
-          backgroundColor: '#FEF2F2',
-          borderRadius: RADIUS.md,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: '#FECACA',
-          marginTop: 6,
-        }}
+        activeOpacity={0.6}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, marginTop: 2 }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Feather name="alert-octagon" size={15} color="#DC2626" />
-          <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: '#DC2626' }}>
-            Record Damage Instead?
-          </Text>
-        </View>
-
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 2,
-            paddingVertical: 3,
-            paddingHorizontal: 8,
-            backgroundColor: '#DC2626',
-            borderRadius: RADIUS.full,
-          }}
-        >
-          <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: '#FFFFFF' }}>
-            Switch
-          </Text>
-          <Feather name="arrow-right" size={11} color="#FFFFFF" />
-        </View>
+        <Text style={{ fontSize: 13.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+          Some broke or expired?{' '}
+          <Text style={{ fontFamily: FONT.medium, color: COLORS.accentDark }}>Record damage instead</Text>
+        </Text>
       </TouchableOpacity>
     );
   }, [isOwnerOrManager, isService, product]);
@@ -812,10 +782,10 @@ export default function UpdateStockScreen() {
 
   if (!product) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title={isRestock ? 'Restock Item' : 'Update Stock'}
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
         />
         <EmptyState
@@ -829,15 +799,10 @@ export default function UpdateStockScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
-        title={isRestock ? 'Restock Item' : 'Update Stock'}
-        subtitle={
-          isRestock
-            ? 'Enter the incoming quantity and we will add it to the current stock.'
-            : 'Edit the product details and current branch quantity.'
-        }
-        theme="dark"
+        title={isRestock ? 'Restock' : 'Edit product'}
+        subtitle={product?.name}
         left={<HeaderAction icon="arrow-left" onPress={handleCancelOrBack} />}
       />
         <KeyboardAwareScrollView
@@ -852,6 +817,35 @@ export default function UpdateStockScreen() {
             />
           }
         >
+          {product && !product.is_service && !isManualReconcile && !fromPurchase ? (
+            <View style={summaryStyles.card}>
+              <View style={{ flex: 1 }}>
+                <Text style={summaryStyles.label}>In stock{currentBranch?.name ? ` at ${currentBranch.name}` : ''}</Text>
+                <Text style={summaryStyles.value}>
+                  {formatCount(currentStock)}
+                  <Text style={summaryStyles.unit}> {product.unit}</Text>
+                </Text>
+                <Text
+                  style={[
+                    summaryStyles.status,
+                    currentStock <= 0
+                      ? { color: COLORS.dangerText }
+                      : currentStock <= Number(product.reorder_level || 0)
+                      ? { color: COLORS.warningText }
+                      : null,
+                  ]}
+                >
+                  {currentStock <= 0
+                    ? 'Out of stock'
+                    : `${currentStock <= Number(product.reorder_level || 0) ? 'Running low · ' : ''}reorder at ${formatCount(Number(product.reorder_level || 0))}`}
+                </Text>
+              </View>
+              {!isRestock ? (
+                <Button title="Restock" icon="plus" size="sm" onPress={() => router.setParams({ restock: '1' } as any)} />
+              ) : null}
+            </View>
+          ) : null}
+
           <ProductFormFields
             productName={productName}
             onProductNameChange={setProductName}
@@ -876,22 +870,22 @@ export default function UpdateStockScreen() {
             stockQuantityFirst={isRestock}
             stockQuantityLabel={
               isRestock
-                ? `Quantity to Restock (${productUnit.trim() || 'unit'})`
-                : `Stock Quantity (${productUnit.trim() || 'unit'})`
+                ? `How many ${productUnit.trim() || 'units'} came in?`
+                : `Quantity in stock (${productUnit.trim() || 'unit'})`
             }
             stockQuantityHint={
               isRestock
                 ? parsedStockQty > 0
-                  ? `Current stock: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}. New total: ${formatCount(roundAmount(currentStock + parsedStockQty))} ${productUnit.trim() || 'unit'}.`
-                  : `Current stock: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}. Enter the number of units received.`
+                  ? `New total will be ${formatCount(roundAmount(currentStock + parsedStockQty))} ${productUnit.trim() || 'unit'}.`
+                  : `Added to the ${formatCount(currentStock)} already in stock.`
                 : !isOwnerOrManager
                   ? parsedStockQty > 0 && parsedStockQty < currentStock
-                    ? `⚠ Staff cannot reduce stock below current quantity (${formatCount(currentStock)} ${productUnit.trim() || 'unit'}).`
+                    ? `Staff cannot reduce stock below current quantity (${formatCount(currentStock)} ${productUnit.trim() || 'unit'}).`
                     : `Staff can only increase stock. Current on-hand: ${formatCount(currentStock)} ${productUnit.trim() || 'unit'}.`
                 : prefilledStockQty !== null && parseFloat(stockQuantity) !== prefilledStockQty
                 ? isManualReconcile
                   ? `Changed from reconciliation value (${formatCount(prefilledStockQty)}).`
-                  : `⚠ Changed from prefilled value (${formatCount(prefilledStockQty)}). Was ${formatCount(currentStock)} + ${formatCount(purchasedQty)} purchased.`
+                  : `Changed from prefilled value (${formatCount(prefilledStockQty)}). Was ${formatCount(currentStock)} + ${formatCount(purchasedQty)} purchased.`
                 : isManualReconcile && prefilledStockQty !== null
                   ? `Prefilled for reconciliation: ${formatCount(prefilledStockQty)} ${productUnit.trim() || 'unit'}.`
                   : fromPurchase
@@ -914,7 +908,7 @@ export default function UpdateStockScreen() {
             }}
           />
           <Button
-            title={saving ? 'Saving...' : isRestock ? 'Restock Item' : 'Save Changes'}
+            title={isRestock ? 'Add to stock' : 'Save changes'}
             onPress={handleSaveProduct}
             loading={saving}
             size="lg"
@@ -980,4 +974,23 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     flex: 1,
   },
+});
+
+const summaryStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    padding: 16,
+    marginBottom: 24,
+  },
+  label: { fontSize: 13.5, fontFamily: FONT.medium, color: COLORS.text.secondary },
+  value: { fontSize: 36, lineHeight: 42, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
+  unit: { fontSize: 17, fontFamily: FONT.regular, color: COLORS.text.muted, letterSpacing: 0 },
+  status: { fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted },
 });

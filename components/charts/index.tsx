@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Dimensions } from 'react-native';
 import Svg, { Rect, Line, Path, Circle, Text as SvgText, G, Defs, LinearGradient, Stop } from 'react-native-svg';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -52,7 +52,7 @@ export const BarChart: React.FC<BarChartProps> = ({
   const chartH = height - paddingTop - paddingBottom;
 
   const maxVal = Math.max(...data.map((d) => Math.max(d.value, d.secondaryValue ?? 0)), 1);
-  const gridLines = 4;
+  const gridLines = 3;
 
   const minBarGroupW = 35; // intelligent minimum width
   const scrollChartW = Math.max(width - paddingLeft - paddingRight, data.length * minBarGroupW);
@@ -68,7 +68,7 @@ export const BarChart: React.FC<BarChartProps> = ({
           const y = paddingTop + (chartH / gridLines) * i;
           const val = maxVal - (maxVal / gridLines) * i;
           return (
-            <SvgText key={i} x={paddingLeft - 6} y={y + 4} fontSize={9} fill={COLORS.text.muted} textAnchor="end">
+            <SvgText key={i} x={paddingLeft - 6} y={y + 4} fontSize={9.5} fontFamily={FONT.regular} fill={COLORS.text.muted} textAnchor="end">
               {formatValue(val)}
             </SvgText>
           );
@@ -77,21 +77,12 @@ export const BarChart: React.FC<BarChartProps> = ({
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <Svg width={scrollChartW + paddingRight} height={height}>
-          <Defs>
-            <LinearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={color} stopOpacity="1" />
-              <Stop offset="1" stopColor={color} stopOpacity="0.6" />
-            </LinearGradient>
-            <LinearGradient id="barGrad2" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={secondaryColor} stopOpacity="1" />
-              <Stop offset="1" stopColor={secondaryColor} stopOpacity="0.6" />
-            </LinearGradient>
-          </Defs>
+
 
           {Array.from({ length: gridLines + 1 }).map((_, i) => {
             const y = paddingTop + (chartH / gridLines) * i;
             return (
-              <Line key={i} x1={0} y1={y} x2={scrollChartW + paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} />
+              <Line key={i} x1={0} y1={y} x2={scrollChartW + paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} strokeDasharray={i === gridLines ? undefined : '2,4'} />
             );
           })}
 
@@ -106,11 +97,11 @@ export const BarChart: React.FC<BarChartProps> = ({
 
             return (
               <G key={i}>
-                <Rect x={barX} y={barY} width={barW} height={barH} rx={4} fill="url(#barGrad)" />
+                <Rect x={barX} y={barY} width={barW} height={barH} rx={Math.min(4, barW / 3)} fill={color} />
                 {showSecondary && d.secondaryValue !== undefined && (
-                  <Rect x={barX + barW + barGap} y={secY} width={barW} height={secH} rx={4} fill="url(#barGrad2)" />
+                  <Rect x={barX + barW + barGap} y={secY} width={barW} height={secH} rx={Math.min(4, barW / 3)} fill={secondaryColor} />
                 )}
-                <SvgText x={groupX + barGroupW / 2} y={height - paddingBottom + 14} fontSize={10} fill={COLORS.text.muted} textAnchor="middle">
+                <SvgText x={groupX + barGroupW / 2} y={height - paddingBottom + 14} fontSize={10} fontFamily={FONT.regular} fill={COLORS.text.muted} textAnchor="middle">
                   {d.label}
                 </SvgText>
               </G>
@@ -150,9 +141,10 @@ export const LineChart: React.FC<LineChartProps> = ({
   showSecondary = false,
   formatValue = defaultFormatValue,
 }) => {
+  const gradId = React.useId().replace(/:/g, '');
   if (!data.length) return null;
 
-  const paddingLeft = 35; // reduced spacing
+  const paddingLeft = 35;
   const paddingRight = 16;
   const paddingTop = 16;
   const paddingBottom = 40;
@@ -160,9 +152,9 @@ export const LineChart: React.FC<LineChartProps> = ({
 
   const allValues = data.flatMap((d) => [d.value, d.secondaryValue ?? 0]);
   const maxVal = Math.max(...allValues, 1);
-  const gridLines = 4;
+  const gridLines = 3;
 
-  const minPointW = 40; // intelligent minimum width
+  const minPointW = 30;
   const horizontalPadding = 16; // Prevents the first and last label from cutting off at edges
   const scrollChartW = Math.max(width - paddingLeft - paddingRight, data.length * minPointW + horizontalPadding * 2);
 
@@ -183,7 +175,7 @@ export const LineChart: React.FC<LineChartProps> = ({
     const linePath = buildPath(key);
     const lastX = toX(data.length - 1);
     const baseY = paddingTop + chartH;
-    return `${linePath} L ${lastX} ${baseY} L 0 ${baseY} Z`;
+    return `${linePath} L ${lastX} ${baseY} L ${toX(0)} ${baseY} Z`;
   };
 
   return (
@@ -193,7 +185,7 @@ export const LineChart: React.FC<LineChartProps> = ({
           const y = paddingTop + (chartH / gridLines) * i;
           const val = maxVal - (maxVal / gridLines) * i;
           return (
-            <SvgText key={i} x={paddingLeft - 6} y={y + 4} fontSize={9} fill={COLORS.text.muted} textAnchor="end">
+            <SvgText key={i} x={paddingLeft - 6} y={y + 4} fontSize={9.5} fontFamily={FONT.regular} fill={COLORS.text.muted} textAnchor="end">
               {formatValue(val)}
             </SvgText>
           );
@@ -203,11 +195,11 @@ export const LineChart: React.FC<LineChartProps> = ({
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <Svg width={scrollChartW + paddingRight} height={height}>
           <Defs>
-            <LinearGradient id="lineAreaGrad" x1="0" y1="0" x2="0" y2="1">
+            <LinearGradient id={`${gradId}a`} x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={color} stopOpacity="0.15" />
               <Stop offset="1" stopColor={color} stopOpacity="0.0" />
             </LinearGradient>
-            <LinearGradient id="lineAreaGrad2" x1="0" y1="0" x2="0" y2="1">
+            <LinearGradient id={`${gradId}b`} x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={secondaryColor} stopOpacity="0.12" />
               <Stop offset="1" stopColor={secondaryColor} stopOpacity="0.0" />
             </LinearGradient>
@@ -216,20 +208,20 @@ export const LineChart: React.FC<LineChartProps> = ({
           {Array.from({ length: gridLines + 1 }).map((_, i) => {
             const y = paddingTop + (chartH / gridLines) * i;
             return (
-              <Line key={i} x1={0} y1={y} x2={scrollChartW + paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} />
+              <Line key={i} x1={0} y1={y} x2={scrollChartW + paddingRight} y2={y} stroke={COLORS.border} strokeWidth={1} strokeDasharray={i === gridLines ? undefined : '2,4'} />
             );
           })}
 
           {data.length > 1 && (
             <>
-              <Path d={buildAreaPath('value')} fill="url(#lineAreaGrad)" />
-              {showSecondary && <Path d={buildAreaPath('secondaryValue')} fill="url(#lineAreaGrad2)" />}
+              <Path d={buildAreaPath('value')} fill={`url(#${gradId}a)`} />
+              {showSecondary && <Path d={buildAreaPath('secondaryValue')} fill={`url(#${gradId}b)`} />}
             </>
           )}
 
           {data.length > 1 && (
             <>
-              <Path d={buildPath('value')} fill="none" stroke={color} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+              <Path d={buildPath('value')} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
               {showSecondary && (
                 <Path d={buildPath('secondaryValue')} fill="none" stroke={secondaryColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4,3" />
               )}
@@ -238,11 +230,10 @@ export const LineChart: React.FC<LineChartProps> = ({
 
           {data.map((d, i) => (
             <G key={i}>
-              <Circle cx={toX(i)} cy={toY(d.value)} r={4} fill={color} />
-              {showSecondary && d.secondaryValue !== undefined && (
-                <Circle cx={toX(i)} cy={toY(d.secondaryValue)} r={3} fill={secondaryColor} />
-              )}
-              <SvgText x={toX(i)} y={height - paddingBottom + 14} fontSize={10} fill={COLORS.text.muted} textAnchor="middle">
+              {data.length <= 8 || i === data.length - 1 ? (
+                <Circle cx={toX(i)} cy={toY(d.value)} r={3.5} fill={COLORS.card} stroke={color} strokeWidth={2} />
+              ) : null}
+              <SvgText x={toX(i)} y={height - paddingBottom + 14} fontSize={10} fontFamily={FONT.regular} fill={COLORS.text.muted} textAnchor="middle">
                 {d.label}
               </SvgText>
             </G>
@@ -315,12 +306,12 @@ export const DonutChart: React.FC<DonutChartProps> = ({
         <Path key={i} d={slice.pathD} fill="none" stroke={slice.color} strokeWidth={thickness} strokeLinecap="butt" />
       ))}
       {centerLabel && (
-        <SvgText x={cx} y={cy - 4} fontSize={14} fontFamily={FONT.bold} fill={COLORS.text.primary} textAnchor="middle">
+        <SvgText x={cx} y={cy + 2} fontSize={19} fontFamily={FONT.serif} fill={COLORS.text.primary} textAnchor="middle">
           {centerLabel}
         </SvgText>
       )}
       {centerSubLabel && (
-        <SvgText x={cx} y={cy + 14} fontSize={10} fill={COLORS.text.muted} textAnchor="middle">
+        <SvgText x={cx} y={cy + 19} fontSize={11} fontFamily={FONT.regular} fill={COLORS.text.muted} textAnchor="middle">
           {centerSubLabel}
         </SvgText>
       )}
@@ -360,7 +351,7 @@ interface MetricCardProps {
   label: string;
   value: string;
   growth?: number;
-  icon: keyof typeof Feather.glyphMap;
+  icon: IconName;
   color?: string;
   subtext?: string;
 }
@@ -391,7 +382,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({ label, value, growth, ic
             justifyContent: 'center',
           }}
         >
-          <Feather name={icon} size={16} color={color} />
+          <Icon name={icon} size={16} color={color} />
         </View>
         {showGrowth && (
           <View

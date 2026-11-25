@@ -2,13 +2,14 @@ import React, { useCallback, useEffect, useDeferredValue, useMemo, useState } fr
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EmptyState, SmartChip } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { dismissScreen } from '@/lib/navigation';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from '@/constants';
 
 const formatCurrency = (value: number | undefined | null) =>
@@ -94,12 +95,14 @@ export default function CustomersScreen() {
 
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <View style={{ flex: 1 }}>
         <ScreenHeader
           title="Customers"
-          subtitle={`${filtered.length} shown`}
-          theme="dark"
+          large
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+          subtitle={`${filtered.length} ${filtered.length === 1 ? 'customer' : 'customers'}`}
+         
           right={<HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/customer-create')} />}
         />
 
@@ -125,7 +128,7 @@ export default function CustomersScreen() {
               paddingHorizontal: 14,
             }}
           >
-            <Feather name="search" size={16} color={COLORS.text.muted} />
+            <Icon name="search" size={16} color={COLORS.text.muted} />
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -139,7 +142,7 @@ export default function CustomersScreen() {
             />
             {search ? (
               <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
-                <Feather name="x" size={16} color={COLORS.text.muted} />
+                <Icon name="x" size={16} color={COLORS.text.muted} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -185,7 +188,7 @@ export default function CustomersScreen() {
                 backgroundColor: customerView === 'owing' ? COLORS.dangerLight : COLORS.card,
               }}
             >
-              <Feather name="alert-circle" size={13} color={customerView === 'owing' ? COLORS.danger : COLORS.text.muted} />
+              <Icon name="alert-circle" size={13} color={customerView === 'owing' ? COLORS.danger : COLORS.text.muted} />
               <Text
                 style={{
                   fontFamily: FONT.medium,
@@ -200,7 +203,7 @@ export default function CustomersScreen() {
             <View style={{ flex: 1 }} />
             {hasActiveFilter ? (
               <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <Feather name="x-circle" size={14} color={COLORS.text.muted} />
+                <Icon name="x-circle" size={14} color={COLORS.text.muted} />
                 <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Clear</Text>
               </TouchableOpacity>
             ) : null}
@@ -336,7 +339,7 @@ export default function CustomersScreen() {
                       ) : null}
                     </View>
 
-                    <Feather name="chevron-right" size={15} color={COLORS.text.muted} />
+                    <Icon name="chevron-right" size={15} color={COLORS.text.muted} />
                   </View>
                 </TouchableOpacity>
               );

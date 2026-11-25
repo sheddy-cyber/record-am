@@ -3,6 +3,7 @@ import {
   Alert,
   LayoutAnimation,
   Platform,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -12,7 +13,7 @@ import {
   View,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { differenceInDays, format, isToday } from 'date-fns';
@@ -27,7 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { deleteSaleRecord } from '@/lib/recordDeletion';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDebtReminderViaWhatsApp } from '@/lib/reports';
-import { Button, EmptyState, SmartChip } from '@/components/ui';
+import { Avatar, Button, EmptyState } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP } from '@/constants';
@@ -377,11 +378,11 @@ function DebtsScreen() {
 
   return (
     <SwipeableTabScreen name="debts">
-      <ScreenShell backgroundColor={COLORS.background} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.background}>
         <ScreenHeader
           title="Debts"
           subtitle={`${debts.length} ${debts.length === 1 ? 'debtor' : 'debtors'}`}
-          theme="dark"
+         
           left={
             <HeaderAction
               icon="arrow-left"
@@ -421,7 +422,7 @@ function DebtsScreen() {
             <View style={{ gap: 10, paddingTop: SP.page, marginBottom: 16 }}>
               {/* ── Search Bar (always visible at top) ──────────────────────── */}
               <View style={styles.searchBar}>
-                <Feather name="search" size={15} color={COLORS.text.muted} />
+                <Icon name="search" size={15} color={COLORS.text.muted} />
                 <TextInput
                   value={searchQuery}
                   onChangeText={setSearchQuery}
@@ -436,7 +437,7 @@ function DebtsScreen() {
                     onPress={() => setSearchQuery('')}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Feather name="x-circle" size={15} color={COLORS.text.muted} />
+                    <Icon name="x-circle" size={15} color={COLORS.text.muted} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -444,7 +445,7 @@ function DebtsScreen() {
               {/* ── Outstanding Total ────────────────────────────────────────── */}
               {debts.length > 0 && (
                 <View style={styles.outstandingBlock}>
-                  <Text style={styles.heroAmountLabel}>TOTAL OUTSTANDING</Text>
+                  <Text style={styles.heroAmountLabel}>Total outstanding</Text>
                   <Text style={styles.heroAmountValue}>
                     {formatCurrency(totalOutstanding)}
                   </Text>
@@ -465,7 +466,7 @@ function DebtsScreen() {
               />
             ) : (
               <View style={styles.emptyFilterContainer}>
-                <Feather name="search" size={32} color={COLORS.text.muted} />
+                <Icon name="search" size={32} color={COLORS.text.muted} />
                 <Text style={styles.emptyFilterTitle}>No Matching Debts</Text>
                 <Text style={styles.emptyFilterSubtitle}>
                   No customer debts match your current search.
@@ -492,100 +493,65 @@ function DebtsScreen() {
                 ? Math.min(100, Math.round((item.amount_paid / item.original_amount) * 100))
                 : 0;
 
-            return (
-              <View style={styles.debtCard}>
-                {/* ── Card Header: Avatar, Name, and Status Chip ── */}
-                <View style={styles.cardHeader}>
-                  <View style={styles.customerAvatar}>
-                    <Text style={styles.customerAvatarText}>{initials}</Text>
-                  </View>
+            const dueLabel = isOverdue
+              ? dueInfo?.label ?? 'Overdue'
+              : dueInfo?.isDueToday
+              ? 'Due today'
+              : dueInfo?.isDueSoon
+              ? dueInfo.label
+              : dueInfo
+              ? `Due ${dueInfo.formatted}`
+              : `Since ${getDebtAge(item)}`;
+            const dueColor = isOverdue ? COLORS.dangerText : dueInfo?.isDueToday || dueInfo?.isDueSoon ? COLORS.warningText : COLORS.text.muted;
 
+            return (
+              <Pressable
+                onLongPress={() => handleDeleteDebt(item)}
+                delayLongPress={400}
+                style={styles.debtCard}
+              >
+                <View style={styles.cardHeader}>
+                  <Avatar name={item.customer_name} size={40} />
                   <View style={styles.customerInfoCol}>
                     <Text style={styles.customerName} numberOfLines={1}>
                       {item.customer_name}
                     </Text>
-                    <View style={styles.customerMetaRow}>
-                      {resolvedPhone ? (
-                        <View style={styles.phoneTag}>
-                          <Feather name="phone" size={10} color={COLORS.text.secondary} />
-                          <Text style={styles.phoneText}>{resolvedPhone}</Text>
-                        </View>
-                      ) : null}
-                      <Text style={styles.ageText}>Recorded {getDebtAge(item)}</Text>
-                    </View>
+                    <Text style={[styles.ageText, { color: dueColor }]} numberOfLines={1}>
+                      {dueLabel}
+                      {resolvedPhone ? `  ·  ${resolvedPhone}` : ''}
+                    </Text>
                   </View>
-
-                  {/* Top Right: Smart Status Chip + Delete */}
-                  <View style={styles.cardHeaderRight}>
-                    {isOverdue ? (
-                      <SmartChip label={dueInfo?.label ?? 'Overdue'} deep variant="danger" size="xs" />
-                    ) : dueInfo?.isDueToday ? (
-                      <SmartChip label="Due today" deep variant="warning" size="xs" />
-                    ) : dueInfo?.isDueSoon ? (
-                      <SmartChip label={dueInfo.label} deep variant="warning" size="xs" />
-                    ) : dueInfo ? (
-                      <SmartChip label={dueInfo.formatted} icon="calendar" variant="neutral" size="xs" />
-                    ) : (
-                      <SmartChip label="No due date" variant="neutral" size="xs" />
-                    )}
-                    <TouchableOpacity
-                      onPress={() => handleDeleteDebt(item)}
-                      style={styles.deleteIconButton}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Delete debt"
-                    >
-                      <Feather name="trash-2" size={14} color={COLORS.danger} />
-                    </TouchableOpacity>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={styles.balanceValue}>{formatCurrency(item.balance)}</Text>
+                    <Text style={styles.originalLabel}>
+                      {isPartial ? `of ${formatCurrency(item.original_amount)}` : 'unpaid'}
+                    </Text>
                   </View>
                 </View>
 
-                {/* ── Financial Balance Block ─────────────────────────────── */}
-                <View style={styles.balanceContainer}>
-                  <View style={styles.balanceRow}>
-                    <View>
-                      <Text style={styles.balanceLabel}>REMAINING BALANCE</Text>
-                      <Text style={styles.balanceValue}>
-                        {formatCurrency(item.balance)}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={styles.originalLabel}>
-                        Paid: {formatCurrency(item.amount_paid)} of {formatCurrency(item.original_amount)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Progress Line */}
+                {isPartial ? (
                   <View style={styles.cardProgressTrack}>
                     <View
                       style={[
                         styles.cardProgressFill,
-                        {
-                          width: `${Math.max(paidRatio > 0 ? 3 : 0, paidRatio)}%`,
-                          backgroundColor: isOverdue ? COLORS.danger : COLORS.success,
-                        },
+                        { width: `${Math.max(paidRatio > 0 ? 3 : 0, paidRatio)}%`, backgroundColor: COLORS.success },
                       ]}
                     />
                   </View>
-                </View>
+                ) : null}
 
                 {item.notes ? (
-                  <View style={styles.notesTag}>
-                    <Feather name="file-text" size={11} color={COLORS.text.muted} />
-                    <Text style={styles.notesText} numberOfLines={1}>
-                      "{item.notes}"
-                    </Text>
-                  </View>
+                  <Text style={styles.notesText} numberOfLines={1}>
+                    {item.notes}
+                  </Text>
                 ) : null}
 
                 {/* ── Action Buttons ──────────────────────────────────────── */}
                 <View style={styles.actionsRow}>
                   <Button
-                    title="Record Payment"
-                    icon="dollar-sign"
+                    title="Record payment"
                     size="sm"
-                    variant="secondary"
+                    variant="tinted"
                     onPress={() =>
                       router.push({
                         pathname: '/(app)/record-payment',
@@ -595,8 +561,8 @@ function DebtsScreen() {
                     style={{ flex: 1 }}
                   />
                   <Button
-                    title="Send Reminder"
-                    icon="send"
+                    title="Remind"
+                    icon="message-circle"
                     size="sm"
                     variant="ghost"
                     onPress={() => {
@@ -618,7 +584,7 @@ function DebtsScreen() {
                     style={{ flex: 1 }}
                   />
                 </View>
-              </View>
+              </Pressable>
             );
           }}
         />
@@ -816,7 +782,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.ink,
   },
   filterPillDangerAlert: {
-    borderColor: '#fca5a5',
+    borderColor: '#E3A398',
     backgroundColor: '#fff1f2',
   },
   filterPillText: {
@@ -865,8 +831,9 @@ const styles = StyleSheet.create({
   // ── Debt Card ─────────────────────────────────────────────
   debtCard: {
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    padding: 16,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    padding: 14,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     gap: 12,
@@ -874,7 +841,7 @@ const styles = StyleSheet.create({
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   customerAvatar: {
     width: 38,
@@ -896,9 +863,10 @@ const styles = StyleSheet.create({
     gap: 3,
   },
   customerName: {
-    fontSize: 15,
-    fontFamily: FONT.bold,
+    fontSize: 15.5,
+    fontFamily: FONT.medium,
     color: COLORS.text.primary,
+    letterSpacing: -0.2,
   },
   customerMetaRow: {
     flexDirection: 'row',
@@ -916,7 +884,7 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
   },
   ageText: {
-    fontSize: 11,
+    fontSize: 12.5,
     fontFamily: FONT.regular,
     color: COLORS.text.muted,
   },
@@ -933,7 +901,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     backgroundColor: COLORS.dangerLight,
     borderWidth: 1,
-    borderColor: '#fca5a5',
+    borderColor: '#E3A398',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -941,9 +909,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#fee2e2',
+    backgroundColor: '#F5DAD4',
     borderWidth: 1,
-    borderColor: '#fca5a5',
+    borderColor: '#E3A398',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: RADIUS.full,
@@ -951,12 +919,12 @@ const styles = StyleSheet.create({
   overdueBadgeText: {
     fontSize: 10,
     fontFamily: FONT.bold,
-    color: '#b91c1c',
+    color: '#A3321F',
   },
   partialBadge: {
-    backgroundColor: '#fef3c7',
+    backgroundColor: '#F6EDDA',
     borderWidth: 1,
-    borderColor: '#fde68a',
+    borderColor: '#E9D6AE',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: RADIUS.full,
@@ -964,7 +932,7 @@ const styles = StyleSheet.create({
   partialBadgeText: {
     fontSize: 10,
     fontFamily: FONT.bold,
-    color: '#b45309',
+    color: '#8A5A12',
   },
   activeBadge: {
     backgroundColor: COLORS.surface2,
@@ -1001,15 +969,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   balanceValue: {
-    fontSize: 19,
-    fontFamily: FONT.bold,
-    color: COLORS.danger,
-    marginTop: 2,
+    fontSize: 16,
+    fontFamily: FONT.semiBold,
+    color: COLORS.dangerText,
+    letterSpacing: -0.3,
+    fontVariant: ['tabular-nums'],
   },
   originalLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
+    color: COLORS.text.muted,
+    marginTop: 2,
   },
   paidLabel: {
     fontSize: 11,
@@ -1052,9 +1022,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   notesText: {
-    fontSize: 11,
+    fontSize: 13,
     fontFamily: FONT.regular,
-    color: COLORS.text.muted,
+    color: COLORS.text.secondary,
   },
 
   // ── Actions ───────────────────────────────────────────────

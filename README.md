@@ -212,6 +212,49 @@ Use the terminal controls to open the app:
 - **iOS Simulator**: Press `i` or run `npm run ios` (macOS only).
 - **Web Browser**: Press `w` or run `npm run web`.
 
+> **Native rebuild required after pulling the redesign.** It adds `expo-haptics`, replaces `expo-av` with `expo-audio` for voice recording, and changes the app icons and splash colours, so rebuild the development client once (`npx expo run:android` / `npx expo run:ios`, or an EAS dev build). Voice commands will not record in a client built before this change.
+
+---
+
+## 🎙️ Voice Commands
+
+Tap the dark mic key in the tab bar and say what happened, for example *"Sold two Peak Milk to Chidi, cash"* or *"Mama Ngozi paid 5k for her debt"*. Recording stops by itself when you stop talking. The app shows a preview; nothing is saved until you tap **Save**, and **Edit** opens the full form already filled in.
+
+How it works (`lib/voice`, `store/voiceStore.ts`):
+
+1. Speech is recorded at 16 kHz mono with silence detection.
+2. It is transcribed with Whisper (Groq), primed with your own product and customer names.
+3. The text is turned into a structured action by a language model, with an on-device parser as a fallback when offline or slow. Every network call has a timeout.
+
+**Keep the speech key off the device (recommended).** Deploy the included Edge Function and store the key as a server secret:
+
+```bash
+supabase secrets set GROQ_API_KEY=gsk_your_key
+supabase functions deploy voice-command
+```
+
+Then remove `EXPO_PUBLIC_GROQ_API_KEY` from `.env`. With no key on the device the app automatically uses the function, and only signed-in users can call it. Any `EXPO_PUBLIC_*` value is bundled into the app and can be extracted, so a key there should be treated as public.
+
+---
+
+## 🎨 Design System
+
+All visual decisions live in `constants/index.ts` and the shared components; screens should not hard-code colours or fonts.
+
+| Token | Use |
+| --- | --- |
+| `COLORS.surface` `#F5F3EE` | Page background (warm paper) |
+| `COLORS.card` `#FFFFFF` | Grouped lists and cards |
+| `COLORS.ink` `#1A1917` | Text and primary buttons |
+| `COLORS.accent` `#C4613F` | Brand clay: the one accent, used sparingly |
+| `FONT.*` | Public Sans for the interface (has a real ₦ glyph and tabular figures) |
+| `FONT.serif` | Newsreader, only for large titles and hero figures |
+
+- **Icons** are drawn for Record Am in `components/icons` (`<Icon name="…" />`), on a 24-unit grid with filled variants for the tab bar.
+- **Brand assets** are generated from one vector mark: `npm i --no-save @resvg/resvg-js sharp && node scripts/generate-brand-assets.js`.
+- **Building blocks**: `Button`, `IconButton`, `Card`, `Group` + `ListRow` (Settings-style lists), `SegmentedControl`, `Pill`, `Avatar`, `Skeleton`, `BottomSheetModal`, `ScreenHeader` (large serif title on root screens, compact bar on pushed screens).
+- **Previewing in a browser**: `npm run web`, then run `__recordamDemo()` in the browser console to load local sample data (development builds only; nothing is written to Supabase).
+
 ---
 
 ## 🗄️ Database Architecture

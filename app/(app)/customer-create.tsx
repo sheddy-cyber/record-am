@@ -66,11 +66,11 @@ export default function CustomerCreateScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Add Customer"
-        subtitle="Save a customer profile for future sales and debts."
-        theme="dark"
+        subtitle="For faster sales and debt tracking"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
       <KeyboardAwareScrollView

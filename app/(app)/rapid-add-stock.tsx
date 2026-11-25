@@ -9,7 +9,7 @@ import {
   View,
   Vibration,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
@@ -295,11 +295,11 @@ export default function RapidAddStockScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Rapid Stock Entry"
         subtitle={`${sessionItems.length} ${sessionItems.length === 1 ? 'item' : 'items'} added this session`}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         right={
           <TouchableOpacity
@@ -338,7 +338,7 @@ export default function RapidAddStockScreen() {
                   onPress={() => setProductName('')}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Feather name="x" size={14} color={COLORS.text.muted} />
+                  <Icon name="x" size={14} color={COLORS.text.muted} />
                 </TouchableOpacity>
               )}
             </View>
@@ -352,7 +352,7 @@ export default function RapidAddStockScreen() {
                 onPress={() => setNewCategoryModalOpen((prev) => !prev)}
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
               >
-                <Feather name="plus" size={12} color={COLORS.ink} />
+                <Icon name="plus" size={12} color={COLORS.ink} />
                 <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: COLORS.ink }}>
                   New Category
                 </Text>
@@ -382,7 +382,7 @@ export default function RapidAddStockScreen() {
                   style={{ padding: 6 }}
                   onPress={() => setNewCategoryModalOpen(false)}
                 >
-                  <Feather name="x" size={14} color={COLORS.text.muted} />
+                  <Icon name="x" size={14} color={COLORS.text.muted} />
                 </TouchableOpacity>
               </View>
             )}
@@ -530,7 +530,7 @@ export default function RapidAddStockScreen() {
                   style={styles.scanIconButton}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Feather name="maximize" size={15} color={COLORS.ink} />
+                  <Icon name="maximize" size={15} color={COLORS.ink} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -542,7 +542,7 @@ export default function RapidAddStockScreen() {
             onPress={() => setLockCategoryAndUnit((prev) => !prev)}
             activeOpacity={0.8}
           >
-            <Feather
+            <Icon
               name={lockCategoryAndUnit ? 'check-square' : 'square'}
               size={18}
               color={lockCategoryAndUnit ? COLORS.ink : COLORS.text.muted}
@@ -560,7 +560,7 @@ export default function RapidAddStockScreen() {
               disabled={saving}
               activeOpacity={0.8}
             >
-              <Feather name="plus-circle" size={18} color={COLORS.onAccent} />
+              <Icon name="plus-circle" size={18} color={COLORS.onAccent} />
               <Text style={styles.saveNextButtonText}>
                 {saving ? 'Saving...' : 'Save & Add Next Product'}
               </Text>
@@ -657,7 +657,7 @@ const styles = StyleSheet.create({
     height: 42,
   },
   inputBoxRequired: {
-    borderColor: '#e2e8f0',
+    borderColor: '#E6E2D9',
   },
   textInput: {
     flex: 1,
@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 8,
-    backgroundColor: '#eff6ff',
+    backgroundColor: '#E3EBF3',
     padding: 6,
     borderRadius: RADIUS.md,
   },
@@ -711,7 +711,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderWidth: 1,
-    borderColor: '#bfdbfe',
+    borderColor: '#C9D7E6',
   },
   newCategorySaveBtn: {
     backgroundColor: COLORS.ink,

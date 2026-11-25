@@ -106,14 +106,14 @@ export const KeyboardAwareTextInput = React.forwardRef<TextInput, KeyboardAwareT
         ref={ref}
         underlineColorAndroid="transparent"
         selectionColor={COLORS.accent}
-        cursorColor={COLORS.accent}
+        cursorColor={COLORS.text.primary}
         importantForAutofill="no"
         value={displayValue}
         onChangeText={handleChangeText}
         {...props}
         style={[
           {
-            backgroundColor: '#FFFFFF',
+            backgroundColor: COLORS.card,
           },
           props.style,
         ]}

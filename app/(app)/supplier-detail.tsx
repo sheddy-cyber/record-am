@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -125,8 +125,8 @@ export default function SupplierDetailScreen() {
 
   if (!canViewPurchases) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-        <ScreenHeader title="Supplier Details" theme="dark" left={<HeaderAction icon="arrow-left" onPress={closeScreen} />} />
+      <ScreenShell backgroundColor={COLORS.surface}>
+        <ScreenHeader title="Supplier Details" left={<HeaderAction icon="arrow-left" onPress={closeScreen} />} />
         <PermissionDenied
           title="Supplier purchases are restricted"
           description="This account cannot view supplier balances, purchase records, or goods costs."
@@ -137,10 +137,10 @@ export default function SupplierDetailScreen() {
 
   if (!supplier) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Supplier Details"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <EmptyState
@@ -223,11 +223,11 @@ export default function SupplierDetailScreen() {
   const supplierHasDetails = Boolean(supplier.phone || supplier.email || supplier.address || supplier.notes);
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title={supplier.name}
         subtitle={`${supplierPurchases.length} recent purchase${supplierPurchases.length === 1 ? '' : 's'}`}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         right={
           canEditPurchases ? (
@@ -252,10 +252,10 @@ export default function SupplierDetailScreen() {
         <Card style={{ backgroundColor: COLORS.ink, padding: 18 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <View style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: 'rgba(255,253,248,0.1)' }}>
-              <Feather name="truck" size={20} color={COLORS.infoLight} />
+              <Icon name="truck" size={20} color={COLORS.infoLight} />
             </View>
             <View style={{ flex: 1, marginLeft: 11 }}>
-              <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: 'rgba(255,253,248,0.6)', letterSpacing: 0.7 }}>SUPPLIER ACCOUNT</Text>
+              <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: 'rgba(255,253,248,0.6)', letterSpacing: 0.7 }}>Supplier account</Text>
               <Text style={{ marginTop: 3, fontFamily: FONT.regular, fontSize: 13, color: 'rgba(255,253,248,0.82)' }}>
                 {supplier.total_orders ?? 0} purchase{supplier.total_orders === 1 ? '' : 's'} recorded
               </Text>
@@ -263,8 +263,8 @@ export default function SupplierDetailScreen() {
           </View>
 
           <View style={{ marginTop: 22 }}>
-            <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: 'rgba(255,253,248,0.6)', letterSpacing: 0.7 }}>CURRENT BALANCE</Text>
-            <Text style={{ marginTop: 5, fontFamily: FONT.bold, fontSize: 28, color: (supplier.outstanding_debt ?? 0) > 0 ? '#FECACA' : COLORS.successLight }}>
+            <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: 'rgba(255,253,248,0.6)', letterSpacing: 0.7 }}>Current balance</Text>
+            <Text style={{ marginTop: 5, fontFamily: FONT.bold, fontSize: 28, color: (supplier.outstanding_debt ?? 0) > 0 ? '#EECAC2' : COLORS.successLight }}>
               {formatCurrency(supplier.outstanding_debt ?? 0)}
             </Text>
             <Text style={{ marginTop: 3, fontFamily: FONT.regular, fontSize: 12, color: 'rgba(255,253,248,0.72)' }}>
@@ -278,15 +278,15 @@ export default function SupplierDetailScreen() {
             activeOpacity={0.82}
             style={{ minHeight: 46, marginTop: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: RADIUS.md, backgroundColor: COLORS.accent }}
           >
-            <Feather name="plus" size={17} color={COLORS.onAccent} />
+            <Icon name="plus" size={17} color={COLORS.onAccent} />
             <Text style={{ fontFamily: FONT.bold, fontSize: 14, color: COLORS.onAccent }}>Record goods bought</Text>
           </TouchableOpacity>
           ) : null}
 
           <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
             {[
-              { label: 'TOTAL PURCHASED', value: formatCurrency(supplier.total_purchased ?? 0), color: COLORS.infoLight },
-              { label: 'GOODS RECORDS', value: String(supplier.total_orders ?? 0), color: COLORS.successLight },
+              { label: 'Total purchased', value: formatCurrency(supplier.total_purchased ?? 0), color: COLORS.infoLight },
+              { label: 'Goods records', value: String(supplier.total_orders ?? 0), color: COLORS.successLight },
             ].map((stat) => (
               <View key={stat.label} style={{ flex: 1, padding: 10, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: 'rgba(255,253,248,0.1)', backgroundColor: 'rgba(255,253,248,0.06)' }}>
                 <Text style={{ fontFamily: FONT.medium, fontSize: 9.5, color: 'rgba(255,253,248,0.58)', letterSpacing: 0.45 }}>{stat.label}</Text>
@@ -305,13 +305,13 @@ export default function SupplierDetailScreen() {
               supplier.address ? { icon: 'map-pin' as const, label: supplier.address } : null,
             ].filter(Boolean).map((detail) => (
               <View key={detail!.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-                <Feather name={detail!.icon} size={14} color={COLORS.text.muted} />
+                <Icon name={detail!.icon} size={14} color={COLORS.text.muted} />
                 <Text style={{ flex: 1, fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary }}>{detail!.label}</Text>
               </View>
             ))}
             {supplier.notes ? (
               <View style={{ paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.borderSubtle }}>
-                <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>NOTE</Text>
+                <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Note</Text>
                 <Text style={{ marginTop: 4, fontFamily: FONT.regular, fontSize: 13, color: COLORS.text.secondary, fontStyle: 'italic' }}>
                   “{supplier.notes}”
                 </Text>
@@ -328,7 +328,7 @@ export default function SupplierDetailScreen() {
           {supplierPurchases.length === 0 ? (
             <Card style={{ alignItems: 'center', paddingVertical: 22 }}>
               <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.surface2 }}>
-                <Feather name="package" size={18} color={COLORS.text.muted} />
+                <Icon name="package" size={18} color={COLORS.text.muted} />
               </View>
               <Text style={{ marginTop: 10, fontFamily: FONT.medium, color: COLORS.text.primary, fontSize: 13 }}>No goods recorded yet</Text>
               <Text style={{ marginTop: 3, fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 12, textAlign: 'center' }}>Record purchases to keep the balance and history up to date.</Text>
@@ -347,7 +347,7 @@ export default function SupplierDetailScreen() {
                     style={{ flexDirection: 'row', alignItems: 'center', padding: 14, gap: 11 }}
                   >
                     <View style={{ width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#EBF3FB' }}>
-                      <Feather name="package" size={17} color={COLORS.navy} />
+                      <Icon name="package" size={17} color={COLORS.navy} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontFamily: FONT.bold, color: COLORS.text.primary }} numberOfLines={1}>{getPurchaseItemsSummary(purchase, products)}</Text>
@@ -369,7 +369,7 @@ export default function SupplierDetailScreen() {
                       </Text>
                       {canEditPurchases ? (
                         <TouchableOpacity onPress={() => handleDeletePurchase(purchase.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Delete purchase">
-                          <Feather name="trash-2" size={14} color={COLORS.danger} />
+                          <Icon name="trash-2" size={14} color={COLORS.danger} />
                         </TouchableOpacity>
                       ) : null}
                     </View>
@@ -377,7 +377,7 @@ export default function SupplierDetailScreen() {
                     <View style={{ alignItems: 'flex-end', paddingHorizontal: 14, paddingBottom: 10 }}>
                       {canEditPurchases ? (
                         <TouchableOpacity onPress={() => handleDeletePurchase(purchase.id)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Delete purchase">
-                          <Feather name="trash-2" size={14} color={COLORS.danger} />
+                          <Icon name="trash-2" size={14} color={COLORS.danger} />
                         </TouchableOpacity>
                       ) : null}
                     </View>
@@ -404,7 +404,7 @@ export default function SupplierDetailScreen() {
           activeOpacity={0.8}
           style={{ minHeight: 50, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isPrinting ? 0.55 : 1 }}
         >
-          <Feather name="printer" size={16} color={COLORS.navy} />
+          <Icon name="printer" size={16} color={COLORS.navy} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isPrinting ? 'Preparing statement…' : 'Print supplier statement'}</Text>
             <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Balance and recent goods records</Text>
@@ -417,7 +417,7 @@ export default function SupplierDetailScreen() {
           activeOpacity={0.8}
           style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card, opacity: isSharingPDF ? 0.55 : 1 }}
         >
-          <Feather name="share-2" size={16} color={COLORS.navy} />
+          <Icon name="share-2" size={16} color={COLORS.navy} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>{isSharingPDF ? 'Preparing PDF…' : 'Share as PDF'}</Text>
             <Text style={{ marginTop: 2, fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>Save statement to device</Text>
@@ -432,7 +432,7 @@ export default function SupplierDetailScreen() {
           activeOpacity={0.8}
           style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: COLORS.border, backgroundColor: COLORS.card }}
         >
-          <Feather name="edit-2" size={16} color={COLORS.text.secondary} />
+          <Icon name="edit-2" size={16} color={COLORS.text.secondary} />
           <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.text.primary }}>Edit supplier details</Text>
         </TouchableOpacity>
 
@@ -442,9 +442,9 @@ export default function SupplierDetailScreen() {
             await handleDelete();
           }}
           activeOpacity={0.8}
-          style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: '#F5C2BA', backgroundColor: '#FEF3F2' }}
+          style={{ minHeight: 50, marginTop: 9, flexDirection: 'row', alignItems: 'center', gap: 11, paddingHorizontal: 13, borderWidth: StyleSheet.hairlineWidth, borderRadius: RADIUS.md, borderColor: '#EECAC2', backgroundColor: '#F8E5E1' }}
         >
-          <Feather name="trash-2" size={16} color={COLORS.danger} />
+          <Icon name="trash-2" size={16} color={COLORS.danger} />
           <Text style={{ fontFamily: FONT.medium, fontSize: 14, color: COLORS.danger }}>Remove supplier</Text>
         </TouchableOpacity>
 

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Alert, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Alert, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { Button, PermissionDenied } from '@/components/ui';
+import { Avatar, Button, PermissionDenied, Pill } from '@/components/ui';
 import { hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
 import { InputField } from '@/components/forms';
@@ -25,7 +25,7 @@ interface RoleOption {
   title: string;
   badge: string;
   badgeBg: string;
-  icon: keyof typeof Feather.glyphMap;
+  icon: IconName;
   summary: string;
   permissions: { text: string; allowed: boolean }[];
 }
@@ -37,7 +37,7 @@ const ROLE_OPTIONS: RoleOption[] = [
     badge: 'FULL ACCESS',
     badgeBg: COLORS.ink,
     icon: 'shield',
-    summary: 'Full day-to-day administrative authority over sales, stock, and expenses.',
+    summary: 'Runs the shop day to day: sales, stock, expenses and reports.',
     permissions: [
       { text: 'Record sales, log expenses & restock inventory', allowed: true },
       { text: 'View profit analytics, product margins & stock logs', allowed: true },
@@ -48,9 +48,9 @@ const ROLE_OPTIONS: RoleOption[] = [
     role: 'cashier',
     title: 'Cashier',
     badge: 'FRONT DESK',
-    badgeBg: '#15803D',
+    badgeBg: '#24663F',
     icon: 'shopping-bag',
-    summary: 'Focused on daily customer checkout, sales collection, and routine expenses.',
+    summary: 'Serves customers: records sales, takes payments, logs small expenses.',
     permissions: [
       { text: 'Record sales, collect payments & issue customer receipts', allowed: true },
       { text: 'Log business expenses & view checkout volume', allowed: true },
@@ -61,9 +61,9 @@ const ROLE_OPTIONS: RoleOption[] = [
     role: 'auditor',
     title: 'Auditor',
     badge: 'READ ONLY',
-    badgeBg: '#B45309',
+    badgeBg: '#8A5A12',
     icon: 'eye',
-    summary: 'Complete oversight and audit visibility without transactional edit rights.',
+    summary: 'Can see everything to check the books, but cannot change anything.',
     permissions: [
       { text: 'Review historical sales, receipts, debts & expense logs', allowed: true },
       { text: 'Export financial reports & audit stock movement trail', allowed: true },
@@ -73,10 +73,10 @@ const ROLE_OPTIONS: RoleOption[] = [
 ];
 
 const ROLE_THEMES: Record<string, { bg: string; text: string; label: string }> = {
-  owner: { bg: '#1E293B', text: '#FFFFFF', label: 'Owner' },
+  owner: { bg: '#2B2925', text: '#FFFFFF', label: 'Owner' },
   manager: { bg: COLORS.ink, text: '#FFFFFF', label: 'Manager' },
-  cashier: { bg: '#15803D', text: '#FFFFFF', label: 'Cashier' },
-  auditor: { bg: '#B45309', text: '#FFFFFF', label: 'Auditor' },
+  cashier: { bg: '#24663F', text: '#FFFFFF', label: 'Cashier' },
+  auditor: { bg: '#8A5A12', text: '#FFFFFF', label: 'Auditor' },
 };
 
 export default function EditTeamMemberScreen() {
@@ -132,12 +132,12 @@ export default function EditTeamMemberScreen() {
     if (!id || !userId) return;
 
     if (!canEditMember) {
-      Alert.alert('Permission Denied', 'Managers cannot modify the business owner profile.');
+      Alert.alert('Not allowed', 'Managers cannot change the owner’s profile.');
       return;
     }
     
     if (!editedName.trim()) {
-      Alert.alert('Required Name', 'Please provide a full name for this staff member.');
+      Alert.alert('Name needed', 'Enter this person’s full name.');
       return;
     }
     
@@ -164,7 +164,7 @@ export default function EditTeamMemberScreen() {
           useAuthStore.getState().setCurrentBranch(matchedBranch);
         }
       }
-      Toast.show({ type: 'success', text1: 'Staff profile updated successfully' });
+      Toast.show({ type: 'success', text1: 'Changes saved' });
       dismissScreen();
     } catch (err: any) {
       Alert.alert('Update Failed', err.message || 'Could not update staff member.');
@@ -175,19 +175,19 @@ export default function EditTeamMemberScreen() {
 
   const handleRemove = () => {
     Alert.alert(
-      'Remove Staff Member',
-      `Are you sure you want to remove ${editedName || name || 'this staff member'} from ${currentBusiness?.name || 'this business'}? They will immediately lose access.`,
+      `Remove ${editedName || name || 'this person'}?`,
+      `They will lose access to ${currentBusiness?.name || 'this business'} straight away. Their past records stay.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Remove Member',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             if (!id) return;
             setSaving(true);
             try {
               await removeTeamMember(id);
-              Toast.show({ type: 'success', text1: 'Staff removed successfully' });
+              Toast.show({ type: 'success', text1: 'Removed from team' });
               dismissScreen();
             } catch (err: any) {
               Alert.alert('Removal Failed', err.message || 'Could not remove member.');
@@ -203,12 +203,12 @@ export default function EditTeamMemberScreen() {
     if (!currentBusiness?.id || !userId) return;
 
     Alert.alert(
-      'Transfer Business Ownership',
-      `Are you sure you want to transfer full ownership of ${currentBusiness.name} to ${editedName || name || 'this staff member'}?\n\n• You will become a Manager.\n• You will lose owner-exclusive settings & business deletion rights.\n• This action cannot be reversed without the new owner's cooperation.`,
+      `Make ${editedName || name || 'this person'} the owner?`,
+      `You will become a manager and lose owner-only settings, including deleting the business. Only the new owner can give ownership back.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm Transfer',
+          text: 'Transfer ownership',
           style: 'destructive',
           onPress: async () => {
             setSaving(true);
@@ -233,7 +233,7 @@ export default function EditTeamMemberScreen() {
 
   if (!canManageTeam) {
     return (
-      <ScreenShell backgroundColor={COLORS.background} statusBarStyle="dark">
+      <ScreenShell backgroundColor={COLORS.background}>
         <ScreenHeader
           title="Manage Staff"
           left={<HeaderAction icon="x" onPress={() => dismissScreen()} />}
@@ -246,872 +246,245 @@ export default function EditTeamMemberScreen() {
     );
   }
 
+  const displayName = editedName || name || 'Staff member';
+  const selectedRole = ROLE_OPTIONS.find((o) => o.role === role);
+
   return (
-    <ScreenShell backgroundColor={COLORS.background} statusBarStyle="dark">
-      <ScreenHeader
-        title="Manage Staff"
-        subtitle={editedName || name || 'Staff Member'}
-        left={<HeaderAction icon="x" onPress={() => dismissScreen()} />}
-      />
+    <ScreenShell>
+      <ScreenHeader title={displayName} left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />} />
 
-      <ScrollView
-        contentContainerStyle={{ padding: SP.page, paddingBottom: 48, gap: 20 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── 1. Profile Hero Card (Upwork Profile Identity) ── */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroTopRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
-            </View>
-
-            <View style={styles.heroDetails}>
-              <View style={styles.heroNameRow}>
-                <Text style={styles.heroName} numberOfLines={1}>
-                  {editedName || name || 'Unnamed Staff'}
-                </Text>
-                <View style={[styles.rolePill, { backgroundColor: roleTheme.bg }]}>
-                  <Text style={styles.rolePillText}>{roleTheme.label}</Text>
-                </View>
-              </View>
-
-              <View style={styles.businessTagRow}>
-                <Feather name="check-circle" size={12} color={COLORS.success} />
-                <Text style={styles.businessTagText} numberOfLines={1}>
-                  Active Staff
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.heroDivider} />
-
-          <View style={styles.contactRow}>
-            <View style={styles.contactItem}>
-              <Feather name="phone" size={12} color={COLORS.text.muted} />
-              <Text style={styles.contactText} numberOfLines={1}>
-                {editedPhone || phone || 'No phone set'}
-              </Text>
-            </View>
-            <View style={styles.contactDot} />
-            <View style={[styles.contactItem, { flex: 1 }]}>
-              <Feather name="mail" size={12} color={COLORS.text.muted} />
-              <Text style={styles.contactText} numberOfLines={1}>
-                {email || 'No email attached'}
-              </Text>
-            </View>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: 56 }} showsVerticalScrollIndicator={false}>
+        {/* ── Identity ────────────────────────────────────────────── */}
+        <View style={styles.identity}>
+          <Avatar name={displayName} size={64} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name} numberOfLines={2}>
+              {displayName}
+            </Text>
+            <Text style={styles.meta} numberOfLines={1}>
+              {[roleTheme.label, staffId, branches.find((b) => b.id === assignedBranchId)?.name || branchName].filter(Boolean).join(' · ')}
+            </Text>
           </View>
         </View>
 
-        {/* ── 2. Activity & Performance Metrics (Smart Analytics Tiles) ── */}
-        {stats && (
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeaderRow}>
-              <View style={styles.sectionTitleWithIcon}>
-                <Feather name="activity" size={13} color={COLORS.navy} />
-                <Text style={styles.sectionTitle}>ACTIVITY & PERFORMANCE</Text>
-              </View>
-              <Text style={styles.sectionMeta}>All-Time Records</Text>
+        {/* ── Activity ────────────────────────────────────────────── */}
+        {stats ? (
+          <>
+            <Text style={styles.section}>All-time activity</Text>
+            <View style={styles.grid}>
+              <Figure label="Sold" value={formatCurrency(stats.salesWorth)} sub={`${stats.salesCount} ${stats.salesCount === 1 ? 'sale' : 'sales'}`} />
+              <Figure
+                label="Restocked"
+                value={formatCurrency(stats.purchasesWorth)}
+                sub={`${stats.purchasesCount} ${stats.purchasesCount === 1 ? 'entry' : 'entries'}`}
+                right
+              />
+              <Figure
+                label="Collected"
+                value={formatCurrency(stats.paidAmount)}
+                sub={stats.owedAmount > 0 ? `${formatCurrency(stats.owedAmount)} still owed` : 'Nothing owed'}
+                bottom
+              />
+              <Figure
+                label="Expenses"
+                value={formatCurrency(stats.expensesAmount)}
+                sub={`${stats.expensesCount} recorded`}
+                right
+                bottom
+              />
             </View>
+          </>
+        ) : null}
 
-            <View style={styles.statsGrid}>
-              {/* Goods Sold */}
-              <View style={styles.statTile}>
-                <View style={styles.statTileHeader}>
-                  <View style={[styles.statIconBadge, { backgroundColor: '#EFF6FF' }]}>
-                    <Feather name="shopping-bag" size={12} color="#0284C7" />
-                  </View>
-                  <Text style={styles.statOverline}>GOODS SOLD</Text>
-                </View>
-                <Text style={styles.statAmount} numberOfLines={1}>
-                  {formatCurrency(stats.salesWorth)}
-                </Text>
-                <Text style={styles.statCaption}>
-                  {stats.salesCount} {stats.salesCount === 1 ? 'sale' : 'sales'} logged
-                </Text>
-              </View>
-
-              {/* Goods Restocked */}
-              <View style={styles.statTile}>
-                <View style={styles.statTileHeader}>
-                  <View style={[styles.statIconBadge, { backgroundColor: '#F5F3FF' }]}>
-                    <Feather name="package" size={12} color="#7C3AED" />
-                  </View>
-                  <Text style={styles.statOverline}>RESTOCKED</Text>
-                </View>
-                <Text style={styles.statAmount} numberOfLines={1}>
-                  {formatCurrency(stats.purchasesWorth)}
-                </Text>
-                <Text style={styles.statCaption}>
-                  {stats.purchasesCount} {stats.purchasesCount === 1 ? 'batch' : 'batches'} added
-                </Text>
-              </View>
-
-              {/* Cash Collected */}
-              <View style={styles.statTile}>
-                <View style={styles.statTileHeader}>
-                  <View style={[styles.statIconBadge, { backgroundColor: '#ECFDF5' }]}>
-                    <Feather name="check-circle" size={12} color="#059669" />
-                  </View>
-                  <Text style={styles.statOverline}>CASH COLLECTED</Text>
-                </View>
-                <Text style={[styles.statAmount, { color: COLORS.success }]} numberOfLines={1}>
-                  {formatCurrency(stats.paidAmount)}
-                </Text>
-                <Text style={styles.statCaption}>
-                  {stats.owedAmount > 0 ? `₦${Number(stats.owedAmount).toLocaleString()} unpaid` : '100% Cleared'}
-                </Text>
-              </View>
-
-              {/* Expenses Logged */}
-              <View style={styles.statTile}>
-                <View style={styles.statTileHeader}>
-                  <View style={[styles.statIconBadge, { backgroundColor: '#FFFBEB' }]}>
-                    <Feather name="credit-card" size={12} color="#D97706" />
-                  </View>
-                  <Text style={styles.statOverline}>EXPENSES</Text>
-                </View>
-                <Text style={styles.statAmount} numberOfLines={1}>
-                  {formatCurrency(stats.expensesAmount)}
-                </Text>
-                <Text style={styles.statCaption}>
-                  {stats.expensesCount} expenses recorded
-                </Text>
-              </View>
-            </View>
-          </View>
-        )}
-
-        {/* ── 3. Profile Information Form ── */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.sectionTitleWithIcon}>
-              <Feather name="user" size={13} color={COLORS.navy} />
-              <Text style={styles.sectionTitle}>PROFILE DETAILS</Text>
-            </View>
-          </View>
-
-          <View style={styles.card}>
-            <InputField
-              label="Full Name"
-              placeholder="e.g. Adeola Johnson"
-              value={editedName}
-              onChangeText={setEditedName}
-              required
-              editable={canEditMember}
-            />
-            
-            <InputField
-              label="Phone Number"
-              placeholder="e.g. 08012345678"
-              value={editedPhone}
-              onChangeText={setEditedPhone}
-              keyboardType="phone-pad"
-              editable={canEditMember}
-            />
-
-            {/* Authenticated Email (Security Badge Tile) */}
-            <View style={styles.emailCard}>
-              <View style={styles.emailIconBox}>
-                <Feather name="mail" size={14} color={COLORS.navy} />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.emailOverline}>SIGN-IN EMAIL (IMMUTABLE)</Text>
-                <Text style={styles.emailValue} numberOfLines={1}>
-                  {email || 'No email attached'}
-                </Text>
-              </View>
-              <View style={styles.verifiedBadge}>
-                <Feather name="shield" size={10} color="#059669" />
-                <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
-              </View>
-            </View>
-
-            {staffId ? (
-              <View style={[styles.emailCard, { marginTop: 10 }]}>
-                <View style={styles.emailIconBox}>
-                  <Feather name="hash" size={14} color={COLORS.navy} />
-                </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={styles.emailOverline}>ASSIGNED STAFF ID</Text>
-                  <Text style={styles.emailValue}>{staffId}</Text>
-                </View>
-                <View style={styles.verifiedBadge}>
-                  <Text style={styles.verifiedBadgeText}>UNIQUE ID</Text>
-                </View>
-              </View>
-            ) : null}
-
-            {branches.length > 0 && !isSubjectOwner ? (
-              <View style={{ marginTop: 14 }}>
-                <Text style={{ fontFamily: FONT.semiBold, fontSize: 12.5, color: COLORS.text.secondary, marginBottom: 8 }}>
-                  Assigned Branch{currentUserRole !== 'owner' ? ` (${branchName || 'Owner managed'})` : ''}
-                </Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {branches.map((branch) => {
-                    const selected = assignedBranchId === branch.id;
-                    const disabled = currentUserRole !== 'owner';
-                    return (
-                      <TouchableOpacity
-                        key={branch.id}
-                        disabled={disabled}
-                        onPress={() => setAssignedBranchId(branch.id)}
-                        style={{
-                          paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          borderRadius: RADIUS.full,
-                          borderWidth: 1,
-                          borderColor: selected ? COLORS.accent : COLORS.border,
-                          backgroundColor: selected ? COLORS.accentLight : COLORS.surface,
-                          opacity: disabled && !selected ? 0.6 : 1,
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontFamily: selected ? FONT.bold : FONT.medium,
-                            fontSize: 12.5,
-                            color: selected ? COLORS.accent : COLORS.text.secondary,
-                          }}
-                        >
-                          {branch.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
-          </View>
+        {/* ── Details ─────────────────────────────────────────────── */}
+        <Text style={styles.section}>Details</Text>
+        <InputField label="Full name" placeholder="e.g. Adeola Johnson" value={editedName} onChangeText={setEditedName} editable={canEditMember} />
+        <InputField
+          label="Phone"
+          placeholder="0801 234 5678"
+          value={editedPhone}
+          onChangeText={setEditedPhone}
+          keyboardType="phone-pad"
+          editable={canEditMember}
+        />
+        <View style={styles.group}>
+          <InfoRow label="Sign-in email" value={email || 'None'} />
+          {staffId ? <InfoRow label="Staff ID" value={staffId} last /> : null}
         </View>
 
-        {/* ── 4. Access Control & Role Selection (Interactive Upwork Tier Cards) ── */}
-        <View style={styles.sectionContainer}>
-          <View style={styles.sectionHeaderRow}>
-            <View style={styles.sectionTitleWithIcon}>
-              <Feather name="lock" size={13} color={COLORS.navy} />
-              <Text style={styles.sectionTitle}>ASSIGNED ROLE & PERMISSIONS</Text>
+        {branches.length > 0 && !isSubjectOwner ? (
+          <>
+            <Text style={styles.section}>Works at</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {branches.map((branch) => (
+                <Pill
+                  key={branch.id}
+                  label={branch.name}
+                  active={assignedBranchId === branch.id}
+                  onPress={currentUserRole === 'owner' ? () => setAssignedBranchId(branch.id) : undefined}
+                />
+              ))}
             </View>
+            {currentUserRole !== 'owner' ? <Text style={styles.footnote}>Only the owner can move staff between branches.</Text> : null}
+          </>
+        ) : null}
+
+        {/* ── Role ────────────────────────────────────────────────── */}
+        <Text style={styles.section}>Role</Text>
+        {isSubjectOwner ? (
+          <View style={styles.group}>
+            <InfoRow label="Owner" value="Full control of the business" last />
           </View>
-
-          {isSubjectOwner ? (
-            <View style={styles.ownerNoticeCard}>
-              <View style={styles.ownerNoticeTop}>
-                <View style={styles.ownerBadgeIcon}>
-                  <Feather name="shield" size={16} color="#FFFFFF" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.ownerNoticeTitle}>Business Owner</Text>
-                  <Text style={styles.ownerNoticeSub}>
-                    Holds primary administrative credentials and full controls for this business.
-                  </Text>
-                </View>
-              </View>
-            </View>
-          ) : (
-            <View style={{ gap: 10 }}>
-              {ROLE_OPTIONS.map((opt) => {
-                const isActive = role === opt.role;
-
+        ) : (
+          <>
+            <View style={styles.group}>
+              {ROLE_OPTIONS.map((opt, i) => {
+                const active = role === opt.role;
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     key={opt.role}
-                    activeOpacity={0.75}
-                    style={[
-                      styles.roleOptionCard,
-                      isActive && styles.roleOptionCardActive,
+                    onPress={() => canEditMember && setRole(opt.role)}
+                    style={({ pressed }) => [
+                      styles.roleRow,
+                      i < ROLE_OPTIONS.length - 1 && styles.divider,
+                      pressed && { backgroundColor: COLORS.surface2 },
                     ]}
-                    onPress={() => setRole(opt.role)}
                   >
-                    <View style={styles.roleCardTopRow}>
-                      <View style={styles.roleRadioAndTitle}>
-                        <View
-                          style={[
-                            styles.roleRadioCircle,
-                            isActive && styles.roleRadioCircleActive,
-                          ]}
-                        >
-                          {isActive ? (
-                            <Feather name="check" size={11} color="#FFFFFF" />
-                          ) : null}
-                        </View>
-
-                        <View style={styles.roleTitleGroup}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <Text
-                              style={[
-                                styles.roleCardTitle,
-                                isActive && styles.roleCardTitleActive,
-                              ]}
-                            >
-                              {opt.title}
-                            </Text>
-                            <View style={[styles.roleMicroBadge, { backgroundColor: opt.badgeBg }]}>
-                              <Text style={styles.roleMicroBadgeText}>{opt.badge}</Text>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
+                    <View style={[styles.radio, active && styles.radioOn]}>
+                      {active ? <View style={styles.radioDot} /> : null}
                     </View>
-
-                    <Text style={styles.roleSummaryText}>{opt.summary}</Text>
-
-                    <View style={styles.permissionList}>
-                      {opt.permissions.map((p, idx) => (
-                        <View key={idx} style={styles.permissionItem}>
-                          <Feather
-                            name={p.allowed ? 'check' : 'x'}
-                            size={11}
-                            color={p.allowed ? COLORS.success : COLORS.danger}
-                            style={{ marginTop: 2 }}
-                          />
-                          <Text
-                            style={[
-                              styles.permissionText,
-                              !p.allowed && styles.permissionTextDisabled,
-                            ]}
-                          >
-                            {p.text}
-                          </Text>
-                        </View>
-                      ))}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.roleTitle}>{opt.title}</Text>
+                      <Text style={styles.roleText}>{opt.summary}</Text>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 );
               })}
             </View>
-          )}
-        </View>
+            {selectedRole ? (
+              <View style={styles.perms}>
+                {selectedRole.permissions.map((perm) => (
+                  <View key={perm.text} style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
+                    <Icon
+                      name={perm.allowed ? 'check' : 'x'}
+                      size={14}
+                      color={perm.allowed ? COLORS.successText : COLORS.text.faint}
+                      strokeWidth={2.2}
+                      style={{ marginTop: 2 }}
+                    />
+                    <Text style={[styles.permText, !perm.allowed && { color: COLORS.text.muted }]}>{perm.text}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </>
+        )}
 
-        {/* ── 5. Primary Save Button ── */}
         {canEditMember ? (
-          <Button
-            title={saving ? 'Saving Changes...' : 'Save Staff Changes'}
-            onPress={handleSave}
-            loading={saving}
-            size="lg"
-            style={{ marginTop: 4 }}
-          />
+          <Button title="Save changes" onPress={handleSave} loading={saving} size="lg" style={{ marginTop: 24 }} />
         ) : (
-          <View
-            style={{
-              padding: 14,
-              borderRadius: RADIUS.md,
-              backgroundColor: COLORS.surface2,
-              alignItems: 'center',
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: COLORS.border,
-              marginTop: 4,
-            }}
-          >
-            <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.muted }}>
-              Managers cannot modify the business owner's profile.
-            </Text>
-          </View>
+          <Text style={[styles.footnote, { textAlign: 'center', marginTop: 24 }]}>Managers cannot change the owner’s profile.</Text>
         )}
 
-        {/* ── 6. Executive Transfer Ownership (Owner only) ── */}
-        {currentUserRole === 'owner' && userId !== currentUserId && (
-          <View style={styles.transferSection}>
-            <View style={styles.transferCard}>
-              <View style={styles.transferHeader}>
-                <View style={styles.transferIconBox}>
-                  <Feather name="shield" size={16} color="#FFFFFF" />
-                </View>
-                <View style={{ flex: 1, gap: 2 }}>
-                  <Text style={styles.transferTitle}>Transfer Ownership</Text>
-                  <Text style={styles.transferSubtitle}>
-                    Relinquish primary ownership of {currentBusiness?.name || 'this business'} to {editedName || name}. You will become a Manager.
-                  </Text>
-                </View>
-              </View>
-
-              <Button
-                title="Transfer Business Ownership"
+        {/* ── Less common actions ─────────────────────────────────── */}
+        {(currentUserRole === 'owner' && userId !== currentUserId) || !isSubjectOwner ? (
+          <View style={[styles.group, { marginTop: 28 }]}>
+            {currentUserRole === 'owner' && userId !== currentUserId ? (
+              <Pressable
                 onPress={handleTransferOwnership}
-                variant="secondary"
                 disabled={saving}
-                icon="shield"
-                style={{ marginTop: 8 }}
-              />
-            </View>
+                style={({ pressed }) => [styles.actionRow, !isSubjectOwner && styles.divider, pressed && { backgroundColor: COLORS.surface2 }]}
+              >
+                <Text style={styles.actionText}>Make {displayName.split(' ')[0]} the owner</Text>
+              </Pressable>
+            ) : null}
+            {!isSubjectOwner ? (
+              <Pressable
+                onPress={handleRemove}
+                disabled={saving}
+                style={({ pressed }) => [styles.actionRow, pressed && { backgroundColor: COLORS.surface2 }]}
+              >
+                <Text style={[styles.actionText, { color: COLORS.danger }]}>Remove from team</Text>
+              </Pressable>
+            ) : null}
           </View>
-        )}
-
-        {/* ── 7. Danger Zone / Revoke Access ── */}
-        {!isSubjectOwner && (
-          <View style={styles.dangerCard}>
-            <View style={styles.dangerHeader}>
-              <View style={styles.dangerIconBox}>
-                <Feather name="user-x" size={15} color="#FFFFFF" />
-              </View>
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.dangerTitle}>Revoke Staff Access</Text>
-                <Text style={styles.dangerSubtitle}>
-                  Remove {editedName || name || 'this staff member'} from the team. Their login session and POS access will terminate immediately.
-                </Text>
-              </View>
-            </View>
-
-            <Button
-              title="Remove from Business"
-              onPress={handleRemove}
-              variant="danger"
-              disabled={saving}
-              style={{ marginTop: 10 }}
-            />
-          </View>
-        )}
+        ) : null}
       </ScrollView>
     </ScreenShell>
   );
 }
 
+function Figure({ label, value, sub, right, bottom }: { label: string; value: string; sub: string; right?: boolean; bottom?: boolean }) {
+  return (
+    <View
+      style={[
+        styles.figure,
+        !right && { borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: COLORS.border },
+        !bottom && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+      ]}
+    >
+      <Text style={styles.figLabel}>{label}</Text>
+      <Text style={styles.figValue} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      <Text style={styles.figSub} numberOfLines={1}>
+        {sub}
+      </Text>
+    </View>
+  );
+}
+
+function InfoRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
+  return (
+    <View style={[styles.infoRow, !last && styles.divider]}>
+      <Text style={styles.infoLabel}>{label}</Text>
+      <Text style={styles.infoValue} numberOfLines={1}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  // ── Hero Profile Card ──
-  heroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.lg,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 13,
-  },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: COLORS.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 20,
-    fontFamily: FONT.bold,
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  heroDetails: {
-    flex: 1,
-    gap: 3,
-  },
-  heroNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  heroName: {
-    fontSize: 17,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-    letterSpacing: -0.3,
-    flex: 1,
-  },
-  rolePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 2.5,
-    borderRadius: RADIUS.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rolePillText: {
-    fontSize: 10.5,
-    fontFamily: FONT.bold,
-    color: '#FFFFFF',
-    letterSpacing: 0.2,
-  },
-  businessTagRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginTop: 2,
-  },
-  businessTagText: {
-    fontSize: 12,
-    fontFamily: FONT.medium,
-    color: COLORS.text.secondary,
-  },
-  heroDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#E2E8F0',
-    marginVertical: 12,
-  },
-  contactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  contactText: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
-  },
-  contactDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: COLORS.text.muted,
-  },
-
-  // ── Sections & Headers ──
-  sectionContainer: {
-    gap: 10,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 2,
-  },
-  sectionTitleWithIcon: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  sectionTitle: {
-    fontSize: 11,
-    fontFamily: FONT.bold,
-    color: COLORS.text.muted,
-    letterSpacing: 0.6,
-  },
-  sectionMeta: {
-    fontSize: 11,
-    fontFamily: FONT.medium,
-    color: COLORS.text.muted,
-  },
-
-  // ── Activity & Performance Stats Grid ──
-  statsGrid: {
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 8 },
+  name: { fontSize: 26, lineHeight: 31, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -0.4 },
+  meta: { fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 },
+  section: { fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3, marginTop: 28, marginBottom: 10 },
+  grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
-  },
-  statTile: {
-    flex: 1,
-    minWidth: '47%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.md,
-    padding: 12,
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
-    gap: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 3,
-    elevation: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
   },
-  statTileHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 2,
-  },
-  statIconBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statOverline: {
-    fontSize: 9.5,
-    fontFamily: FONT.bold,
-    color: COLORS.text.muted,
-    letterSpacing: 0.4,
-  },
-  statAmount: {
-    fontSize: 15.5,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-    letterSpacing: -0.3,
-  },
-  statCaption: {
-    fontSize: 11,
-    fontFamily: FONT.regular,
-    color: COLORS.text.muted,
-    marginTop: 1,
-  },
-
-  // ── General Card ──
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.lg,
-    padding: 16,
+  figure: { width: '50%', padding: 14 },
+  figLabel: { fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.secondary },
+  figValue: { fontSize: 21, fontFamily: FONT.serif, color: COLORS.text.primary, marginTop: 4, fontVariant: ['tabular-nums'] },
+  figSub: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
+  group: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderCurve: 'continuous',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
-    gap: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 3,
-    elevation: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
   },
-
-  // ── Email Read-Only Security Box ──
-  emailCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.md,
-    padding: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
-    gap: 10,
-  },
-  emailIconBox: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#E0F2FE',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emailOverline: {
-    fontSize: 9.5,
-    fontFamily: FONT.bold,
-    color: COLORS.text.muted,
-    letterSpacing: 0.4,
-  },
-  emailValue: {
-    fontSize: 13,
-    fontFamily: FONT.medium,
-    color: COLORS.text.primary,
-  },
-  verifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#A7F3D0',
-  },
-  verifiedBadgeText: {
-    fontSize: 9,
-    fontFamily: FONT.bold,
-    color: '#059669',
-    letterSpacing: 0.3,
-  },
-
-  // ── Role Selection Cards ──
-  roleOptionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.md,
-    padding: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
-    gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  roleOptionCardActive: {
-    backgroundColor: '#F0F9FF',
-    borderColor: COLORS.navy,
-    borderWidth: 1.5,
-  },
-  roleCardTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  roleRadioAndTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    flex: 1,
-  },
-  roleRadioCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#CBD5E1',
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roleRadioCircleActive: {
-    borderColor: COLORS.navy,
-    backgroundColor: COLORS.navy,
-  },
-  roleTitleGroup: {
-    flex: 1,
-  },
-  roleCardTitle: {
-    fontSize: 14,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-    letterSpacing: -0.1,
-  },
-  roleCardTitleActive: {
-    color: COLORS.navy,
-  },
-  roleMicroBadge: {
-    paddingHorizontal: 6.5,
-    paddingVertical: 1.5,
-    borderRadius: RADIUS.full,
-  },
-  roleMicroBadgeText: {
-    fontSize: 8.5,
-    fontFamily: FONT.bold,
-    color: '#FFFFFF',
-    letterSpacing: 0.4,
-  },
-  roleSummaryText: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
-    lineHeight: 17,
-    paddingLeft: 29,
-  },
-  permissionList: {
-    paddingLeft: 29,
-    gap: 5,
-    paddingTop: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E2E8F0',
-    marginTop: 4,
-  },
-  permissionItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  permissionText: {
-    fontSize: 11.5,
-    fontFamily: FONT.regular,
-    color: COLORS.text.primary,
-    flex: 1,
-    lineHeight: 16,
-  },
-  permissionTextDisabled: {
-    color: COLORS.text.muted,
-  },
-
-  // ── Owner Notice Card ──
-  ownerNoticeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: RADIUS.md,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
-  },
-  ownerNoticeTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  ownerBadgeIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: COLORS.ink,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ownerNoticeTitle: {
-    fontSize: 15,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-  },
-  ownerNoticeSub: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-
-  // ── Transfer Ownership ──
-  transferSection: {
-    marginTop: 6,
-  },
-  transferCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: RADIUS.lg,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CBD5E1',
-    gap: 10,
-  },
-  transferHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  transferIconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.navy,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  transferTitle: {
-    fontSize: 14.5,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-  },
-  transferSubtitle: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
-    lineHeight: 17,
-  },
-
-  // ── Danger Zone ──
-  dangerCard: {
-    backgroundColor: '#FEF2F2',
-    borderRadius: RADIUS.lg,
-    padding: 16,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#FECACA',
-    gap: 8,
-  },
-  dangerHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-  },
-  dangerIconBox: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#DC2626',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-  },
-  dangerTitle: {
-    fontSize: 14.5,
-    fontFamily: FONT.bold,
-    color: '#991B1B',
-  },
-  dangerSubtitle: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: '#7F1D1D',
-    lineHeight: 17,
-  },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  infoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, paddingHorizontal: 16, minHeight: 50 },
+  infoLabel: { fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.primary },
+  infoValue: { flexShrink: 1, fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'right' },
+  roleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: COLORS.borderDark, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+  radioOn: { borderColor: COLORS.ink, backgroundColor: COLORS.ink },
+  radioDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#FFFFFF' },
+  roleTitle: { fontSize: 15.5, fontFamily: FONT.semiBold, color: COLORS.text.primary },
+  roleText: { fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2, lineHeight: 18 },
+  perms: { gap: 8, paddingHorizontal: 4, paddingTop: 12 },
+  permText: { flex: 1, fontSize: 13.5, fontFamily: FONT.regular, color: COLORS.text.secondary, lineHeight: 19 },
+  footnote: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 8, paddingHorizontal: 4 },
+  actionRow: { paddingHorizontal: 16, minHeight: 52, justifyContent: 'center' },
+  actionText: { fontSize: 15.5, fontFamily: FONT.medium, color: COLORS.text.primary },
 });

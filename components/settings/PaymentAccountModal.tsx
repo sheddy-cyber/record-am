@@ -9,7 +9,7 @@ import {
   Platform,
   StyleSheet,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { BottomSheetModal, Button } from '@/components/ui';
 import { InputField } from '@/components/forms';
 import { COLORS, FONT, RADIUS } from '@/constants';
@@ -73,7 +73,7 @@ export const PaymentAccountModal: React.FC<PaymentAccountModalProps> = ({
     }
   };
 
-  const channelOptions: { value: PaymentAccountChannel; label: string; icon: keyof typeof Feather.glyphMap; desc: string }[] = [
+  const channelOptions: { value: PaymentAccountChannel; label: string; icon: IconName; desc: string }[] = [
     { value: 'transfer', label: 'Transfer Only', icon: 'send', desc: 'Direct bank transfers' },
     { value: 'pos', label: 'POS / Card Only', icon: 'credit-card', desc: 'Card swipe terminals' },
     { value: 'both', label: 'Both', icon: 'repeat', desc: 'Accepts transfers & POS' },
@@ -138,7 +138,7 @@ export const PaymentAccountModal: React.FC<PaymentAccountModalProps> = ({
                       justifyContent: 'center',
                     }}
                   >
-                    <Feather
+                    <Icon
                       name={opt.icon}
                       size={15}
                       color={isSelected ? COLORS.onAccent : COLORS.text.muted}
@@ -159,7 +159,7 @@ export const PaymentAccountModal: React.FC<PaymentAccountModalProps> = ({
                     </Text>
                   </View>
                   {isSelected && (
-                    <Feather name="check" size={16} color={COLORS.accentDark} />
+                    <Icon name="check" size={16} color={COLORS.accentDark} />
                   )}
                 </TouchableOpacity>
               );

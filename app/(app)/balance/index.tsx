@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState, useRef } from 'react';
 import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { addDays, format, subDays } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
@@ -193,22 +193,22 @@ export default function DailyBalanceScreen() {
   const discrepancyTone =
     discrepancy === 0 ? COLORS.success : discrepancy > 0 ? COLORS.ink : COLORS.danger;
   const discrepancyBg =
-    discrepancy === 0 ? '#ECFDF3' : discrepancy > 0 ? '#EEF4FF' : '#FEF3F2';
+    discrepancy === 0 ? '#E6F0E9' : discrepancy > 0 ? '#E3EBF3' : '#F8E5E1';
   const discrepancyBorder =
     discrepancy === 0 ? '#BFD9CA' : discrepancy > 0 ? '#B7CADB' : '#DDAEA6';
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <View style={{ flex: 1 }}>
         <ScreenHeader
           title="Daily Balance"
-          subtitle={`${format(parseLocalDateString(selectedDate), 'EEEE, MMMM d, yyyy')}${branches.length > 1 && currentBranch ? ` · ${currentBranch.name}` : ''}`}
-          theme="dark"
+          subtitle={branches.length > 1 && currentBranch ? `${currentBranch.name} branch` : undefined}
+         
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
           right={isClosed ? <Badge label="Closed" variant="success" /> : undefined}
         />
 
-        <View style={{ backgroundColor: COLORS.ink, paddingHorizontal: 20, paddingBottom: 18 }}>
+        <View style={{ paddingHorizontal: 20, paddingBottom: 12 }}>
           <View
             onTouchStart={(e) => {
               touchStartX.current = e.nativeEvent.pageX;
@@ -225,109 +225,58 @@ export default function DailyBalanceScreen() {
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
-              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              backgroundColor: COLORS.card,
               borderWidth: StyleSheet.hairlineWidth,
-              borderRadius: RADIUS.lg,
-              borderColor: 'rgba(255, 255, 255, 0.14)',
-              padding: 10,
+              borderRadius: 18,
+              borderColor: COLORS.border,
+              padding: 8,
             }}
           >
             <TouchableOpacity
               onPress={() => changeDate(-1)}
-              activeOpacity={0.7}
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: RADIUS.full,
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+              activeOpacity={0.6}
+              accessibilityLabel="Previous day"
+              style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Feather name="chevron-left" size={18} color="#ffffff" />
+              <Icon name="chevron-left" size={18} color={COLORS.text.primary} />
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={{ alignItems: 'center', paddingVertical: 2, paddingHorizontal: 12 }}
-              onPress={openDatePicker}
-              activeOpacity={0.7}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={{ color: '#ffffff', fontFamily: FONT.bold, fontSize: 16 }}>
-                  {format(parseLocalDateString(selectedDate), 'EEEE')}
-                </Text>
-                <Feather name="calendar" size={13} color="rgba(255, 255, 255, 0.7)" />
-              </View>
-              <Text
-                style={{
-                  fontFamily: FONT.medium,
-                  color: 'rgba(255, 255, 255, 0.7)',
-                  fontSize: 12,
-                  marginTop: 2,
-                }}
-              >
-                {format(parseLocalDateString(selectedDate), 'MMMM d, yyyy')}
+            <TouchableOpacity style={{ alignItems: 'center', paddingHorizontal: 12 }} onPress={openDatePicker} activeOpacity={0.6}>
+              <Text style={{ color: COLORS.text.primary, fontFamily: FONT.serif, fontSize: 20, letterSpacing: -0.3 }}>
+                {selectedDate === todayStr
+                  ? 'Today'
+                  : selectedDate === yesterdayStr
+                  ? 'Yesterday'
+                  : format(parseLocalDateString(selectedDate), 'EEEE')}
+              </Text>
+              <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 12.5, marginTop: 1 }}>
+                {format(parseLocalDateString(selectedDate), 'd MMMM yyyy')}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => changeDate(1)}
-              activeOpacity={0.7}
+              activeOpacity={0.6}
+              accessibilityLabel="Next day"
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: RADIUS.full,
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: COLORS.surface2,
                 alignItems: 'center',
                 justifyContent: 'center',
                 opacity: isToday ? 0.3 : 1,
               }}
               disabled={isToday}
             >
-              <Feather name="chevron-right" size={18} color="#ffffff" />
+              <Icon name="chevron-right" size={18} color={COLORS.text.primary} />
             </TouchableOpacity>
-          </View>
-
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 }}>
-            {[
-              { label: 'Today', active: selectedDate === todayStr, onPress: () => setSelectedDate(todayStr) },
-              { label: 'Yesterday', active: selectedDate === yesterdayStr, onPress: () => setSelectedDate(yesterdayStr) },
-              { label: 'Select Any Date', active: false, onPress: openDatePicker, icon: 'calendar' as const },
-            ].map((chip) => (
-              <TouchableOpacity
-                key={chip.label}
-                onPress={chip.onPress}
-                activeOpacity={0.75}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 5,
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: RADIUS.full,
-                  backgroundColor: chip.active ? COLORS.accent : 'rgba(255, 255, 255, 0.1)',
-                  borderWidth: StyleSheet.hairlineWidth,
-                  borderColor: chip.active ? COLORS.accent : 'rgba(255, 255, 255, 0.18)',
-                }}
-              >
-                {chip.icon ? <Feather name={chip.icon} size={12} color="#FFFFFF" /> : null}
-                <Text
-                  style={{
-                    fontFamily: FONT.semiBold,
-                    fontSize: 11.5,
-                    color: '#FFFFFF',
-                  }}
-                >
-                  {chip.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
           </View>
         </View>
 
         <ScrollView
           style={{ flex: 1 }}
-          refreshControl={<RefreshControl refreshing={isLoading} onRefresh={load} tintColor={COLORS.ink} />}
+          refreshControl={<RefreshControl refreshing={isLoading} onRefresh={load} tintColor={COLORS.text.muted} />}
           showsVerticalScrollIndicator={false}
         >
           <View style={{ padding: 20, gap: 20 }}>
@@ -422,7 +371,7 @@ export default function DailyBalanceScreen() {
                         justifyContent: 'center',
                       }}
                     >
-                      <Feather name="tag" size={16} color={COLORS.accentDark} />
+                      <Icon name="tag" size={16} color={COLORS.accentDark} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
@@ -504,7 +453,7 @@ export default function DailyBalanceScreen() {
                         </View>
                       </View>
                     </View>
-                    <Feather
+                    <Icon
                       name={
                         discrepancy === 0
                           ? 'check-circle'
@@ -541,7 +490,7 @@ export default function DailyBalanceScreen() {
                           justifyContent: 'center',
                         }}
                       >
-                        <Feather name="globe" size={16} color={COLORS.navy} />
+                        <Icon name="globe" size={16} color={COLORS.navy} />
                       </View>
                       <View>
                         <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
@@ -581,7 +530,6 @@ export default function DailyBalanceScreen() {
                           fontSize: 11,
                           fontFamily: FONT.bold,
                           color: COLORS.text.secondary,
-                          textTransform: 'uppercase',
                           letterSpacing: 0.5,
                           marginBottom: 6,
                         }}
@@ -603,7 +551,7 @@ export default function DailyBalanceScreen() {
                             }}
                           >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Feather name="send" size={12} color={COLORS.navy} />
+                              <Icon name="send" size={12} color={COLORS.navy} />
                               <Text
                                 style={{
                                   fontSize: 13,
@@ -645,7 +593,6 @@ export default function DailyBalanceScreen() {
                           fontSize: 11,
                           fontFamily: FONT.bold,
                           color: COLORS.accentDark,
-                          textTransform: 'uppercase',
                           letterSpacing: 0.5,
                           marginBottom: 6,
                         }}
@@ -667,7 +614,7 @@ export default function DailyBalanceScreen() {
                             }}
                           >
                             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Feather name="credit-card" size={12} color={COLORS.accentDark} />
+                              <Icon name="credit-card" size={12} color={COLORS.accentDark} />
                               <Text
                                 style={{
                                   fontSize: 13,
@@ -934,7 +881,7 @@ export default function DailyBalanceScreen() {
 
             {/* Day Closing Notes */}
             {isClosed && summary?.notes ? (
-              <Card style={{ backgroundColor: '#F9FAFB' }}>
+              <Card style={{ backgroundColor: '#F5F3EE' }}>
                 <Text
                   style={{
                     fontFamily: FONT.regular,

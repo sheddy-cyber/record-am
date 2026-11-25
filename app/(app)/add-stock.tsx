@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, Text, TouchableOpacity, RefreshControl } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, Text, TouchableOpacity, RefreshControl, StyleSheet } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -362,11 +362,11 @@ export default function AddStockScreen() {
 
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Add Stock"
         subtitle="Create a new stock or service item."
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
         <KeyboardAwareScrollView
@@ -385,55 +385,26 @@ export default function AddStockScreen() {
             />
           }
         >
-          {/* Quick Alternative Ways to Add Stock */}
+          {/* Faster routes for adding many products at once */}
           <View
             style={{
-              backgroundColor: '#eff6ff',
-              borderRadius: RADIUS.md,
-              padding: 12,
-              marginBottom: 16,
-              borderWidth: 1,
-              borderColor: '#bfdbfe',
+              backgroundColor: COLORS.card,
+              borderRadius: 16,
+              paddingVertical: 12,
+              paddingHorizontal: 14,
+              marginBottom: 18,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: COLORS.border,
               flexDirection: 'row',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 8,
+              gap: 10,
             }}
           >
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: '#1e40af' }}>
-                Adding multiple products?
-              </Text>
-              <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: '#3b82f6', marginTop: 1 }}>
-                Save time with rapid batch mode or Excel.
-              </Text>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              <TouchableOpacity
-                onPress={() => router.replace('/(app)/rapid-add-stock' as any)}
-                style={{
-                  backgroundColor: '#1e40af',
-                  paddingVertical: 6,
-                  paddingHorizontal: 9,
-                  borderRadius: RADIUS.sm,
-                }}
-              >
-                <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: '#FFFFFF' }}>⚡ Rapid</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => router.replace('/(app)/import-stock' as any)}
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  borderColor: '#1e40af',
-                  borderWidth: 1,
-                  paddingVertical: 6,
-                  paddingHorizontal: 9,
-                  borderRadius: RADIUS.sm,
-                }}
-              >
-                <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: '#1e40af' }}>📊 Excel</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={{ flex: 1, fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary }}>
+              Adding many products?
+            </Text>
+            <Button title="Batch" size="sm" variant="tinted" onPress={() => router.replace('/(app)/rapid-add-stock' as any)} />
+            <Button title="Excel" size="sm" variant="tinted" onPress={() => router.replace('/(app)/import-stock' as any)} />
           </View>
 
           <ProductFormFields

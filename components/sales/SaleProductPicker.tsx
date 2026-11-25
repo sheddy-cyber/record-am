@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { router } from 'expo-router';
 import { InputField } from '@/components/forms';
 import { Badge, SectionHeader, SmartChip } from '@/components/ui';
@@ -46,7 +46,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
         value={search}
         onChangeText={onSearchChange}
         placeholder="Search by name, barcode, or SKU..."
-        leftIcon={<Feather name="search" size={16} color={COLORS.text.muted} />}
+        leftIcon={<Icon name="search" size={16} color={COLORS.text.muted} />}
         rightElement={
           search ? (
             <TouchableOpacity
@@ -54,7 +54,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               style={{ padding: 4 }}
             >
-              <Feather name="x" size={16} color={COLORS.text.muted} />
+              <Icon name="x" size={16} color={COLORS.text.muted} />
             </TouchableOpacity>
           ) : undefined
         }
@@ -87,7 +87,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
               ...SHADOW.sm,
             }}
           >
-            <Feather name="search" size={24} color={COLORS.text.muted} />
+            <Icon name="search" size={24} color={COLORS.text.muted} />
             <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary }}>
               No products found
             </Text>
@@ -115,7 +115,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
                   borderRadius: RADIUS.md,
                 }}
               >
-                <Feather name="shopping-cart" size={13} color={COLORS.navy} />
+                <Icon name="shopping-cart" size={13} color={COLORS.navy} />
                 <Text style={{ fontSize: 12, fontFamily: FONT.semiBold, color: COLORS.navy }}>
                   Customer asked for this? Note in Market List
                 </Text>
@@ -206,7 +206,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
                         justifyContent: 'center',
                       }}
                     >
-                      <Feather
+                      <Icon
                         name="star"
                         size={14}
                         color={isPinned ? COLORS.accentDark : COLORS.text.muted}
@@ -223,7 +223,7 @@ export const SaleProductPicker: React.FC<SaleProductPickerProps> = ({
                         justifyContent: 'center',
                       }}
                     >
-                      <Feather
+                      <Icon
                         name={alreadyAdded ? 'check' : 'plus'}
                         size={16}
                         color={alreadyAdded ? COLORS.onAccent : COLORS.text.primary}

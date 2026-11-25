@@ -25,6 +25,8 @@ import {
   normalizeUnit,
 } from './fuzzyMatcher';
 import { getSaleUnitOption } from '@/lib/records';
+import { supabase } from '@/lib/supabase';
+import { fetchWithTimeout, GEMINI_MODEL, VoiceProxyUnavailableError, VoiceTimeoutError } from './audioService';
 
 /**
  * Normalizes number phrases like "2k" -> 2000, "two" -> 2, "15,000" -> 15000
@@ -693,9 +695,10 @@ export function parseLocalVoiceCommand(
  */
 export async function parseWithAI(
   transcription: string,
-  apiKey: string,
-  apiProvider: 'gemini' | 'groq' | 'openai' = 'groq',
+  apiKey: string | undefined,
+  apiProvider: 'gemini' | 'groq' | 'openai' | 'proxy' = 'groq',
   catalogProductNames?: string[],
+  signal?: AbortSignal,
 ): Promise<any> {
   const productListPrompt =
     catalogProductNames && catalogProductNames.length > 0
@@ -781,70 +784,101 @@ Rules:
 7. If reporting broken/spoiled/expired items, use action="RECORD_DAMAGE".
 8. If customer is paying from previous debt, use action="RECORD_PAYMENT".
 9. If customer paid partially in cash and partially by transfer or bank alert, set paymentMethod="mixed", and populate cashAmount and transferAmount.
-10. Only populate the key corresponding to the chosen action. Return valid JSON only.`;
+10. Amounts like "5k" mean 5000; "2.5k" means 2500. Speech may be in Nigerian English or Pidgin (e.g. "I sell two Peak give Chidi" means sold 2 Peak to Chidi).
+11. Today's date is ${new Date().toISOString().slice(0, 10)}; convert relative due dates to YYYY-MM-DD.
+12. Only populate the key corresponding to the chosen action. Return valid JSON only.`;
 
-  if (apiProvider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: systemPrompt },
-              { text: `Parse this merchant voice command: "${transcription}"` },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.1,
-        },
-      }),
+  const PARSE_TIMEOUT_MS = 9000;
+
+  if (apiProvider === 'proxy') {
+    const invoke = supabase.functions.invoke('voice-command', {
+      body: { task: 'parse', system: systemPrompt, text: transcription },
     });
-
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.statusText}`);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new VoiceTimeoutError('Understanding the command')), PARSE_TIMEOUT_MS + 3000),
+    );
+    const { data, error } = (await Promise.race([invoke, timeout])) as { data: any; error: any };
+    if (error) {
+      const status = error?.context?.status ?? error?.status;
+      if (status === 404) throw new VoiceProxyUnavailableError();
+      throw new Error(error.message || 'Could not understand the command.');
     }
-
-    const data = await response.json();
-    const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    return JSON.parse(textContent);
+    return typeof data?.result === 'string' ? JSON.parse(data.result) : data?.result;
   }
 
-  // OpenAI or Groq
+  if (apiProvider === 'gemini') {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: transcription }] }],
+          generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+        }),
+      },
+      PARSE_TIMEOUT_MS,
+      'Understanding the command',
+      signal,
+    );
+    if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
+    const data = await response.json();
+    return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
+  }
+
+  // OpenAI-compatible (Groq / OpenAI)
   const endpoint =
     apiProvider === 'groq'
       ? 'https://api.groq.com/openai/v1/chat/completions'
       : 'https://api.openai.com/v1/chat/completions';
-
   const model = apiProvider === 'groq' ? 'openai/gpt-oss-20b' : 'gpt-4o-mini';
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+  const response = await fetchWithTimeout(
+    endpoint,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: transcription },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+      }),
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: transcription },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`${apiProvider} API error: ${response.statusText}`);
-  }
-
+    PARSE_TIMEOUT_MS,
+    'Understanding the command',
+    signal,
+  );
+  if (!response.ok) throw new Error(`${apiProvider} API error: ${response.status}`);
   const data = await response.json();
-  const textContent = data.choices?.[0]?.message?.content;
-  return JSON.parse(textContent);
+  return JSON.parse(data.choices?.[0]?.message?.content);
+}
+
+/**
+ * Orders catalogue names so the ones that share words with what was said come
+ * first; the model only sees the first ~150, so relevance beats alphabet.
+ */
+export function rankProductNamesForPrompt(transcription: string, products: Product[], limit = 150): string[] {
+  const words = new Set(
+    transcription
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2),
+  );
+  const scored = products
+    .filter((p) => p.is_active !== false)
+    .map((p) => {
+      const tokens = p.name.toLowerCase().split(/[^a-z0-9]+/);
+      const hits = tokens.reduce((n, t) => n + (words.has(t) ? 1 : 0), 0);
+      return { name: p.name, hits };
+    });
+  scored.sort((a, b) => b.hits - a.hits || a.name.localeCompare(b.name));
+  return scored.slice(0, limit).map((s) => s.name);
 }
 
 /**
@@ -856,8 +890,9 @@ export async function parseVoiceCommand(
   catalogCustomers: Customer[],
   options?: {
     apiKey?: string;
-    apiProvider?: 'gemini' | 'groq' | 'openai';
+    apiProvider?: 'gemini' | 'groq' | 'openai' | 'proxy';
     branchId?: string;
+    signal?: AbortSignal;
   },
 ): Promise<VoiceAction> {
   const trimmed = transcription.trim();
@@ -870,13 +905,14 @@ export async function parseVoiceCommand(
   }
 
   // If AI API key is configured and online, attempt AI parsing
-  if (options?.apiKey) {
+  if (options?.apiKey || options?.apiProvider === 'proxy') {
     try {
       const aiResult = await parseWithAI(
         trimmed,
         options.apiKey,
         options.apiProvider || 'groq',
-        catalogProducts.map((p) => p.name).slice(0, 100),
+        rankProductNamesForPrompt(trimmed, catalogProducts),
+        options.signal,
       );
 
       // 1. RECORD_SALE
@@ -1233,6 +1269,9 @@ export async function parseVoiceCommand(
         }
       }
     } catch (err) {
+      if (options?.signal?.aborted) throw err;
+      // Timeouts, network errors and malformed replies all fall through to the
+      // on-device parser below, so a slow connection never leaves the user stuck.
       console.warn('[parseVoiceCommand] AI parsing failed, falling back to local engine:', err);
     }
   }

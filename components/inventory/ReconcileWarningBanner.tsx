@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import {
   Mismatch,
@@ -199,7 +199,7 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
       }}
     >
       <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-        <Feather name="alert-triangle" size={16} color={COLORS.warning} style={{ marginTop: 2 }} />
+        <Icon name="alert-triangle" size={16} color={COLORS.warning} style={{ marginTop: 2 }} />
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
             {mismatches.length === 1 ? 'Sync Mismatch Warning' : 'Sync Mismatch Warnings'}
@@ -248,7 +248,7 @@ export function ReconcileWarningBanner({ onReconciled }: ReconcileWarningBannerP
                   paddingHorizontal: 14,
                   paddingVertical: 7,
                   borderRadius: RADIUS.sm,
-                  backgroundColor: '#d97706',
+                  backgroundColor: '#B7791F',
                 }}
               >
                 <Text style={{ fontSize: 12, fontFamily: FONT.bold, color: '#FFFFFF' }}>

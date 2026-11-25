@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, Alert, KeyboardAvoidingView, Platform, RefreshControl, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { Button, Card, PermissionDenied, SectionHeader } from '@/components/ui';
@@ -269,10 +269,10 @@ export default function SettingsScreen() {
 
   if (!canManageSettings) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Business Settings"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         />
         <PermissionDenied
@@ -284,11 +284,11 @@ export default function SettingsScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Business Settings"
         subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(" \u00B7 ")}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
@@ -407,7 +407,7 @@ export default function SettingsScreen() {
             <Button title="Save Business Info" onPress={handleSaveBusiness} loading={saving} size="md" variant="accent" />
           </Card>
 
-          <Card style={{ backgroundColor: '#F9FAFB' }}>
+          <Card style={{ backgroundColor: '#F5F3EE' }}>
             <SectionHeader title="Branches & Locations" />
             {[
               { label: 'Active Branch', value: currentBranch?.name ?? '-' },
@@ -485,7 +485,7 @@ export default function SettingsScreen() {
                       backgroundColor: COLORS.accentLight,
                     }}
                   >
-                    <Feather name="bell" size={13} color={COLORS.accentDark} />
+                    <Icon name="bell" size={13} color={COLORS.accentDark} />
                     <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.accentDark }}>
                       Send Test Reminder
                     </Text>
@@ -594,7 +594,7 @@ export default function SettingsScreen() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Feather name={isOnline ? 'wifi' : 'wifi-off'} size={20} color={isOnline ? COLORS.success : COLORS.danger} />
+                <Icon name={isOnline ? 'wifi' : 'wifi-off'} size={20} color={isOnline ? COLORS.success : COLORS.danger} />
                 <View>
                   <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
                     {isOnline ? 'Online' : 'Offline'}
@@ -614,7 +614,7 @@ export default function SettingsScreen() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <Feather
+                <Icon
                   name={pendingMutations === 0 ? 'check-circle' : 'cloud'}
                   size={20}
                   color={pendingMutations === 0 ? COLORS.success : COLORS.warning}

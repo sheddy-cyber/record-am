@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/ui';
@@ -21,7 +21,7 @@ import {
 } from '@/lib/auth';
 import { COLORS, FONT, RADIUS, TYPE } from '@/constants';
 
-const COPY: Record<AuthFlow, { title: string; description: string; icon: keyof typeof Feather.glyphMap }> = {
+const COPY: Record<AuthFlow, { title: string; description: string; icon: IconName }> = {
   signup: {
     title: 'Confirm your email',
     description: 'We sent a secure confirmation email to',
@@ -149,25 +149,25 @@ export default function VerifyEmailScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="dark">
+    <ScreenShell backgroundColor={COLORS.surface} >
       <KeyboardAwareScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
           <TouchableOpacity onPress={returnToSignIn} style={styles.backButton} accessibilityLabel="Back to sign in">
-            <Feather name="arrow-left" size={22} color={COLORS.text.primary} />
+            <Icon name="arrow-left" size={22} color={COLORS.text.primary} />
           </TouchableOpacity>
           <BrandWordmark />
         </View>
 
         <View style={styles.content}>
           <View style={styles.iconCircle}>
-            <Feather name={copy.icon} size={28} color={COLORS.ink} />
+            <Icon name={copy.icon} size={28} color={COLORS.ink} />
           </View>
           <Text style={styles.title}>{copy.title}</Text>
           <Text style={styles.description}>{copy.description}</Text>
           <Text style={styles.email}>{email || 'your email address'}</Text>
 
           <View style={styles.linkNotice}>
-            <Feather name="shield" size={16} color={COLORS.info} />
+            <Icon name="shield" size={16} color={COLORS.info} />
             <Text style={styles.linkNoticeText}>
               Open the secure link in the email. If your email includes a six-digit code instead, enter it below.
             </Text>
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
   backButton: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', marginLeft: -8 },
   content: { flex: 1, paddingHorizontal: 28, paddingTop: 20, alignItems: 'center' },
   iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.infoLight, alignItems: 'center', justifyContent: 'center', marginBottom: 22 },
-  title: { ...TYPE.h1, color: COLORS.text.primary, textAlign: 'center', marginBottom: 10 },
+  title: { ...TYPE.largeTitle, color: COLORS.text.primary, textAlign: 'center', marginBottom: 10 },
   description: { color: COLORS.text.secondary, fontFamily: FONT.regular, fontSize: 15, lineHeight: 22, textAlign: 'center' },
   email: { color: COLORS.text.primary, fontFamily: FONT.bold, fontSize: 15, textAlign: 'center', marginTop: 4 },
   linkNotice: { flexDirection: 'row', gap: 10, backgroundColor: COLORS.infoLight, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, padding: 14, marginTop: 28, alignItems: 'flex-start' },

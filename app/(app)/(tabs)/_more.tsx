@@ -1,14 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { ScrollView, Text, View, TouchableOpacity, Linking, Alert, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { IconName } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
 import { useDebtStore } from '@/store/debtStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { useOfflineStore } from '@/store/offlineStore';
 import { flushOfflineQueue, retryAllSyncConflicts } from '@/lib/offlineStore';
-import { Badge, Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
+import { Button, Card, ListRow, SectionHeader } from '@/components/ui';
 import { BusinessAvatar, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
@@ -17,7 +17,7 @@ import { canViewFinancialData, hasPermission } from '@/lib/permissions';
 type MenuSection = {
   title: string;
   items: {
-    icon: keyof typeof Feather.glyphMap;
+    icon: IconName;
     label: string;
     subtitle: string | React.ReactNode;
     onPress: () => void;
@@ -61,30 +61,24 @@ function MoreScreen() {
       title: 'Reports & Insights',
       items: [
         ...(hasPermission(userRole, 'analytics.view') ? [{
-          icon: 'bar-chart-2' as keyof typeof Feather.glyphMap,
+          icon: 'bar-chart-2' as IconName,
           label: 'Analytics',
-          subtitle: 'Sales trends, profit, and top products',
+          subtitle: 'Trends, profit and best sellers',
           onPress: () => router.push('/(app)/analytics'),
-          iconBg: '#0284C7',
-          iconColor: '#FFFFFF',
         }] : []),
         {
-          icon: 'sliders' as keyof typeof Feather.glyphMap,
+          icon: 'sliders' as IconName,
           label: 'Daily Balance',
           subtitle: canViewFinancials
             ? 'Cash reconciliation, profit, and day close'
             : 'End of day register and sales reconciliation',
           onPress: () => router.push('/(app)/balance'),
-          iconBg: '#15803D',
-          iconColor: '#FFFFFF',
         },
         {
-          icon: 'file-text' as keyof typeof Feather.glyphMap,
-          label: 'Import Sales (Excel / CSV)',
-          subtitle: 'Transfer sales history from spreadsheets',
+          icon: 'file-text' as IconName,
+          label: 'Import Sales',
+          subtitle: 'Bring in past sales from Excel or CSV',
           onPress: () => router.push('/(app)/import-sales' as any),
-          iconBg: '#4F46E5',
-          iconColor: '#FFFFFF',
         },
       ],
     },
@@ -92,46 +86,36 @@ function MoreScreen() {
       title: 'Operations',
       items: [
         {
-          icon: 'credit-card' as keyof typeof Feather.glyphMap,
+          icon: 'credit-card' as IconName,
           label: 'Customer Debts',
           subtitle: debts.length > 0
             ? `${debts.length} debtor${debts.length === 1 ? '' : 's'} with unpaid balances`
             : 'Track customer balances, settlements & reminders',
           onPress: () => router.push('/(app)/debts'),
-          iconBg: '#DC2626',
-          iconColor: '#FFFFFF',
         },
         {
           icon: 'minus-circle',
           label: 'Expenses',
-          subtitle: 'Track, record and manage operational costs',
+          subtitle: 'Rent, transport, salaries and more',
           onPress: () => router.push('/(app)/record-expense'),
-          iconBg: '#D97706',
-          iconColor: '#FFFFFF',
         },
         {
-          icon: 'shopping-cart' as keyof typeof Feather.glyphMap,
-          label: 'Market List & Requests',
-          subtitle: 'Items requested by customers to buy at market',
+          icon: 'shopping-cart' as IconName,
+          label: 'Market List',
+          subtitle: 'What customers asked you to stock',
           onPress: () => router.push('/(app)/market-list'),
-          iconBg: '#059669',
-          iconColor: '#FFFFFF',
         },
         ...(canManageInventory ? [{
-          icon: 'alert-octagon' as keyof typeof Feather.glyphMap,
+          icon: 'alert-octagon' as IconName,
           label: 'Damaged Goods',
-          subtitle: 'Log broken or spoilt stock and write off loss',
+          subtitle: 'Broken, spoilt or expired stock',
           onPress: () => router.push('/(app)/record-damage'),
-          iconBg: '#DC2626',
-          iconColor: '#FFFFFF',
         }] : []),
         ...(canViewStockHistory ? [{
-          icon: 'list' as keyof typeof Feather.glyphMap,
+          icon: 'list' as IconName,
           label: 'Stock History',
-          subtitle: 'Inventory movement audit trail',
+          subtitle: 'Every stock movement, in order',
           onPress: () => router.push('/(app)/stock-history'),
-          iconBg: '#4F46E5',
-          iconColor: '#FFFFFF',
         }] : []),
       ],
     },
@@ -141,18 +125,14 @@ function MoreScreen() {
         {
           icon: 'users',
           label: 'Customers',
-          subtitle: 'Profiles, history, and debts',
+          subtitle: 'Contacts, purchases and balances',
           onPress: () => router.push('/(app)/customers'),
-          iconBg: COLORS.ink,
-          iconColor: '#FFFFFF',
         },
         ...(canViewPurchases ? [{
-          icon: 'package' as keyof typeof Feather.glyphMap,
+          icon: 'package' as IconName,
           label: 'Suppliers & Purchases',
-          subtitle: 'Contacts, goods bought, and balances',
+          subtitle: 'Who you buy from and what you owe',
           onPress: () => router.push('/(app)/suppliers'),
-          iconBg: '#0D9488',
-          iconColor: '#FFFFFF',
         }] : []),
       ],
     },
@@ -164,57 +144,43 @@ function MoreScreen() {
           label: 'My Profile',
           subtitle: profileName ?? 'Edit your details',
           onPress: () => router.push('/(app)/profile'),
-          iconBg: '#2563EB',
-          iconColor: '#FFFFFF',
         },
         ...(userRole === 'owner' ? [{
           icon: 'map-pin' as any,
-          label: 'Branches & Locations',
-          subtitle: `${branches.length || 1} branch${branches.length === 1 ? '' : 'es'} · Active: ${branchName ?? 'Main Branch'}`,
+          label: 'Branches',
+          subtitle: `${branches.length || 1} ${branches.length === 1 ? 'branch' : 'branches'} · Working in ${branchName ?? 'Main branch'}`,
           onPress: () => router.push('/(app)/branches' as any),
-          iconBg: '#0EA5E9',
-          iconColor: '#FFFFFF',
         }] : []),
         ...(hasPermission(userRole, 'business-settings.manage') ? [{
           icon: 'users' as any,
-          label: 'Team & Staff',
-          subtitle: 'Manage staff IDs, roles & branch assignments',
+          label: 'Team',
+          subtitle: 'Roles, staff IDs and branches',
           onPress: () => router.push('/(app)/team' as any),
-          iconBg: '#7C3AED',
-          iconColor: '#FFFFFF',
         },
         {
           icon: 'settings' as any,
           label: 'Business Settings',
           subtitle: businessName ?? 'Manage your setup',
           onPress: () => router.push('/(app)/settings' as any),
-          iconBg: '#334155',
-          iconColor: '#FFFFFF',
         }] : []),
         {
           icon: 'info',
           label: 'About Record Am',
-          subtitle: 'Brand story and app information',
+          subtitle: 'Version and credits',
           onPress: () => router.push('/(app)/about'),
-          iconBg: COLORS.accent,
-          iconColor: COLORS.onAccent,
         },
         {
           icon: 'log-out',
-          label: 'Sign Out',
-          subtitle: (
-            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-              Log out of <Text style={{ fontStyle: 'italic' }}>{BRAND.name}</Text>
-            </Text>
-          ),
+          label: 'Sign out',
+          subtitle: undefined,
           onPress: () => {
             Alert.alert(
-              'Sign Out',
-              'Are you sure you want to sign out?',
+              'Sign out?',
+              'Records you made offline will finish syncing first.',
               [
                 { text: 'Cancel', style: 'cancel' },
                 { 
-                  text: 'Sign Out', 
+                  text: 'Sign out', 
                   style: 'destructive',
                   onPress: async () => {
                     await signOut();
@@ -224,8 +190,6 @@ function MoreScreen() {
               ]
             );
           },
-          iconBg: '#DC2626',
-          iconColor: '#FFFFFF',
         },
       ],
     },
@@ -233,62 +197,41 @@ function MoreScreen() {
 
   return (
     <SwipeableTabScreen name="more">
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-      <ScreenHeader
-        title="More"
-        subtitle={profileName ?? 'User'}
-        theme="dark"
-        right={
-          <View
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: RADIUS.full,
-              backgroundColor: COLORS.accent,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.onAccent }}>
-              {(profileName ?? 'U').charAt(0).toUpperCase()}
-            </Text>
-          </View>
-        }
-      />
+    <ScreenShell>
+      <ScreenHeader title="More" />
 
       <ScrollView
-        contentContainerStyle={{ padding: SP.page, gap: 24, paddingBottom: insets.bottom + 92 }}
+        contentContainerStyle={{ paddingHorizontal: SP.page, paddingTop: 4, gap: 24, paddingBottom: insets.bottom + 110 }}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.accent}
+            tintColor={COLORS.text.muted}
             colors={[COLORS.accent]}
           />
         }
       >
-        <Card style={{ flexDirection: 'row', gap: 14, alignItems: 'center', padding: 16 }}>
+        <Card onPress={hasPermission(userRole, 'business-settings.manage') ? () => router.push('/(app)/settings' as any) : undefined} style={{ flexDirection: 'row', gap: 14, alignItems: 'center', padding: 14 }}>
           <BusinessAvatar name={businessName ?? 'Business'} logoUrl={businessLogoUrl} size={52} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
+            <Text style={{ fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3 }} numberOfLines={1}>
               {businessName}
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-              <Badge label={userRole?.toUpperCase() ?? 'OWNER'} variant="accent" />
-              {staffId ? <Badge label={staffId} variant="info" /> : null}
-              <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                {branchName} · {businessCurrency}
-              </Text>
-            </View>
+            <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 3 }} numberOfLines={1}>
+              {profileName ? `${profileName} · ` : ''}
+              {(userRole ?? 'owner').replace(/^\w/, (c) => c.toUpperCase())}
+              {staffId ? ` · ${staffId}` : ''}
+              {branchName ? ` · ${branchName}` : ''}
+            </Text>
           </View>
         </Card>
 
         {(pendingCount > 0 || conflictCount > 0) && (
           <Card
             style={{
-              backgroundColor: conflictCount > 0 ? '#FEF2F2' : '#FFFBEB',
-              borderColor: conflictCount > 0 ? '#FECACA' : '#FDE68A',
+              backgroundColor: conflictCount > 0 ? COLORS.dangerLight : COLORS.card,
+              borderColor: conflictCount > 0 ? '#EECAC2' : COLORS.border,
               flexDirection: 'row',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -297,17 +240,17 @@ function MoreScreen() {
             }}
           >
             <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: FONT.bold, fontSize: 13.5, color: conflictCount > 0 ? COLORS.danger : '#92400E' }}>
+              <Text style={{ fontFamily: FONT.bold, fontSize: 13.5, color: conflictCount > 0 ? COLORS.dangerText : COLORS.text.primary }}>
                 {isSyncing
-                  ? 'Syncing queued records...'
-                  : `${pendingCount + conflictCount} record${pendingCount + conflictCount === 1 ? '' : 's'} pending cloud sync`}
+                  ? 'Syncing…'
+                  : `${pendingCount + conflictCount} ${pendingCount + conflictCount === 1 ? 'record' : 'records'} waiting to sync`}
               </Text>
               <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary, marginTop: 2 }}>
-                Tap Retry Sync to send all staff records to the business account immediately.
+                They are safe on this phone and will upload when you are online.
               </Text>
             </View>
             <Button
-              title={isSyncing ? 'Syncing' : 'Retry Sync'}
+              title={isSyncing ? 'Syncing' : 'Sync now'}
               size="sm"
               loading={isSyncing}
               onPress={async () => {
@@ -328,10 +271,12 @@ function MoreScreen() {
                     title={item.label}
                     subtitle={item.subtitle}
                     onPress={item.onPress}
-                    left={<IconBox icon={item.icon} bg={item.iconBg} color={item.iconColor} />}
+                    icon={item.icon}
+                    destructive={item.label === 'Sign out'}
+                    showChevron={item.label !== 'Sign out'}
                   />
                   {index < section.items.length - 1 ? (
-                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginLeft: 66 }} />
+                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 58 }} />
                   ) : null}
                 </View>
               ))}

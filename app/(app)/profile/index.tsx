@@ -11,7 +11,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
 import { pickAndUploadBusinessLogo, removeBusinessLogo } from '@/lib/businessLogo';
@@ -152,11 +152,11 @@ export default function ProfileScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="My Profile"
         subtitle={user?.email ?? 'Account'}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
@@ -200,13 +200,13 @@ export default function ProfileScreen() {
                         paddingHorizontal: 8,
                         paddingVertical: 3,
                         borderRadius: RADIUS.full,
-                        backgroundColor: '#EEF4FF',
+                        backgroundColor: '#E3EBF3',
                       }}
                     >
                       <Text style={{ fontFamily: FONT.bold, fontSize: 11, color: COLORS.navy }}>
                         ID: {staffId}
                       </Text>
-                      <Feather name="copy" size={10} color={COLORS.navy} />
+                      <Icon name="copy" size={10} color={COLORS.navy} />
                     </TouchableOpacity>
                   ) : null}
                 </View>
@@ -279,10 +279,10 @@ export default function ProfileScreen() {
                     style={{
                       padding: 8,
                       borderRadius: RADIUS.sm,
-                      backgroundColor: '#FEF2F2',
+                      backgroundColor: '#F8E5E1',
                     }}
                   >
-                    <Feather name="trash-2" size={15} color={COLORS.danger} />
+                    <Icon name="trash-2" size={15} color={COLORS.danger} />
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -299,7 +299,7 @@ export default function ProfileScreen() {
               required={!isNameLocked}
               editable={!isNameLocked}
               leftIcon={
-                <Feather
+                <Icon
                   name={isNameLocked ? 'lock' : 'user'}
                   size={16}
                   color={isNameLocked ? COLORS.text.muted : COLORS.navy}
@@ -318,9 +318,9 @@ export default function ProfileScreen() {
                       borderRadius: RADIUS.xs,
                     }}
                   >
-                    <Feather name="shield" size={11} color={COLORS.navy} />
+                    <Icon name="shield" size={11} color={COLORS.navy} />
                     <Text style={{ fontSize: 11, fontFamily: FONT.semiBold, color: COLORS.navy }}>
-                      LOCKED
+                      Locked
                     </Text>
                   </View>
                 ) : undefined
@@ -343,7 +343,7 @@ export default function ProfileScreen() {
                   borderColor: COLORS.border,
                 }}
               >
-                <Feather name="info" size={14} color={COLORS.text.muted} style={{ marginTop: 2 }} />
+                <Icon name="info" size={14} color={COLORS.text.muted} style={{ marginTop: 2 }} />
                 <Text
                   style={{
                     fontSize: 12,
@@ -372,7 +372,7 @@ export default function ProfileScreen() {
               onChangeText={setNewPassword}
               placeholder="Minimum 6 characters"
               isPassword
-              leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
+              leftIcon={<Icon name="lock" size={16} color={COLORS.text.muted} />}
             />
             <InputField
               label="Confirm New Password"
@@ -380,7 +380,7 @@ export default function ProfileScreen() {
               onChangeText={setConfirmPassword}
               placeholder="Repeat new password"
               isPassword
-              leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
+              leftIcon={<Icon name="lock" size={16} color={COLORS.text.muted} />}
             />
             <Button
               title="Update Password"

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View, InteractionManager, RefreshControl, StyleSheet } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
@@ -23,11 +23,18 @@ export default function RecordDebtScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [isReady, setIsReady] = useState(false);
-  const [debtCustomerName, setDebtCustomerName] = useState('');
-  const [debtCustomerPhone, setDebtCustomerPhone] = useState('');
-  const [debtAmount, setDebtAmount] = useState('');
-  const [debtDueDate, setDebtDueDate] = useState('');
-  const [debtNotes, setDebtNotes] = useState('');
+  const prefill = useLocalSearchParams<{
+    customerName?: string;
+    customerPhone?: string;
+    amount?: string;
+    notes?: string;
+    dueDate?: string;
+  }>();
+  const [debtCustomerName, setDebtCustomerName] = useState(prefill.customerName ?? '');
+  const [debtCustomerPhone, setDebtCustomerPhone] = useState(prefill.customerPhone ?? '');
+  const [debtAmount, setDebtAmount] = useState(prefill.amount ?? '');
+  const [debtDueDate, setDebtDueDate] = useState(prefill.dueDate ?? '');
+  const [debtNotes, setDebtNotes] = useState(prefill.notes ?? '');
   const [savingDebt, setSavingDebt] = useState(false);
 
   const closeScreen = () => dismissScreen();
@@ -109,11 +116,11 @@ export default function RecordDebtScreen() {
 
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Record Debt"
-        subtitle="Capture a customer balance directly from the debts flow."
-        theme="dark"
+        subtitle="Money a customer owes you"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
       <KeyboardAwareScrollView

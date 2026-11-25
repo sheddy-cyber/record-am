@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format, subDays } from 'date-fns';
 import Toast from 'react-native-toast-message';
 
@@ -61,7 +61,7 @@ export default function RecordDamageScreen() {
   const products = useBusinessStore((s) => s.products);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
 
-  const params = useLocalSearchParams<{ productId?: string | string[] }>();
+  const params = useLocalSearchParams<{ productId?: string | string[]; quantity?: string; reason?: string }>();
   const initialProductId = Array.isArray(params.productId) ? params.productId[0] : params.productId;
 
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(() => {
@@ -72,10 +72,10 @@ export default function RecordDamageScreen() {
   });
 
   const [productSearch, setProductSearch] = useState('');
-  const [damageQty, setDamageQty] = useState('1');
+  const [damageQty, setDamageQty] = useState(params.quantity || '1');
   const [unitCost, setUnitCost] = useState('');
   const [selectedReason, setSelectedReason] = useState<string>('Broken / Smashed');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(params.reason ? String(params.reason) : '');
   const [deductLoss, setDeductLoss] = useState(true);
   const [incidentDate, setIncidentDate] = useState(() => format(new Date(), 'yyyy-MM-dd'));
   const [saving, setSaving] = useState(false);
@@ -290,10 +290,10 @@ export default function RecordDamageScreen() {
 
   if (!canManageInventory) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Damaged Goods"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         />
         <PermissionDenied
@@ -305,11 +305,11 @@ export default function RecordDamageScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Damaged Goods"
         subtitle={selectedProduct ? `${selectedProduct.name} · ${cleanUnit}` : 'Loss overview & damage records'}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
       />
 
@@ -324,7 +324,7 @@ export default function RecordDamageScreen() {
         <View style={styles.statsOverviewCard}>
           <View style={styles.statsHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Feather name="bar-chart-2" size={14} color="#DC2626" />
+              <Icon name="bar-chart-2" size={14} color="#C2412D" />
               <Text style={styles.statsHeaderTitle}>Damage Overview</Text>
             </View>
             <Text style={styles.statsHeaderSubtitle}>
@@ -334,7 +334,7 @@ export default function RecordDamageScreen() {
 
           <View style={styles.statsMetricsRow}>
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>DAMAGED UNITS</Text>
+              <Text style={styles.metricLabel}>Damaged units</Text>
               <Text style={styles.metricValue}>
                 {formatCount(damageStats.totalQty)}
               </Text>
@@ -346,8 +346,8 @@ export default function RecordDamageScreen() {
             <View style={styles.metricDivider} />
 
             <View style={styles.metricItem}>
-              <Text style={styles.metricLabel}>FINANCIAL LOSS</Text>
-              <Text style={[styles.metricValue, { color: '#DC2626' }]}>
+              <Text style={styles.metricLabel}>Financial loss</Text>
+              <Text style={[styles.metricValue, { color: '#C2412D' }]}>
                 {formatCurrency(damageStats.totalLoss)}
               </Text>
               <Text style={styles.metricSub}>Written off to profit</Text>
@@ -356,10 +356,10 @@ export default function RecordDamageScreen() {
 
           {damageStats.incidents > 0 && damageStats.topReason !== 'None' ? (
             <View style={styles.statsCauseRow}>
-              <Feather name="pie-chart" size={12} color="#991B1B" />
+              <Icon name="pie-chart" size={12} color="#8C2A1A" />
               <Text style={styles.statsCauseText}>
                 Most frequent cause:{' '}
-                <Text style={{ fontFamily: FONT.semiBold, color: '#991B1B' }}>
+                <Text style={{ fontFamily: FONT.semiBold, color: '#8C2A1A' }}>
                   {damageStats.topReason}
                 </Text>
               </Text>
@@ -372,14 +372,14 @@ export default function RecordDamageScreen() {
           <View style={styles.card}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={styles.productAvatar}>
-                <Feather name="box" size={18} color="#FFFFFF" />
+                <Icon name="box" size={18} color="#FFFFFF" />
               </View>
               <TouchableOpacity
                 onPress={() => setSelectedProduct(null)}
                 style={styles.changeProductBtn}
                 activeOpacity={0.7}
               >
-                <Feather name="refresh-cw" size={12} color={COLORS.navy} />
+                <Icon name="refresh-cw" size={12} color={COLORS.navy} />
                 <Text style={styles.changeProductBtnText}>Change Item</Text>
               </TouchableOpacity>
             </View>
@@ -395,14 +395,14 @@ export default function RecordDamageScreen() {
 
             <View style={styles.productStatsRow}>
               <View style={styles.productStatItem}>
-                <Text style={styles.productStatLabel}>ON-HAND STOCK</Text>
+                <Text style={styles.productStatLabel}>On-hand stock</Text>
                 <Text style={[styles.productStatValue, { color: currentStock <= 0 ? COLORS.danger : COLORS.success }]}>
                   {formatCount(currentStock)} {cleanUnit}
                 </Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.productStatItem}>
-                <Text style={styles.productStatLabel}>CATALOG COST</Text>
+                <Text style={styles.productStatLabel}>Catalog cost</Text>
                 <Text style={styles.productStatValue}>
                   {formatCurrency(Number(selectedProduct.cost_price || 0))}
                 </Text>
@@ -413,7 +413,7 @@ export default function RecordDamageScreen() {
           <View style={styles.card}>
             <Text style={styles.sectionHeaderTitle}>Select Damaged Product</Text>
             <View style={styles.searchBarContainer}>
-              <Feather name="search" size={15} color={COLORS.text.muted} />
+              <Icon name="search" size={15} color={COLORS.text.muted} />
               <TextInput
                 value={productSearch}
                 onChangeText={setProductSearch}
@@ -423,7 +423,7 @@ export default function RecordDamageScreen() {
               />
               {productSearch ? (
                 <TouchableOpacity onPress={() => setProductSearch('')}>
-                  <Feather name="x" size={15} color={COLORS.text.muted} />
+                  <Icon name="x" size={15} color={COLORS.text.muted} />
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -483,7 +483,7 @@ export default function RecordDamageScreen() {
                   disabled={parsedQty <= 1}
                   style={[styles.stepBtn, parsedQty <= 1 && styles.stepBtnDisabled]}
                 >
-                  <Feather name="minus" size={16} color={parsedQty <= 1 ? COLORS.text.muted : COLORS.navy} />
+                  <Icon name="minus" size={16} color={parsedQty <= 1 ? COLORS.text.muted : COLORS.navy} />
                 </TouchableOpacity>
 
                 <TextInput
@@ -500,7 +500,7 @@ export default function RecordDamageScreen() {
                   disabled={parsedQty >= currentStock}
                   style={[styles.stepBtn, parsedQty >= currentStock && styles.stepBtnDisabled]}
                 >
-                  <Feather name="plus" size={16} color={parsedQty >= currentStock ? COLORS.text.muted : COLORS.navy} />
+                  <Icon name="plus" size={16} color={parsedQty >= currentStock ? COLORS.text.muted : COLORS.navy} />
                 </TouchableOpacity>
 
                 {currentStock > 1 ? (
@@ -517,17 +517,17 @@ export default function RecordDamageScreen() {
               {/* Stock Impact Visual */}
               <View style={styles.impactContainer}>
                 <View style={styles.impactCol}>
-                  <Text style={styles.impactLabel}>CURRENT</Text>
+                  <Text style={styles.impactLabel}>Current</Text>
                   <Text style={styles.impactValue}>{formatCount(currentStock)} {cleanUnit}</Text>
                 </View>
-                <Feather name="arrow-right" size={14} color={COLORS.danger} />
+                <Icon name="arrow-right" size={14} color={COLORS.danger} />
                 <View style={styles.impactCol}>
-                  <Text style={[styles.impactLabel, { color: COLORS.danger }]}>DAMAGED</Text>
+                  <Text style={[styles.impactLabel, { color: COLORS.danger }]}>Damaged</Text>
                   <Text style={[styles.impactValue, { color: COLORS.danger }]}>-{formatCount(parsedQty)} {cleanUnit}</Text>
                 </View>
-                <Feather name="arrow-right" size={14} color={COLORS.navy} />
+                <Icon name="arrow-right" size={14} color={COLORS.navy} />
                 <View style={styles.impactCol}>
-                  <Text style={[styles.impactLabel, { color: COLORS.navy }]}>NEW STOCK</Text>
+                  <Text style={[styles.impactLabel, { color: COLORS.navy }]}>New stock</Text>
                   <Text style={[styles.impactValue, { color: COLORS.navy }]}>{formatCount(remainingStock)} {cleanUnit}</Text>
                 </View>
               </View>
@@ -546,7 +546,7 @@ export default function RecordDamageScreen() {
                       activeOpacity={0.75}
                       style={[styles.reasonChip, active && styles.reasonChipActive]}
                     >
-                      <Feather
+                      <Icon
                         name={r.icon}
                         size={12}
                         color={active ? '#FFFFFF' : COLORS.text.secondary}
@@ -573,8 +573,8 @@ export default function RecordDamageScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Text style={styles.sectionHeaderTitle}>Valuation & Financial Loss</Text>
                 <View style={styles.lossBadge}>
-                  <Feather name="alert-triangle" size={11} color="#B91C1C" />
-                  <Text style={styles.lossBadgeText}>WRITE-OFF</Text>
+                  <Icon name="alert-triangle" size={11} color="#A3321F" />
+                  <Text style={styles.lossBadgeText}>Write-off</Text>
                 </View>
               </View>
 
@@ -592,7 +592,7 @@ export default function RecordDamageScreen() {
               {/* Total Loss Display Card */}
               <View style={styles.totalLossCard}>
                 <View style={styles.lossTopRow}>
-                  <Text style={styles.lossCardLabel}>TOTAL ESTIMATED LOSS</Text>
+                  <Text style={styles.lossCardLabel}>Total estimated loss</Text>
                   <Text style={styles.lossCardValue}>{formatCurrency(totalLoss)}</Text>
                 </View>
                 <Text style={styles.lossCardSubtext}>
@@ -661,7 +661,7 @@ export default function RecordDamageScreen() {
                 <Text style={{ fontSize: 12, fontFamily: FONT.medium, color: COLORS.navy }}>
                   View History
                 </Text>
-                <Feather name="arrow-right" size={13} color={COLORS.navy} />
+                <Icon name="arrow-right" size={13} color={COLORS.navy} />
               </TouchableOpacity>
             </View>
 
@@ -722,7 +722,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: RADIUS.lg,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    borderColor: '#E6E2D9',
     padding: 16,
     gap: 12,
   },
@@ -754,7 +754,7 @@ const styles = StyleSheet.create({
   metricDivider: {
     width: StyleSheet.hairlineWidth,
     height: 38,
-    backgroundColor: '#E2E8F0',
+    backgroundColor: '#E6E2D9',
     marginHorizontal: 16,
   },
   metricLabel: {
@@ -781,7 +781,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: '#EDEAE3',
   },
   statsCauseText: {
     fontSize: 12,
@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
     padding: 16,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    borderColor: '#E6E2D9',
     gap: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
@@ -822,9 +822,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4.5,
     borderRadius: RADIUS.full,
-    backgroundColor: '#F0F9FF',
+    backgroundColor: '#E3EBF3',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#BAE6FD',
+    borderColor: '#C9D7E6',
   },
   changeProductBtnText: {
     fontSize: 11,
@@ -846,11 +846,11 @@ const styles = StyleSheet.create({
   productStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderRadius: RADIUS.md,
     padding: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    borderColor: '#E6E2D9',
     marginTop: 4,
   },
   productStatItem: {
@@ -871,7 +871,7 @@ const styles = StyleSheet.create({
   statDivider: {
     width: StyleSheet.hairlineWidth,
     height: '80%',
-    backgroundColor: '#CBD5E1',
+    backgroundColor: '#D3CEC2',
     marginHorizontal: 12,
   },
 
@@ -880,10 +880,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderRadius: RADIUS.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
     paddingHorizontal: 12,
     height: 42,
   },
@@ -900,7 +900,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#EDEAE3',
   },
   pickRowTitle: {
     fontSize: 13.5,
@@ -924,11 +924,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: RADIUS.md,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#EDEAE3',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
   },
   stepBtnDisabled: {
     opacity: 0.4,
@@ -936,10 +936,10 @@ const styles = StyleSheet.create({
   qtyInput: {
     flex: 1,
     height: 44,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderRadius: RADIUS.md,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
     textAlign: 'center',
     fontSize: 18,
     fontFamily: FONT.bold,
@@ -949,9 +949,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     height: 44,
     borderRadius: RADIUS.md,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -966,12 +966,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderRadius: RADIUS.md,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0',
+    borderColor: '#E6E2D9',
     marginTop: 2,
   },
   impactCol: {
@@ -1003,9 +1003,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
   },
   reasonChipActive: {
     backgroundColor: COLORS.ink,
@@ -1026,25 +1026,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#F8E5E1',
     paddingHorizontal: 7,
     paddingVertical: 2.5,
     borderRadius: RADIUS.full,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#FECACA',
+    borderColor: '#EECAC2',
   },
   lossBadgeText: {
     fontSize: 9,
     fontFamily: FONT.bold,
-    color: '#B91C1C',
+    color: '#A3321F',
     letterSpacing: 0.4,
   },
   totalLossCard: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: '#F8E5E1',
     borderRadius: RADIUS.md,
     padding: 13,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#FCA5A5',
+    borderColor: '#E3A398',
     gap: 4,
     marginTop: 4,
   },
@@ -1056,23 +1056,23 @@ const styles = StyleSheet.create({
   lossCardLabel: {
     fontSize: 10,
     fontFamily: FONT.bold,
-    color: '#991B1B',
+    color: '#8C2A1A',
     letterSpacing: 0.5,
   },
   lossCardValue: {
     fontSize: 18,
     fontFamily: FONT.bold,
-    color: '#B91C1C',
+    color: '#A3321F',
   },
   lossCardSubtext: {
     fontSize: 11.5,
     fontFamily: FONT.regular,
-    color: '#7F1D1D',
+    color: '#74220F',
   },
   toggleWrapper: {
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#E2E8F0',
+    borderTopColor: '#E6E2D9',
   },
 
   // Date chips
@@ -1080,9 +1080,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: RADIUS.full,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
   },
   dateChipActive: {
     backgroundColor: COLORS.navy,

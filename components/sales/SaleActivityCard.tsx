@@ -1,15 +1,26 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import { router } from 'expo-router';
 import { cleanSaleNotes, isDebtForgiven } from '@/lib/records';
-import { Button, SmartChip } from '@/components/ui';
+import { Avatar, Button } from '@/components/ui';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from '@/constants';
 import { RevenueActivity } from '@/types';
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 16, paddingVertical: 4 }}>
+      <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted }}>{label}</Text>
+      <Text style={{ flexShrink: 1, textAlign: 'right', fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary }} numberOfLines={2}>
+        {value}
+      </Text>
+    </View>
+  );
+}
 
 interface SaleActivityCardProps {
   item: RevenueActivity;
@@ -42,12 +53,13 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
   const isGenerating = generatingReceiptId === (isRepayment ? item.id : item.sale_id);
   const initials = (item.customer_name || 'C').charAt(0).toUpperCase();
 
-  const formattedPaymentMethod =
+  const methodName =
     item.payment_method === 'mixed'
-      ? 'Mixed'
-      : item.bank_name
-      ? `${item.payment_method.replace('_', ' ')} · ${item.bank_name}`
-      : item.payment_method?.replace('_', ' ') || 'Cash';
+      ? 'Split payment'
+      : item.payment_method === 'pos'
+      ? 'POS'
+      : (item.payment_method?.replace('_', ' ') || 'cash').replace(/^\w/, (c) => c.toUpperCase());
+  const formattedPaymentMethod = item.bank_name ? `${methodName} · ${item.bank_name}` : methodName;
 
   return (
     <View
@@ -78,7 +90,6 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
         }}
         delayLongPress={350}
       >
-        {/* ── Top Header Row: Avatar, Name, Time, and Amount ── */}
         <View style={styles.cardHeader}>
           {isSelectionMode && (
             <View style={styles.selectionCheckCol}>
@@ -89,131 +100,52 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
                   item.kind === 'debt_repayment' && styles.checkboxCircleDisabled,
                 ]}
               >
-                {isSelected ? (
-                  <Feather name="check" size={13} color="#FFFFFF" />
-                ) : null}
+                {isSelected ? <Icon name="check" size={13} color="#FFFFFF" /> : null}
               </View>
             </View>
           )}
-          <View style={styles.customerInfo}>
-            <View
-              style={[
-                styles.avatarContainer,
-                { backgroundColor: isRepayment ? COLORS.successLight : COLORS.navyLight },
-              ]}
-            >
-              <Text
-                style={{
-                  fontSize: 13,
-                  fontFamily: FONT.bold,
-                  color: isRepayment ? COLORS.success : COLORS.ink,
-                }}
-              >
-                {initials}
-              </Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={styles.customerName} numberOfLines={1}>
-                  {item.customer_name}
-                </Text>
-                {isRepayment ? (
-                  <View style={styles.repaymentBadge}>
-                    <Text style={styles.repaymentBadgeText}>Settlement</Text>
-                  </View>
-                ) : null}
-              </View>
-              <Text style={styles.dateText}>
-                {format(new Date(item.created_at), 'h:mm a')}
-              </Text>
-            </View>
+          <Avatar name={item.customer_name || 'Walk-in'} size={38} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.customerName} numberOfLines={1}>
+              {item.customer_name || 'Walk-in customer'}
+            </Text>
+            <Text style={styles.dateText} numberOfLines={1}>
+              {isRepayment ? 'Debt payment' : item.items_summary || 'Sale'} · {format(new Date(item.created_at), 'h:mm a')}
+            </Text>
           </View>
-
           <View style={styles.amountInfo}>
-            <Text style={[styles.totalAmount, { color: isRepayment ? COLORS.success : COLORS.text.primary }]}>
-              {isRepayment ? '+' : ''}{formatCurrency(displayAmount)}
+            <Text style={[styles.totalAmount, isRepayment && { color: COLORS.successText }]}>
+              {isRepayment ? '+' : ''}
+              {formatCurrency(displayAmount)}
             </Text>
-            <Feather
-              name={isExpanded ? 'chevron-up' : 'chevron-down'}
-              size={15}
-              color={COLORS.text.muted}
-              style={{ marginTop: 2 }}
-            />
-          </View>
-        </View>
-
-        {/* ── Items summary preview (Upwork-style crisp details) ── */}
-        {item.items_summary ? (
-          <Text style={styles.itemsSummary} numberOfLines={1}>
-            {item.items_summary}
-          </Text>
-        ) : null}
-
-        {/* ── Smart Micro-Chips Row (Upwork Intelligence) ── */}
-        <View style={styles.chipsRow}>
-          {item.amount_owed > 0 && !isDebtForgiven(item.payment_status, item.notes) ? (
-            <SmartChip
-              label={`Owes ${formatCurrency(item.amount_owed)}`}
-              deep
-              variant="danger"
-              size="xs"
-            />
-          ) : isDebtForgiven(item.payment_status, item.notes) ? (
-            <SmartChip
-              label="Debt Forgiven"
-              deep
-              variant="neutral"
-              size="xs"
-            />
-          ) : (
-            <SmartChip
-              label="Fully Paid"
-              deep
-              variant="success"
-              size="xs"
-            />
-          )}
-
-          <SmartChip
-            label={formattedPaymentMethod}
-            icon="credit-card"
-            variant="neutral"
-            size="xs"
-          />
-
-          {item.sold_by_name ? (
-            <SmartChip
-              label={item.sold_by_name}
-              icon="user"
-              variant="neutral"
-              size="xs"
-            />
-          ) : null}
-
-          {Boolean(item.discount_amount && item.discount_amount > 0) && (
-            <SmartChip
-              label={`-${formatCurrency(item.discount_amount!)} OFF`}
-              icon="tag"
-              variant="warning"
-              size="xs"
-            />
-          )}
-        </View>
-
-        {cleanSaleNotes(item.notes) ? (
-          <View style={styles.notesContainer}>
-            <Text style={styles.notesText} numberOfLines={1}>
-              "{cleanSaleNotes(item.notes)}"
+            <Text
+              style={[
+                styles.statusText,
+                item.amount_owed > 0 && !isDebtForgiven(item.payment_status, item.notes) && { color: COLORS.dangerText },
+              ]}
+              numberOfLines={1}
+            >
+              {item.amount_owed > 0 && !isDebtForgiven(item.payment_status, item.notes)
+                ? `Owes ${formatCurrency(item.amount_owed)}`
+                : isDebtForgiven(item.payment_status, item.notes)
+                ? 'Debt forgiven'
+                : formattedPaymentMethod}
             </Text>
           </View>
-        ) : null}
+        </View>
       </TouchableOpacity>
 
       {isExpanded && (
         <View style={styles.expandedContent}>
+          <View style={styles.detailGrid}>
+            <Detail label="Payment" value={formattedPaymentMethod} />
+            {item.sold_by_name ? <Detail label="Recorded by" value={item.sold_by_name} /> : null}
+            {item.reference ? <Detail label="Reference" value={item.reference} /> : null}
+            {cleanSaleNotes(item.notes) ? <Detail label="Note" value={cleanSaleNotes(item.notes)} /> : null}
+          </View>
           {item.items && item.items.length > 0 ? (
             <View style={styles.itemsList}>
-              <Text style={styles.itemsHeaderText}>ITEMS SOLD</Text>
+              <Text style={styles.itemsHeaderText}>Items</Text>
               {(() => {
                 const totalBaseAmount = item.items.reduce((sum, it) => sum + (it.total_price || 0), 0) || item.total_amount || 1;
                 let remainingCalculatedTotal = hasHigherPayment ? item.amount_paid : 0;
@@ -282,7 +214,7 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
                     </Text>
                   </View>
                   <View style={[styles.summaryLine, styles.summaryLineTotal]}>
-                    <Text style={styles.summaryLabelTotal}>Total Amount</Text>
+                    <Text style={styles.summaryLabelTotal}>Total</Text>
                     <Text style={styles.summaryValueTotal}>
                       {formatCurrency(displayAmount)}
                     </Text>
@@ -297,7 +229,7 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
           <View style={styles.expandedActions}>
             {!isRepayment && (
               <Button
-                title="Edit Sale"
+                title="Edit"
                 icon="edit-2"
                 onPress={() => router.push(`/(app)/record-sale?saleId=${item.sale_id ?? item.id}`)}
                 variant="secondary"
@@ -306,7 +238,7 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
               />
             )}
             <Button
-              title={isGenerating ? 'Preparing...' : 'Get Receipt'}
+              title={isGenerating ? 'Preparing…' : 'Receipt'}
               icon="file-text"
               disabled={isGenerating}
               loading={isGenerating}
@@ -321,7 +253,7 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
               activeOpacity={0.7}
               accessibilityLabel="Delete record"
             >
-              <Feather name="trash-2" size={16} color={COLORS.danger} />
+              <Icon name="trash-2" size={16} color={COLORS.danger} />
             </TouchableOpacity>
           </View>
         </View>
@@ -333,21 +265,22 @@ export const SaleActivityCard = React.memo<SaleActivityCardProps>(({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.lg,
-    padding: 15,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
     marginTop: 2,
-    marginBottom: 6,
+    marginBottom: 8,
   },
   cardExpanded: {
-    borderColor: COLORS.navy,
-    borderWidth: 1,
+    borderColor: COLORS.borderDark,
     zIndex: 2,
   },
   cardSelected: {
     borderColor: COLORS.navy,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F3EE',
     borderWidth: 1,
   },
   selectionCheckCol: {
@@ -360,7 +293,7 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 1.5,
-    borderColor: '#CBD5E1',
+    borderColor: '#D3CEC2',
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
@@ -370,25 +303,24 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.navy,
   },
   checkboxCircleDisabled: {
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F1F5F9',
+    borderColor: '#E6E2D9',
+    backgroundColor: '#EDEAE3',
     opacity: 0.5,
   },
   deleteActionButton: {
     width: 38,
     height: 38,
     borderRadius: RADIUS.md,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: '#F5DAD4',
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#FECACA',
+    borderColor: '#EECAC2',
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    gap: 12,
   },
   customerInfo: {
     flexDirection: 'row',
@@ -406,9 +338,19 @@ const styles = StyleSheet.create({
   },
   customerName: {
     fontSize: 15,
-    fontFamily: FONT.bold,
+    fontFamily: FONT.medium,
     color: COLORS.text.primary,
     letterSpacing: -0.2,
+  },
+  statusText: {
+    fontSize: 12.5,
+    fontFamily: FONT.regular,
+    color: COLORS.text.muted,
+    marginTop: 2,
+  },
+  detailGrid: {
+    paddingTop: 10,
+    marginBottom: 4,
   },
   repaymentBadge: {
     backgroundColor: COLORS.successLight,
@@ -423,18 +365,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   dateText: {
-    fontSize: 11.5,
+    fontSize: 12.5,
     fontFamily: FONT.regular,
     color: COLORS.text.muted,
-    marginTop: 1,
+    marginTop: 2,
   },
   amountInfo: {
     alignItems: 'flex-end',
   },
   totalAmount: {
-    fontSize: 16,
-    fontFamily: FONT.bold,
+    fontSize: 15.5,
+    fontFamily: FONT.semiBold,
+    color: COLORS.text.primary,
     letterSpacing: -0.3,
+    fontVariant: ['tabular-nums'],
   },
   itemsSummary: {
     fontSize: 12.5,

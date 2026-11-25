@@ -1,6 +1,6 @@
 import React from 'react';
 import { create } from 'zustand';
-import { Feather } from '@expo/vector-icons';
+import { IconName } from '@/components/icons';
 import {
   ConfirmationDialogType,
   ConfirmationButtonVariant,
@@ -16,7 +16,7 @@ export interface AlertOptions {
   onCancel?: () => void;
   buttons?: ConfirmationModalButton[];
   type?: ConfirmationDialogType;
-  icon?: keyof typeof Feather.glyphMap;
+  icon?: IconName;
   customIcon?: React.ReactNode;
   dismissOnBackdropPress?: boolean;
   confirmVariant?: ConfirmationButtonVariant;
@@ -90,7 +90,7 @@ export function confirmModal(
     confirmText?: string;
     cancelText?: string;
     type?: ConfirmationDialogType;
-    icon?: keyof typeof Feather.glyphMap;
+    icon?: IconName;
     customIcon?: React.ReactNode;
     dismissOnBackdropPress?: boolean;
     confirmVariant?: ConfirmationButtonVariant;

@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
 
@@ -246,12 +246,12 @@ export default function MarketListScreen() {
   };
 
   return (
-    <ScreenShell backgroundColor={COLORS.background} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.background}>
       {/* ── Screen Header ────────────────────────────────────────────── */}
       <ScreenHeader
         title="Market List"
         subtitle="Customer requests & wanted stock"
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={<HeaderAction icon="plus" onPress={() => setModalVisible(true)} />}
       />
@@ -267,10 +267,10 @@ export default function MarketListScreen() {
           <View style={styles.overviewHeader}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={styles.cartIconBadge}>
-                <Feather name="shopping-cart" size={16} color={COLORS.onAccent} />
+                <Icon name="shopping-cart" size={16} color={COLORS.onAccent} />
               </View>
               <View>
-                <Text style={styles.overviewTitle}>MARKET PROCUREMENT</Text>
+                <Text style={styles.overviewTitle}>Market procurement</Text>
                 <Text style={styles.overviewSubtitle}>Items to purchase when next visiting market</Text>
               </View>
             </View>
@@ -304,7 +304,7 @@ export default function MarketListScreen() {
         {/* ── 2. Unified Search & Add Quick Bar ────────────────────────── */}
         <View style={styles.searchRow}>
           <View style={styles.searchInputContainer}>
-            <Feather name="search" size={15} color={COLORS.text.muted} />
+            <Icon name="search" size={15} color={COLORS.text.muted} />
             <TextInput
               placeholder="Search market list..."
               placeholderTextColor={COLORS.text.muted}
@@ -317,7 +317,7 @@ export default function MarketListScreen() {
             />
             {search ? (
               <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Feather name="x" size={14} color={COLORS.text.muted} />
+                <Icon name="x" size={14} color={COLORS.text.muted} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -327,7 +327,7 @@ export default function MarketListScreen() {
             activeOpacity={0.8}
             style={styles.quickAddButton}
           >
-            <Feather name="plus" size={15} color={COLORS.onAccent} />
+            <Icon name="plus" size={15} color={COLORS.onAccent} />
             <Text style={styles.quickAddButtonText}>Add Item</Text>
           </TouchableOpacity>
         </View>
@@ -407,7 +407,7 @@ export default function MarketListScreen() {
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     style={styles.checkButton}
                   >
-                    <Feather
+                    <Icon
                       name={isBought ? 'check-circle' : 'circle'}
                       size={22}
                       color={isBought ? COLORS.success : COLORS.text.muted}
@@ -424,7 +424,7 @@ export default function MarketListScreen() {
                         onPress={() => handleDelete(item)}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                       >
-                        <Feather name="trash-2" size={14} color={COLORS.text.muted} />
+                        <Icon name="trash-2" size={14} color={COLORS.text.muted} />
                       </TouchableOpacity>
                     </View>
 
@@ -432,13 +432,13 @@ export default function MarketListScreen() {
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
                       {item.quantity_needed ? (
                         <View style={styles.tagBadge}>
-                          <Feather name="layers" size={10} color={COLORS.navy} />
+                          <Icon name="layers" size={10} color={COLORS.navy} />
                           <Text style={styles.tagBadgeText}>{item.quantity_needed}</Text>
                         </View>
                       ) : null}
 
                       <View style={styles.dateBadge}>
-                        <Feather name="clock" size={10} color={COLORS.text.muted} />
+                        <Icon name="clock" size={10} color={COLORS.text.muted} />
                         <Text style={styles.dateBadgeText}>
                           {format(new Date(item.created_at), 'MMM d, h:mm a')}
                         </Text>
@@ -446,7 +446,7 @@ export default function MarketListScreen() {
 
                       {isBought ? (
                         <View style={styles.boughtBadge}>
-                          <Text style={styles.boughtBadgeText}>PURCHASED</Text>
+                          <Text style={styles.boughtBadgeText}>Purchased</Text>
                         </View>
                       ) : null}
                     </View>
@@ -464,7 +464,7 @@ export default function MarketListScreen() {
                     {item.customer_name || item.customer_phone ? (
                       <View style={styles.customerBox}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flex: 1 }}>
-                          <Feather name="user" size={11} color={COLORS.navy} />
+                          <Icon name="user" size={11} color={COLORS.navy} />
                           <Text style={styles.customerNameText} numberOfLines={1}>
                             Customer: {item.customer_name || 'Walk-in'}
                             {item.customer_phone ? ` (${item.customer_phone})` : ''}
@@ -479,7 +479,7 @@ export default function MarketListScreen() {
                               activeOpacity={0.8}
                               style={styles.contactPillWhatsApp}
                             >
-                              <Feather name="message-circle" size={11} color="#059669" />
+                              <Icon name="message-circle" size={11} color="#2E7D4F" />
                               <Text style={styles.contactPillWhatsAppText}>WhatsApp</Text>
                             </TouchableOpacity>
 
@@ -488,7 +488,7 @@ export default function MarketListScreen() {
                               activeOpacity={0.8}
                               style={styles.contactPillCall}
                             >
-                              <Feather name="phone" size={11} color={COLORS.navy} />
+                              <Icon name="phone" size={11} color={COLORS.navy} />
                               <Text style={styles.contactPillCallText}>Call</Text>
                             </TouchableOpacity>
                           </View>
@@ -503,7 +503,7 @@ export default function MarketListScreen() {
                         activeOpacity={0.8}
                         style={styles.catalogButton}
                       >
-                        <Feather name="plus-circle" size={13} color={COLORS.navy} />
+                        <Icon name="plus-circle" size={13} color={COLORS.navy} />
                         <Text style={styles.catalogButtonText}>Add to Store Inventory</Text>
                       </TouchableOpacity>
                     ) : null}
@@ -732,8 +732,8 @@ const styles = StyleSheet.create({
     ...SHADOW.sm,
   },
   cardBought: {
-    backgroundColor: '#F9FAFB',
-    borderColor: 'rgba(5, 150, 105, 0.2)',
+    backgroundColor: '#F5F3EE',
+    borderColor: 'rgba(46, 125, 79, 0.2)',
   },
   cardMainRow: {
     flexDirection: 'row',
@@ -780,7 +780,7 @@ const styles = StyleSheet.create({
     color: COLORS.text.muted,
   },
   boughtBadge: {
-    backgroundColor: 'rgba(5, 150, 105, 0.1)',
+    backgroundColor: 'rgba(46, 125, 79, 0.1)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: RADIUS.xs,
@@ -824,17 +824,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3.5,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#E6F0E9',
     paddingHorizontal: 7,
     paddingVertical: 3.5,
     borderRadius: RADIUS.xs,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(5, 150, 105, 0.3)',
+    borderColor: 'rgba(46, 125, 79, 0.3)',
   },
   contactPillWhatsAppText: {
     fontSize: 10.5,
     fontFamily: FONT.semiBold,
-    color: '#059669',
+    color: '#2E7D4F',
   },
   contactPillCall: {
     flexDirection: 'row',
@@ -869,7 +869,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: 'rgba(26, 25, 23, 0.55)',
     justifyContent: 'center',
     paddingHorizontal: SP.lg,
     paddingVertical: 24,

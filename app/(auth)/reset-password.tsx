@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { supabase } from '@/lib/supabase';
 import { Button, LoadingScreen } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
@@ -76,9 +76,9 @@ export default function ResetPasswordScreen() {
 
   if (!canReset) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="dark">
+      <ScreenShell backgroundColor={COLORS.surface} >
         <View style={styles.invalidContent}>
-          <View style={styles.invalidIcon}><Feather name="alert-circle" size={28} color={COLORS.warning} /></View>
+          <View style={styles.invalidIcon}><Icon name="alert-circle" size={28} color={COLORS.warning} /></View>
           <Text style={styles.title}>This link is no longer valid</Text>
           <Text style={styles.subtitle}>Reset links and verification codes expire for your security. Request a new reset email to continue.</Text>
           <Button title="Request new reset email" onPress={() => router.replace('/(auth)/forgot-password')} size="lg" style={{ width: '100%', marginTop: 28 }} />
@@ -91,7 +91,7 @@ export default function ResetPasswordScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="dark">
+    <ScreenShell backgroundColor={COLORS.surface} >
       <KeyboardAwareScrollView contentContainerStyle={{ flexGrow: 1, backgroundColor: COLORS.surface }} keyboardShouldPersistTaps="handled">
         <View style={styles.header}><BrandWordmark /></View>
         <View style={styles.content}>
@@ -112,7 +112,6 @@ export default function ResetPasswordScreen() {
             autoFocus
             error={error}
             required
-            leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
           />
           <PasswordStrength password={password} />
           <InputField
@@ -129,7 +128,6 @@ export default function ResetPasswordScreen() {
             onSubmitEditing={handleUpdatePassword}
             error={error && password === confirmPassword ? error : undefined}
             required
-            leftIcon={<Feather name="lock" size={16} color={COLORS.text.muted} />}
           />
         </View>
         <View style={styles.footer}>
@@ -144,7 +142,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingTop: 48, paddingBottom: 24 },
   content: { flex: 1, paddingHorizontal: 24, paddingTop: 12 },
   titleContainer: { marginBottom: 32 },
-  title: { fontSize: 28, fontFamily: FONT.black, color: COLORS.text.primary, marginBottom: 8, letterSpacing: -0.5 },
+  title: { fontSize: 32, lineHeight: 38, fontFamily: FONT.serif, color: COLORS.text.primary, marginBottom: 10, letterSpacing: -0.6 },
   subtitle: { fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.secondary, lineHeight: 22 },
   footer: { padding: 24, paddingBottom: 48 },
   invalidContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, alignItems: 'center' },

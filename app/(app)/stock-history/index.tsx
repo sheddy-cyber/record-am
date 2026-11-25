@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { endOfDay, format, startOfDay, subDays } from 'date-fns';
@@ -37,7 +37,7 @@ const MOVEMENT_CONFIG: Record<
     label: string;
     color: string;
     variant: 'success' | 'danger' | 'warning' | 'neutral' | 'primary';
-    icon: keyof typeof Feather.glyphMap;
+    icon: IconName;
   }
 > = {
   stock_in: { label: 'Stock In', color: COLORS.success, variant: 'success', icon: 'arrow-down-left' },
@@ -273,10 +273,10 @@ export default function StockHistoryScreen() {
 
   if (!canViewStockHistory) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Stock History"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         />
         <PermissionDenied
@@ -289,11 +289,11 @@ export default function StockHistoryScreen() {
 
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Stock History"
         subtitle={`${filteredMovements.length} movement${filteredMovements.length === 1 ? '' : 's'} shown`}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={
           canExportStockHistory ? (
@@ -320,7 +320,7 @@ export default function StockHistoryScreen() {
             gap: 10,
           }}
         >
-          <Feather name="search" size={16} color={COLORS.text.muted} />
+          <Icon name="search" size={16} color={COLORS.text.muted} />
           <TextInput
             value={search}
             onChangeText={setSearch}
@@ -364,13 +364,13 @@ export default function StockHistoryScreen() {
               backgroundColor: COLORS.accentLight,
             }}
           >
-            <Feather name="calendar" size={14} color={COLORS.accentDark} />
+            <Icon name="calendar" size={14} color={COLORS.accentDark} />
           </View>
           <View style={{ flex: 1, marginLeft: 10 }}>
             <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: COLORS.text.muted }}>Time Period</Text>
             <Text style={{ marginTop: 1, fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>{periodLabel}</Text>
           </View>
-          <Feather name="chevron-down" size={16} color={COLORS.text.muted} />
+          <Icon name="chevron-down" size={16} color={COLORS.text.muted} />
         </TouchableOpacity>
 
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2, marginTop: 2 }}>
@@ -428,12 +428,12 @@ export default function StockHistoryScreen() {
               justifyContent: 'center',
               gap: 8,
               height: 44,
-              backgroundColor: '#DC2626',
+              backgroundColor: '#C2412D',
               borderRadius: RADIUS.lg,
               marginTop: 4,
             }}
           >
-            <Feather name="plus" size={16} color="#FFFFFF" />
+            <Icon name="plus" size={16} color="#FFFFFF" />
             <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: '#FFFFFF' }}>
               Record Damaged Goods
             </Text>
@@ -508,7 +508,7 @@ export default function StockHistoryScreen() {
                   justifyContent: 'center',
                 }}
               >
-                <Feather name={config.icon} size={16} color={config.color} />
+                <Icon name={config.icon} size={16} color={config.color} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 14, fontFamily: FONT.semiBold, color: COLORS.text.primary }} numberOfLines={1}>

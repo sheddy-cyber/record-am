@@ -9,7 +9,9 @@ import {
   ActivityIndicator,
   Platform,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
+import { FilePickerBox, ImportStep, importStyles } from '@/components/import';
+import { Toggle } from '@/components/forms';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -403,257 +405,115 @@ export default function ImportStockScreen() {
   const closeScreen = () => dismissScreen();
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell>
       <ScreenHeader
-        title="Import Stock"
-        subtitle="Bulk add products from Excel or CSV"
-        theme="dark"
+        title="Import products"
+        large
+        subtitle={`Into ${currentBranch?.name ?? 'this'} branch`}
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: SP.page, paddingBottom: 60, gap: 16 }}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Step 1: Download Template */}
-        <Card style={{ gap: 12 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: RADIUS.md,
-                backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Feather name="file-text" size={20} color={COLORS.success} />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
+        {importSuccessCount !== null ? (
+          <View style={{ alignItems: 'center', paddingTop: 40, gap: 12 }}>
+            <View style={styles.successIcon}>
+              <Icon name="check" size={30} color="#FFFFFF" strokeWidth={2.4} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                Need a template?
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary }}>
-                Download our sample spreadsheet with ready-made columns and examples.
-              </Text>
-            </View>
-          </View>
-
-          <TouchableOpacity
-            style={styles.templateButton}
-            onPress={handleDownloadTemplate}
-            activeOpacity={0.8}
-          >
-            <Feather name="download" size={16} color={COLORS.ink} />
-            <Text style={styles.templateButtonText}>Download Excel Template (.xlsx)</Text>
-          </TouchableOpacity>
-        </Card>
-
-        {/* Step 2: Upload File */}
-        <Card style={{ gap: 14 }}>
-          <View>
-            <SectionHeader title="Upload Your File" />
-            <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: -6, marginBottom: 8 }}>
-              Supports Excel (.xlsx, .xls) and CSV
+            <Text style={styles.successTitle}>
+              {importSuccessCount} {importSuccessCount === 1 ? 'product' : 'products'} added
             </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.uploadBox, fileName && styles.uploadBoxActive]}
-            onPress={handlePickDocument}
-            activeOpacity={0.75}
-            disabled={parsing || isImporting}
-          >
-            {parsing ? (
-              <View style={{ alignItems: 'center', gap: 8 }}>
-                <ActivityIndicator size="small" color={COLORS.ink} />
-                <Text style={styles.uploadPrompt}>Reading spreadsheet data...</Text>
-              </View>
-            ) : fileName ? (
-              <View style={{ alignItems: 'center', gap: 6 }}>
-                <Feather name="check-circle" size={32} color={COLORS.success} />
-                <Text style={styles.uploadFileName} numberOfLines={1}>
-                  {fileName}
-                </Text>
-                <Text style={styles.uploadChangePrompt}>Tap to choose a different file</Text>
-              </View>
-            ) : (
-              <View style={{ alignItems: 'center', gap: 8 }}>
-                <View style={styles.uploadIconCircle}>
-                  <Feather name="upload-cloud" size={26} color={COLORS.ink} />
-                </View>
-                <Text style={styles.uploadPrompt}>Tap to choose an Excel or CSV file</Text>
-                <Text style={styles.uploadHint}>From Google Drive, WhatsApp, or local storage</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </Card>
-
-        {/* Step 3: Preview & Validation */}
-        {parsedRows.length > 0 && !importSuccessCount && (
-          <View style={{ gap: 14 }}>
-            <View>
-              <SectionHeader title={`File Preview (${parsedRows.length} items)`} />
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.secondary, marginTop: -6, marginBottom: 8 }}>
-                Review items and validation status before importing
-              </Text>
-            </View>
-
-            {/* Stats Badges */}
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <View style={[styles.statChip, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]}>
-                <Feather name="check" size={14} color={COLORS.success} />
-                <Text style={[styles.statChipText, { color: '#065f46' }]}>
-                  {validRows.length} Ready
-                </Text>
-              </View>
-
-              {warningRowsCount > 0 && (
-                <View style={[styles.statChip, { backgroundColor: '#fffbeb', borderColor: '#fde68a' }]}>
-                  <Feather name="alert-triangle" size={14} color={COLORS.warning} />
-                  <Text style={[styles.statChipText, { color: '#92400e' }]}>
-                    {warningRowsCount} Warnings
-                  </Text>
-                </View>
-              )}
-
-              {errorRowsCount > 0 && (
-                <View style={[styles.statChip, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
-                  <Feather name="x-circle" size={14} color={COLORS.danger} />
-                  <Text style={[styles.statChipText, { color: '#991b1b' }]}>
-                    {errorRowsCount} Errors
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Update duplicate toggle */}
-            <TouchableOpacity
-              style={styles.toggleRow}
-              onPress={() => setUpdateExisting((prev) => !prev)}
-              activeOpacity={0.8}
-            >
-              <Feather
-                name={updateExisting ? 'check-square' : 'square'}
-                size={20}
-                color={updateExisting ? COLORS.ink : COLORS.text.muted}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.toggleLabel}>Update existing products</Text>
-                <Text style={styles.toggleDesc}>
-                  If a product already exists in stock, add to its current quantity instead of creating a duplicate.
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Sample of Parsed Rows */}
-            <Card style={{ padding: 0, overflow: 'hidden' }}>
-              {parsedRows.slice(0, 10).map((row, idx) => (
-                <View
-                  key={`row-${idx}`}
-                  style={[
-                    styles.previewRow,
-                    idx < Math.min(parsedRows.length, 10) - 1 && styles.previewRowBorder,
-                  ]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={styles.rowProductName} numberOfLines={1}>
-                        {row.name || '(Unnamed Product)'}
-                      </Text>
-                      {row.isExisting && (
-                        <Badge label="In Stock" variant="info" size="sm" />
-                      )}
-                    </View>
-                    <Text style={styles.rowSubtext}>
-                      {row.categoryName || 'General'} · {row.quantity} {row.unit} · Sell: {CURRENCY_SYMBOL}
-                      {row.sellingPrice.toLocaleString()}
-                      {row.costPrice > 0 ? ` · Cost: ${CURRENCY_SYMBOL}${row.costPrice.toLocaleString()}` : ''}
-                    </Text>
-                    {row.statusMessage && (
-                      <Text
-                        style={[
-                          styles.rowStatusMessage,
-                          row.status === 'error' ? { color: COLORS.danger } : { color: COLORS.warning },
-                        ]}
-                      >
-                        {row.status === 'error' ? '✖ ' : '⚠ '}
-                        {row.statusMessage}
-                      </Text>
-                    )}
-                  </View>
-
-                  <View>
-                    {row.status === 'valid' && (
-                      <Feather name="check-circle" size={18} color={COLORS.success} />
-                    )}
-                    {row.status === 'warning' && (
-                      <Feather name="alert-circle" size={18} color={COLORS.warning} />
-                    )}
-                    {row.status === 'error' && (
-                      <Feather name="slash" size={18} color={COLORS.danger} />
-                    )}
-                  </View>
-                </View>
-              ))}
-
-              {parsedRows.length > 10 && (
-                <View style={styles.moreRowsFooter}>
-                  <Text style={styles.moreRowsText}>
-                    + {parsedRows.length - 10} more products in file
-                  </Text>
-                </View>
-              )}
-            </Card>
-
-            {/* Import Button */}
-            <Button
-              title={
-                isImporting
-                  ? `Importing (${importProgress?.current || 0}/${importProgress?.total || validRows.length})...`
-                  : `Import ${validRows.length} Products`
-              }
-              onPress={handleExecuteImport}
-              loading={isImporting}
-              disabled={validRows.length === 0}
-              size="lg"
-            />
-          </View>
-        )}
-
-        {/* Success Screen */}
-        {importSuccessCount !== null && (
-          <Card style={{ alignItems: 'center', padding: 24, gap: 14 }}>
-            <View style={styles.successIconCircle}>
-              <Feather name="check" size={36} color={COLORS.success} />
-            </View>
-            <Text style={styles.successTitle}>Import Complete!</Text>
-            <Text style={styles.successMessage}>
-              Successfully added {importSuccessCount} products to your stock catalog in{' '}
-              {currentBranch?.name || 'Main Branch'}.
-            </Text>
-
-            <View style={{ width: '100%', maxWidth: 320, gap: 10, marginTop: 8, alignItems: 'center', alignSelf: 'center' }}>
+            <Text style={styles.successText}>They are in your stock list for {currentBranch?.name || 'this branch'}.</Text>
+            <View style={{ alignSelf: 'stretch', gap: 10, marginTop: 16 }}>
+              <Button title="Go to stock" size="lg" onPress={closeScreen} />
               <Button
-                title="View in Inventory"
-                onPress={closeScreen}
-                variant="primary"
-                style={{ width: '100%' }}
-              />
-              <Button
-                title="Import Another"
+                title="Import another file"
+                variant="secondary"
+                size="lg"
                 onPress={() => {
                   setFileName(null);
                   setParsedRows([]);
                   setImportSuccessCount(null);
                 }}
-                variant="secondary"
-                style={{ width: '100%' }}
               />
             </View>
-          </Card>
+          </View>
+        ) : (
+          <>
+            <ImportStep number={1} title="Start from the template" detail="Columns for name, category, unit, quantity, cost and selling price, with examples." />
+            <Button title="Download template (.xlsx)" icon="download" variant="secondary" onPress={handleDownloadTemplate} />
+
+            <ImportStep number={2} title="Choose your file" detail="Excel (.xlsx, .xls) or CSV." />
+            <FilePickerBox fileName={fileName} busy={parsing} disabled={isImporting} onPress={handlePickDocument} />
+
+            {parsedRows.length > 0 ? (
+              <>
+                <ImportStep
+                  number={3}
+                  title="Check and import"
+                  detail={[
+                    `${validRows.length} ready`,
+                    warningRowsCount > 0 ? `${warningRowsCount} with warnings` : null,
+                    errorRowsCount > 0 ? `${errorRowsCount} will be skipped` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                />
+
+                <View style={[styles.group, { paddingTop: 14, paddingHorizontal: 16, marginBottom: 12 }]}>
+                  <Toggle
+                    label="Add to products you already have"
+                    description="If a name matches an existing product, its quantity goes up instead of creating a duplicate."
+                    value={updateExisting}
+                    onChange={setUpdateExisting}
+                  />
+                </View>
+
+                <View style={styles.group}>
+                  {parsedRows.slice(0, 10).map((row, idx, list) => (
+                    <View key={`row-${idx}`} style={[styles.row, idx < list.length - 1 && styles.divider]}>
+                      <View style={{ flex: 1, paddingRight: 10 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                          <Text style={styles.rowTitle} numberOfLines={1}>
+                            {row.name || 'Unnamed product'}
+                          </Text>
+                          {row.isExisting ? <Text style={styles.existing}>Existing</Text> : null}
+                        </View>
+                        <Text style={styles.rowMeta} numberOfLines={1}>
+                          {row.quantity} {row.unit} · sells at {CURRENCY_SYMBOL}
+                          {row.sellingPrice.toLocaleString()}
+                          {row.costPrice > 0 ? ` · cost ${CURRENCY_SYMBOL}${row.costPrice.toLocaleString()}` : ''}
+                        </Text>
+                        {row.statusMessage ? (
+                          <Text style={[styles.rowMeta, { color: row.status === 'error' ? COLORS.dangerText : COLORS.warningText }]}>
+                            {row.statusMessage}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <Icon
+                        name={row.status === 'valid' ? 'check' : row.status === 'warning' ? 'alert-circle' : 'slash'}
+                        size={17}
+                        color={row.status === 'valid' ? COLORS.success : row.status === 'warning' ? COLORS.warning : COLORS.danger}
+                      />
+                    </View>
+                  ))}
+                </View>
+                {parsedRows.length > 10 ? <Text style={styles.more}>and {parsedRows.length - 10} more in the file</Text> : null}
+
+                <Button
+                  title={
+                    isImporting
+                      ? `Importing ${importProgress?.current || 0} of ${importProgress?.total || validRows.length}…`
+                      : `Import ${validRows.length} ${validRows.length === 1 ? 'product' : 'products'}`
+                  }
+                  onPress={handleExecuteImport}
+                  loading={isImporting}
+                  disabled={validRows.length === 0}
+                  size="lg"
+                  style={{ marginTop: 16 }}
+                />
+              </>
+            ) : null}
+          </>
         )}
       </ScrollView>
     </ScreenShell>
@@ -661,169 +521,18 @@ export default function ImportStockScreen() {
 }
 
 const styles = StyleSheet.create({
-  templateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(0, 78, 137, 0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 78, 137, 0.2)',
-  },
-  templateButtonText: {
-    color: COLORS.ink,
-    fontSize: 13,
-    fontFamily: FONT.semiBold,
-  },
-  uploadBox: {
-    borderWidth: 2,
-    borderColor: '#cbd5e1',
-    borderStyle: 'dashed',
-    borderRadius: RADIUS.lg,
-    paddingVertical: 32,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  ...importStyles,
+  existing: {
+    fontSize: 10.5,
+    fontFamily: FONT.medium,
+    color: COLORS.text.secondary,
     backgroundColor: COLORS.surface2,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    overflow: 'hidden',
   },
-  uploadBoxActive: {
-    borderColor: COLORS.success,
-    borderStyle: 'solid',
-    backgroundColor: '#f0fdf4',
-  },
-  uploadIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Platform.select({
-      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 4 },
-      android: { elevation: 2 },
-    }),
-  },
-  uploadPrompt: {
-    fontSize: 14,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-    textAlign: 'center',
-  },
-  uploadHint: {
-    fontSize: 12,
-    fontFamily: FONT.regular,
-    color: COLORS.text.muted,
-    textAlign: 'center',
-  },
-  uploadFileName: {
-    fontSize: 14,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-    textAlign: 'center',
-    maxWidth: '90%',
-  },
-  uploadChangePrompt: {
-    fontSize: 12,
-    fontFamily: FONT.medium,
-    color: COLORS.ink,
-  },
-  statChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: RADIUS.full,
-    borderWidth: 1,
-  },
-  statChipText: {
-    fontSize: 12,
-    fontFamily: FONT.bold,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    padding: 12,
-    backgroundColor: COLORS.card,
-    borderRadius: RADIUS.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-  },
-  toggleLabel: {
-    fontSize: 13,
-    fontFamily: FONT.semiBold,
-    color: COLORS.text.primary,
-  },
-  toggleDesc: {
-    fontSize: 11,
-    fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  previewRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
-    gap: 12,
-  },
-  previewRowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.border,
-  },
-  rowProductName: {
-    fontSize: 13,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-    flexShrink: 1,
-  },
-  rowSubtext: {
-    fontSize: 11,
-    fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
-    marginTop: 2,
-  },
-  rowStatusMessage: {
-    fontSize: 11,
-    fontFamily: FONT.medium,
-    marginTop: 3,
-  },
-  moreRowsFooter: {
-    paddingVertical: 10,
-    backgroundColor: COLORS.surface2,
-    alignItems: 'center',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: COLORS.border,
-  },
-  moreRowsText: {
-    fontSize: 12,
-    fontFamily: FONT.medium,
-    color: COLORS.text.muted,
-  },
-  successIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#ecfdf5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  successTitle: {
-    fontSize: 18,
-    fontFamily: FONT.bold,
-    color: COLORS.text.primary,
-  },
-  successMessage: {
-    fontSize: 13,
-    fontFamily: FONT.regular,
-    color: COLORS.text.secondary,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
+  successIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.success, alignItems: 'center', justifyContent: 'center' },
+  successTitle: { fontSize: 26, fontFamily: FONT.serif, color: COLORS.text.primary, textAlign: 'center' },
+  successText: { fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.secondary, textAlign: 'center' },
 });

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import type { Href } from 'expo-router';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { dismissScreen } from '@/lib/navigation';
@@ -31,7 +31,7 @@ export function PermissionDenied({
           marginBottom: 16,
         }}
       >
-        <Feather name="lock" size={22} color={COLORS.warning} />
+        <Icon name="lock" size={22} color={COLORS.warning} />
       </View>
       <Text style={{ fontSize: 17, fontFamily: FONT.bold, color: COLORS.text.primary, textAlign: 'center' }}>
         {title}

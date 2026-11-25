@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
-import { AppState, Text, TextInput, View, Platform, Animated } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, Text, TextInput, View, Platform } from 'react-native';
 import { Stack, router, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
@@ -10,16 +10,17 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast, { BaseToast, ErrorToast } from 'react-native-toast-message';
 import { BlurView } from 'expo-blur';
-import { Feather } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAlertStore } from '@/store/alertStore';
 import { useTabStore } from '@/store/tabStore';
 import { useAuthStore } from '@/store/authStore';
 import { useOfflineSync } from '@/hooks/useOfflineSync';
-import { COLORS, FONT, RADIUS } from '@/constants';
+import { COLORS, FONT, FONT_ASSETS } from '@/constants';
 import { GlobalDialog } from '@/components/ui';
+import { Icon } from '@/components/icons';
 import { VoiceControlModal } from '@/components/voice';
 import '@/lib/alertBridge';
+import '@/lib/devTools';
 
 // Keep the native splash screen visible until our JS AnimatedSplashScreen renders
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
@@ -41,7 +42,7 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
       textarea:-webkit-autofill:focus,
       textarea:-webkit-autofill:active {
         -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
-        -webkit-text-fill-color: #0F172A !important;
+        -webkit-text-fill-color: #1A1917 !important;
         transition: background-color 5000000s ease-in-out 0s !important;
       }
     `;
@@ -49,28 +50,8 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
   }
 }
 
-// ─── Steradian Font Assets ──────────────────────────────────────────────────
-export const STERADIAN_FONT_ASSETS = {
-  'Steradian Trial': require('../assets/fonts/SteradianTRIAL-Rg.otf'),
-  'Steradian Trial Italic': require('../assets/fonts/SteradianTRIAL-Rg.otf'),
-  'Steradian Trial Medium': require('../assets/fonts/SteradianTRIAL-Md.otf'),
-  'Steradian Trial Medium Italic': require('../assets/fonts/SteradianTRIAL-Md.otf'),
-  'Steradian Trial Bold': require('../assets/fonts/SteradianTRIAL-Bd.otf'),
-  'Steradian Trial Bold Italic': require('../assets/fonts/SteradianTRIAL-Bd.otf'),
-  'Steradian Trial Black': require('../assets/fonts/SteradianTRIAL-Blk.otf'),
-  'Steradian Trial Black Italic': require('../assets/fonts/SteradianTRIAL-Blk.otf'),
-  'Steradian Trial Light': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
-  'Steradian Trial Light Italic': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
-  'Steradian Trial Thin': require('../assets/fonts/SteradianTRIAL-Th.otf'),
-  'Steradian Trial Thin Italic': require('../assets/fonts/SteradianTRIAL-Th.otf'),
-  'Steradian Trial Extra Light': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
-  'Steradian Trial Extra Light Italic': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
-  'Steradian Trial Ultra Light': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
-  'Steradian Trial Ultra Light Italic': require('../assets/fonts/SteradianTRIAL-Lt.otf'),
-} as const;
-
 // ─── Global default font ────────────────────────────────────────────────────
-// Set the base Steradian family as the default for every Text and TextInput.
+// Public Sans is the default face for every Text and TextInput.
 // Individual components use the FONT helper from constants for specific weights.
 const textDefaults = (Text as any);
 textDefaults.defaultProps = textDefaults.defaultProps || {};
@@ -86,80 +67,68 @@ inputDefaults.defaultProps.style = [
   inputDefaults.defaultProps.style,
 ];
 
-// ─── Custom Toast Configuration ───────────────────────────────────────────────
+// ─── Toasts ─────────────────────────────────────────────────────────────────
+// A single quiet card that drops in from the top: tinted glyph, one line of
+// title, an optional line of detail.
 
-const ToastContent = ({ iconName, iconColor, text1, text2 }: any) => {
-  const iconScale = useRef(new Animated.Value(0.4)).current;
-  useEffect(() => {
-    Animated.spring(iconScale, {
-      toValue: 1,
-      friction: 4,
-      tension: 100,
-      useNativeDriver: true,
-    }).start();
-  }, [iconScale]);
+const TOAST_TONE = {
+  success: { icon: 'check' as const, color: COLORS.success, tint: COLORS.successLight },
+  error: { icon: 'alert-circle' as const, color: COLORS.danger, tint: COLORS.dangerLight },
+  info: { icon: 'info' as const, color: COLORS.text.secondary, tint: COLORS.surface2 },
+};
 
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, gap: 12 }}>
-      <Animated.View style={{ transform: [{ scale: iconScale }] }}>
-        <Feather name={iconName} size={22} color={iconColor} />
-      </Animated.View>
-      <View style={{ flex: 1, gap: 2, justifyContent: 'center' }}>
+const ThemedToast = ({ text1, text2, type }: { text1?: string; text2?: string; type: keyof typeof TOAST_TONE }) => {
+  const tone = TOAST_TONE[type] ?? TOAST_TONE.info;
+  const body = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, gap: 12 }}>
+      <View
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          backgroundColor: tone.tint,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Icon name={tone.icon} size={16} color={tone.color} strokeWidth={2.2} backgroundColor={tone.tint} />
+      </View>
+      <View style={{ flex: 1, gap: 1 }}>
         {text1 ? (
-          <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#1A1A1C' }}>
+          <Text style={{ fontSize: 14.5, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.15 }} numberOfLines={1}>
             {text1}
           </Text>
         ) : null}
         {text2 ? (
-          <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: '#4A4A4D', lineHeight: 18 }}>
+          <Text style={{ fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.secondary, lineHeight: 18 }} numberOfLines={2}>
             {text2}
           </Text>
         ) : null}
       </View>
     </View>
   );
-};
-
-const ThemedToast = ({ text1, text2, type }: any) => {
-  const isSuccess = type === 'success';
-  const isError = type === 'error';
-  const iconColor = isSuccess ? COLORS.success : isError ? COLORS.danger : COLORS.info;
-  const iconName = isSuccess ? 'check-circle' : isError ? 'alert-circle' : 'info';
-
-  const iosInnerStyle = {
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.8)',
-  } as const;
 
   return (
-    <View style={Platform.select({
-      ios: {
+    <View
+      style={{
         width: '92%',
-        marginTop: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.15,
-        shadowRadius: 16,
-      },
-      android: {
-        width: '92%',
-        marginTop: 8,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        backgroundColor: COLORS.surface,
-        elevation: 6,
-      },
-      default: { width: '92%', marginTop: 8 }
-    })}>
+        maxWidth: 440,
+        marginTop: 6,
+        borderRadius: 20,
+        backgroundColor: Platform.OS === 'ios' ? 'transparent' : COLORS.card,
+        shadowColor: COLORS.shadow,
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.12,
+        shadowRadius: 24,
+        elevation: 8,
+      }}
+    >
       {Platform.OS === 'ios' ? (
-        <BlurView intensity={80} tint="light" style={iosInnerStyle}>
-          <ToastContent iconName={iconName} iconColor={iconColor} text1={text1} text2={text2} />
+        <BlurView intensity={90} tint="extraLight" style={{ borderRadius: 20, overflow: 'hidden' }}>
+          {body}
         </BlurView>
       ) : (
-        <ToastContent iconName={iconName} iconColor={iconColor} text1={text1} text2={text2} />
+        body
       )}
     </View>
   );
@@ -175,8 +144,7 @@ export default function RootLayout() {
   const { setSession, initialize, currentBusiness, currentBranch, user } = useAuthStore();
   const pathname = usePathname();
   const [appInitialized, setAppInitialized] = useState(false);
-  const [fontsLoaded, fontError] = useFonts(STERADIAN_FONT_ASSETS);
-  const [showSplash, setShowSplash] = useState(true);
+  const [fontsLoaded, fontError] = useFonts(FONT_ASSETS);
   const isAppReady = appInitialized && (fontsLoaded || fontError);
 
   useEffect(() => {
@@ -187,26 +155,15 @@ export default function RootLayout() {
 
   useOfflineSync(Boolean(user));
 
-  // The Android navigation buttons are part of the system UI, not the app's
-  // tab bar. Configure them from the active route so a mounted tab screen
-  // cannot leave light buttons on a light, pushed screen.
+  // The Android navigation bar sits under the (light) tab bar on the home
+  // screen and under paper-coloured pages everywhere else.
   useEffect(() => {
     if (Platform.OS !== 'android') return;
-
-    const isTabPanelVisible = pathname === '/' || pathname === '/index';
-    
-    // Some older Android phones (API < 26) do not support dark navigation buttons.
-    // If we set a white background, the light buttons will become invisible.
+    const onTabs = pathname === '/' || pathname === '/index';
     const supportsDarkButtons = (Platform.Version as number) >= 26;
-    
-    const backgroundColor = isTabPanelVisible 
-      ? '#0F172A' 
-      : (supportsDarkButtons ? COLORS.surface : '#000000');
-      
-    const buttonStyle = isTabPanelVisible ? 'light' : 'dark';
-
+    const backgroundColor = supportsDarkButtons ? (onTabs ? COLORS.card : COLORS.surface) : '#000000';
     NavigationBar.setBackgroundColorAsync(backgroundColor).catch(() => undefined);
-    NavigationBar.setButtonStyleAsync(buttonStyle).catch(() => undefined);
+    NavigationBar.setButtonStyleAsync(supportsDarkButtons ? 'dark' : 'light').catch(() => undefined);
   }, [pathname]);
 
   useEffect(() => {
@@ -455,7 +412,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1, backgroundColor: COLORS.surface }}>
-        <Stack screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 150 }}>
+        <Stack screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 180, contentStyle: { backgroundColor: COLORS.surface } }}>
           <Stack.Screen name="index" />
           <Stack.Screen name="(auth)" />
           <Stack.Screen name="(app)" />

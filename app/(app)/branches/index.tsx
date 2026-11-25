@@ -1,293 +1,210 @@
+// ============================================================
+// RECORD AM - Branches
+// One place for a multi-branch owner to see every shop at a glance, move
+// between them, add or edit a branch, and move stock from one to another.
+// ============================================================
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { startOfDay, endOfDay } from 'date-fns';
+import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Toast from 'react-native-toast-message';
+import { Icon } from '@/components/icons';
+import { BottomSheetModal, Button, IconButton, PermissionDenied, Pill, PressableScale } from '@/components/ui';
+import { InputField, Toggle } from '@/components/forms';
+import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { COLORS, CURRENCY_SYMBOL, FONT, SP, TYPE } from '@/constants';
+import { BranchTodayStats, fetchBranchTodayStats, invalidateBranchTodayStats, peekBranchTodayStats } from '@/lib/branchStats';
+import { haptics } from '@/lib/haptics';
+import { dismissScreen } from '@/lib/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { supabase } from '@/lib/supabase';
-import { isDebtSettlementSale } from '@/lib/records';
-import { dismissScreen } from '@/lib/navigation';
-import { Badge, Button, Card, PermissionDenied, SectionHeader } from '@/components/ui';
-import { InputField, KeyboardAwareScrollView, Toggle } from '@/components/forms';
-import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { Branch, Product } from '@/types';
 
-interface BranchStats {
-  todayRevenue: number;
-  todayCount: number;
-  staffCount: number;
-  stockUnits: number;
-}
+const money = (v: number) => `${CURRENCY_SYMBOL}${Math.round(v).toLocaleString('en-NG')}`;
+const count = (v: number) => Number(v || 0).toLocaleString('en-NG', { maximumFractionDigits: 2 });
 
-const fmtCurrency = (val: number) =>
-  `${CURRENCY_SYMBOL}${val.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const stockIn = (product: Product, branchId: string) =>
+  Number(product.inventory?.find((inv) => inv.branch_id === branchId)?.quantity ?? 0);
 
-export default function BranchesManagementScreen() {
-  const { currentBusiness, currentBranch, userRole, switchBranch, setCurrentBranch } = useAuthStore();
-  const {
-    branches,
-    products,
-    fetchBranches,
-    fetchProducts,
-    createBranch,
-    updateBranch,
-    deleteBranch,
-    setMainBranch,
-    transferBranchStock,
-  } = useBusinessStore();
+export default function BranchesScreen() {
+  const businessId = useAuthStore((s) => s.currentBusiness?.id);
+  const currentBranchId = useAuthStore((s) => s.currentBranch?.id);
+  const isOwner = useAuthStore((s) => s.userRole === 'owner');
+  const branches = useBusinessStore((s) => s.branches);
+  const products = useBusinessStore((s) => s.products);
+  const { fetchBranches, fetchProducts, createBranch, updateBranch, deleteBranch, setMainBranch, transferBranchStock } =
+    useBusinessStore.getState();
 
-  const isOwner = userRole === 'owner';
+  const [stats, setStats] = useState<Record<string, BranchTodayStats> | null>(() =>
+    businessId ? peekBranchTodayStats(businessId) : null,
+  );
   const [refreshing, setRefreshing] = useState(false);
-  const [loadingStats, setLoadingStats] = useState(false);
-  const [statsByBranch, setStatsByBranch] = useState<Record<string, BranchStats>>({});
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
 
-  // Create / Edit Branch modal state
-  const [branchModalVisible, setBranchModalVisible] = useState(false);
-  const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
-  const [formName, setFormName] = useState('');
-  const [formAddress, setFormAddress] = useState('');
-  const [formPhone, setFormPhone] = useState('');
-  const [formIsMain, setFormIsMain] = useState(false);
-  const [savingBranch, setSavingBranch] = useState(false);
+  // Branch form
+  const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Branch | null>(null);
+  const [name, setName] = useState('');
+  const [address, setAddress] = useState('');
+  const [phone, setPhone] = useState('');
+  const [makeMain, setMakeMain] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  // Stock Transfer modal state
-  const [transferModalVisible, setTransferModalVisible] = useState(false);
-  const [fromBranchId, setFromBranchId] = useState<string>('');
-  const [toBranchId, setToBranchId] = useState<string>('');
-  const [selectedProductId, setSelectedProductId] = useState<string>('');
-  const [productSearch, setProductSearch] = useState('');
-  const [transferQty, setTransferQty] = useState('');
-  const [transferNotes, setTransferNotes] = useState('');
-  const [transferring, setTransferring] = useState(false);
+  // Transfer
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [fromId, setFromId] = useState('');
+  const [toId, setToId] = useState('');
+  const [productId, setProductId] = useState('');
+  const [query, setQuery] = useState('');
+  const [qty, setQty] = useState('');
+  const [note, setNote] = useState('');
+  const [moving, setMoving] = useState(false);
 
-  const loadAll = useCallback(async () => {
-    if (!currentBusiness) return;
-    setLoadingStats(true);
-    try {
-      const [branchList] = await Promise.all([
-        fetchBranches(currentBusiness.id),
-        fetchProducts(currentBusiness.id, isOwner),
-      ]);
+  const ordered = useMemo(
+    () => [...branches].sort((a, b) => Number(b.is_main) - Number(a.is_main) || a.name.localeCompare(b.name)),
+    [branches],
+  );
 
-      const now = new Date();
-      const dayStart = startOfDay(now).toISOString();
-      const dayEnd = endOfDay(now).toISOString();
-
-      const [salesRes, repaymentsRes, membersRes] = await Promise.all([
-        supabase
-          .from('sales')
-          .select('branch_id, amount_paid, notes')
-          .eq('business_id', currentBusiness.id)
-          .gte('created_at', dayStart)
-          .lte('created_at', dayEnd),
-        supabase
-          .from('debt_repayments')
-          .select('amount, debt:customer_debts!inner(business_id, branch_id)')
-          .eq('debt.business_id', currentBusiness.id)
-          .gte('created_at', dayStart)
-          .lte('created_at', dayEnd),
-        supabase
-          .from('business_members')
-          .select('branch_id')
-          .eq('business_id', currentBusiness.id)
-          .eq('is_active', true),
-      ]);
-
-      const nextStats: Record<string, BranchStats> = {};
-      for (const b of branchList) {
-        nextStats[b.id] = {
-          todayRevenue: 0,
-          todayCount: 0,
-          staffCount: 0,
-          stockUnits: 0,
-        };
-      }
-
-      for (const s of (salesRes.data ?? []) as any[]) {
-        if (!s.branch_id || !nextStats[s.branch_id] || isDebtSettlementSale(s.notes)) continue;
-        nextStats[s.branch_id].todayRevenue += Number(s.amount_paid ?? 0);
-        nextStats[s.branch_id].todayCount += 1;
-      }
-
-      for (const r of (repaymentsRes.data ?? []) as any[]) {
-        const debt = Array.isArray(r.debt) ? r.debt[0] : r.debt;
-        const bId = debt?.branch_id;
-        if (bId && nextStats[bId]) {
-          nextStats[bId].todayRevenue += Number(r.amount ?? 0);
-          nextStats[bId].todayCount += 1;
-        }
-      }
-
-      for (const m of (membersRes.data ?? []) as any[]) {
-        if (m.branch_id && nextStats[m.branch_id]) {
-          nextStats[m.branch_id].staffCount += 1;
-        }
-      }
-
-      const latestProducts = useBusinessStore.getState().products;
-      for (const p of latestProducts) {
-        for (const inv of p.inventory ?? []) {
-          if (inv.branch_id && nextStats[inv.branch_id]) {
-            nextStats[inv.branch_id].stockUnits += Math.max(0, Number(inv.quantity ?? 0));
-          }
-        }
-      }
-
-      setStatsByBranch(nextStats);
-    } catch (err) {
-      console.warn('[BranchesManagement] loadAll error:', err);
-    } finally {
-      setLoadingStats(false);
-      setRefreshing(false);
+  const unitsByBranch = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const p of products) {
+      if (p.is_service) continue;
+      for (const inv of p.inventory ?? []) out[inv.branch_id] = (out[inv.branch_id] ?? 0) + Math.max(0, Number(inv.quantity ?? 0));
     }
-  }, [currentBusiness, fetchBranches, fetchProducts, isOwner]);
+    return out;
+  }, [products]);
+
+  const load = useCallback(
+    async (force = false) => {
+      if (!businessId) return;
+      try {
+        const list = await fetchBranches(businessId);
+        const fresh = await fetchBranchTodayStats(
+          businessId,
+          list.map((b) => b.id),
+          { force },
+        );
+        setStats(fresh);
+      } catch (err) {
+        console.warn('[Branches] load failed', err);
+      } finally {
+        setRefreshing(false);
+      }
+      fetchProducts(businessId, true).catch(() => {});
+    },
+    [businessId, fetchBranches, fetchProducts],
+  );
 
   useEffect(() => {
-    void loadAll();
-  }, [loadAll]);
+    void load();
+  }, [load]);
 
-  const consolidated = useMemo(() => {
-    const values = Object.values(statsByBranch);
+  const totals = useMemo(() => {
+    const values = stats ? Object.values(stats) : [];
     return {
-      totalRevenue: values.reduce((s, v) => s + v.todayRevenue, 0),
-      totalTransactions: values.reduce((s, v) => s + v.todayCount, 0),
-      totalStock: values.reduce((s, v) => s + v.stockUnits, 0),
-      totalStaff: values.reduce((s, v) => s + v.staffCount, 0),
+      revenue: values.reduce((s, v) => s + v.todayRevenue, 0),
+      sales: values.reduce((s, v) => s + v.todayCount, 0),
+      units: Object.values(unitsByBranch).reduce((s, v) => s + v, 0),
     };
-  }, [statsByBranch]);
+  }, [stats, unitsByBranch]);
 
-  const openCreateModal = () => {
-    setEditingBranch(null);
-    setFormName('');
-    setFormAddress('');
-    setFormPhone('');
-    setFormIsMain(false);
-    setBranchModalVisible(true);
+  // ── Actions ────────────────────────────────────────────────────────────────
+  const switchTo = async (branch: Branch) => {
+    if (branch.id === currentBranchId) return;
+    haptics.selection();
+    setSwitchingId(branch.id);
+    try {
+      await useAuthStore.getState().switchBranch(branch);
+      Toast.show({ type: 'info', text1: branch.name, text2: 'You are now working in this branch.' });
+    } finally {
+      setSwitchingId(null);
+    }
   };
 
-  const openEditModal = (branch: Branch) => {
-    setEditingBranch(branch);
-    setFormName(branch.name);
-    setFormAddress(branch.address ?? '');
-    setFormPhone(branch.phone ?? '');
-    setFormIsMain(branch.is_main);
-    setBranchModalVisible(true);
+  const openForm = (branch?: Branch) => {
+    setEditing(branch ?? null);
+    setName(branch?.name ?? '');
+    setAddress(branch?.address ?? '');
+    setPhone(branch?.phone ?? '');
+    setMakeMain(false);
+    setFormOpen(true);
   };
 
-  const handleSaveBranch = async () => {
-    if (!currentBusiness) return;
-    if (!formName.trim()) {
-      Alert.alert('Branch Name Required', 'Please enter a branch name.');
+  const saveBranch = async () => {
+    if (!businessId) return;
+    if (!name.trim()) {
+      Alert.alert('Name needed', 'Give the branch a name your team will recognise, like “Yaba” or “Main market”.');
       return;
     }
-
-    setSavingBranch(true);
+    setSaving(true);
     try {
-      if (editingBranch) {
-        const updated = await updateBranch(editingBranch.id, {
-          name: formName.trim(),
-          address: formAddress.trim(),
-          phone: formPhone.trim(),
-        });
-        if (currentBranch?.id === updated.id) {
-          setCurrentBranch(updated);
-        }
+      if (editing) {
+        const updated = await updateBranch(editing.id, { name: name.trim(), address: address.trim(), phone: phone.trim() });
+        if (currentBranchId === updated.id) useAuthStore.getState().setCurrentBranch(updated);
         Toast.show({ type: 'success', text1: 'Branch updated', text2: updated.name });
       } else {
-        const created = await createBranch(currentBusiness.id, {
-          name: formName.trim(),
-          address: formAddress.trim(),
-          phone: formPhone.trim(),
-          is_main: formIsMain,
+        const created = await createBranch(businessId, {
+          name: name.trim(),
+          address: address.trim(),
+          phone: phone.trim(),
+          is_main: makeMain,
         });
-        Toast.show({ type: 'success', text1: 'Branch added', text2: created.name });
+        Toast.show({ type: 'success', text1: 'Branch added', text2: `${created.name} is ready. Assign staff to it from Team.` });
       }
-
-      setBranchModalVisible(false);
-      await loadAll();
+      setFormOpen(false);
+      invalidateBranchTodayStats(businessId);
+      void load(true);
     } catch (err: any) {
-      Alert.alert('Error', err?.message || 'Could not save branch details.');
+      Alert.alert('Could not save branch', err?.message || 'Please try again.');
     } finally {
-      setSavingBranch(false);
+      setSaving(false);
     }
   };
 
-  const handleSwitchActive = async (branch: Branch) => {
-    await switchBranch(branch);
-    Toast.show({
-      type: 'success',
-      text1: 'Switched Branch',
-      text2: `Now viewing ${branch.name}`,
-    });
-  };
-
-  const handleSetMain = async (branch: Branch) => {
-    if (!currentBusiness || branch.is_main) return;
-    Alert.alert(
-      'Set as Main Branch',
-      `Make "${branch.name}" your business Main Branch?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            try {
-              await setMainBranch(currentBusiness.id, branch.id);
-              if (currentBranch?.id === branch.id) {
-                setCurrentBranch({ ...branch, is_main: true });
-              }
-              await loadAll();
-              Toast.show({ type: 'success', text1: 'Main Branch Updated', text2: branch.name });
-            } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Could not update main branch.');
-            }
-          },
+  const showBranchMenu = (branch: Branch) => {
+    const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [
+      { text: 'Edit details', onPress: () => openForm(branch) },
+    ];
+    if (!branch.is_main) {
+      buttons.push({
+        text: 'Make main branch',
+        onPress: async () => {
+          if (!businessId) return;
+          try {
+            await setMainBranch(businessId, branch.id);
+            if (currentBranchId === branch.id) useAuthStore.getState().setCurrentBranch({ ...branch, is_main: true });
+            Toast.show({ type: 'success', text1: `${branch.name} is now your main branch` });
+          } catch (err: any) {
+            Alert.alert('Could not change main branch', err?.message || 'Please try again.');
+          }
         },
-      ],
-    );
+      });
+      buttons.push({ text: 'Delete branch', style: 'destructive', onPress: () => confirmDelete(branch) });
+    }
+    buttons.push({ text: 'Cancel', style: 'cancel' });
+    Alert.alert(branch.name, branch.address || undefined, buttons as any);
   };
 
-  const handleDeleteBranch = (branch: Branch) => {
-    if (!currentBusiness || branch.is_main) {
-      Alert.alert('Cannot Delete', 'You cannot delete the Main Branch. Set another branch as Main first.');
-      return;
-    }
-
+  const confirmDelete = (branch: Branch) => {
     Alert.alert(
-      'Delete Branch',
-      `Delete "${branch.name}"? This removes the branch location and its branch-specific records permanently.`,
+      `Delete ${branch.name}?`,
+      'This permanently removes the branch and the records kept only for it. Stock still in this branch will be lost, so move it first.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete Branch',
+          text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (!businessId) return;
             try {
-              await deleteBranch(currentBusiness.id, branch.id);
-              if (currentBranch?.id === branch.id) {
-                const fallback = branches.find((b) => b.id !== branch.id && b.is_main) ||
-                  branches.find((b) => b.id !== branch.id);
-                if (fallback) {
-                  await switchBranch(fallback);
-                }
+              await deleteBranch(businessId, branch.id);
+              if (currentBranchId === branch.id) {
+                const fallback = branches.find((b) => b.id !== branch.id && b.is_main) || branches.find((b) => b.id !== branch.id);
+                if (fallback) await useAuthStore.getState().switchBranch(fallback);
               }
-              await loadAll();
               Toast.show({ type: 'success', text1: 'Branch deleted' });
+              void load(true);
             } catch (err: any) {
-              Alert.alert('Error', err?.message || 'Could not delete branch.');
+              Alert.alert('Could not delete branch', err?.message || 'Please try again.');
             }
           },
         },
@@ -295,653 +212,397 @@ export default function BranchesManagementScreen() {
     );
   };
 
-  const openTransferModal = () => {
+  // ── Transfer ───────────────────────────────────────────────────────────────
+  const openTransfer = () => {
     if (branches.length < 2) {
-      Alert.alert('Add Another Branch First', 'You need at least two branches to transfer stock between locations.');
+      Alert.alert('Add another branch first', 'Stock can only move between two branches.');
       return;
     }
-    const defaultFrom = currentBranch?.id || branches[0].id;
-    const defaultTo = branches.find((b) => b.id !== defaultFrom)?.id || branches[1].id;
-    setFromBranchId(defaultFrom);
-    setToBranchId(defaultTo);
-    setSelectedProductId('');
-    setProductSearch('');
-    setTransferQty('');
-    setTransferNotes('');
-    setTransferModalVisible(true);
+    const from = currentBranchId || ordered[0].id;
+    setFromId(from);
+    setToId(ordered.find((b) => b.id !== from)?.id ?? '');
+    setProductId('');
+    setQuery('');
+    setQty('');
+    setNote('');
+    setTransferOpen(true);
   };
 
-  const trackedProducts = useMemo(
-    () => products.filter((p) => !p.is_service && p.is_active),
-    [products],
-  );
+  const movable = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return products
+      .filter((p) => !p.is_service && p.is_active && (!q || p.name.toLowerCase().includes(q)))
+      .sort((a, b) => stockIn(b, fromId) - stockIn(a, fromId) || a.name.localeCompare(b.name))
+      .slice(0, 40);
+  }, [products, query, fromId]);
 
-  const filteredTransferProducts = useMemo(() => {
-    const q = productSearch.trim().toLowerCase();
-    return trackedProducts
-      .filter((p) => !q || p.name.toLowerCase().includes(q))
-      .slice(0, 30);
-  }, [trackedProducts, productSearch]);
+  const selected = products.find((p) => p.id === productId) ?? null;
+  const available = selected ? stockIn(selected, fromId) : 0;
+  const qtyNum = Number(qty);
+  const qtyError =
+    qty && (!Number.isFinite(qtyNum) || qtyNum <= 0)
+      ? 'Enter a quantity above zero'
+      : selected && qtyNum > available
+      ? `Only ${count(available)} available in ${branches.find((b) => b.id === fromId)?.name ?? 'this branch'}`
+      : undefined;
 
-  const getProductQtyInBranch = (product: Product, branchId: string) =>
-    Number(product.inventory?.find((inv) => inv.branch_id === branchId)?.quantity ?? 0);
-
-  const selectedTransferProduct = useMemo(
-    () => trackedProducts.find((p) => p.id === selectedProductId) ?? null,
-    [trackedProducts, selectedProductId],
-  );
-
-  const handleConfirmTransfer = async () => {
-    if (!currentBusiness) return;
-    const qty = Number(transferQty);
-    if (!selectedProductId) {
-      Alert.alert('Select Product', 'Choose a product to transfer.');
-      return;
-    }
-    if (!fromBranchId || !toBranchId || fromBranchId === toBranchId) {
-      Alert.alert('Invalid Branches', 'Choose two different branches for source and destination.');
-      return;
-    }
-    if (!Number.isFinite(qty) || qty <= 0) {
-      Alert.alert('Invalid Quantity', 'Enter a transfer quantity greater than 0.');
-      return;
-    }
-
-    setTransferring(true);
+  const doTransfer = async () => {
+    if (!businessId || !selected || !qtyNum || qtyError || fromId === toId) return;
+    setMoving(true);
     try {
-      await transferBranchStock({
-        businessId: currentBusiness.id,
-        productId: selectedProductId,
-        fromBranchId,
-        toBranchId,
-        quantity: qty,
-        notes: transferNotes,
-      });
-      setTransferModalVisible(false);
-      await loadAll();
+      await transferBranchStock({ businessId, productId: selected.id, fromBranchId: fromId, toBranchId: toId, quantity: qtyNum, notes: note });
+      haptics.success();
+      setTransferOpen(false);
       Toast.show({
         type: 'success',
-        text1: 'Stock Transferred',
-        text2: `Moved ${qty} ${selectedTransferProduct?.unit || 'unit(s)'} of ${selectedTransferProduct?.name}`,
+        text1: 'Stock moved',
+        text2: `${count(qtyNum)} ${selected.unit} of ${selected.name} to ${branches.find((b) => b.id === toId)?.name}`,
       });
     } catch (err: any) {
-      Alert.alert('Transfer Failed', err?.message || 'Unable to transfer stock between branches.');
+      Alert.alert('Could not move stock', err?.message || 'Please try again.');
     } finally {
-      setTransferring(false);
+      setMoving(false);
     }
   };
 
   if (!isOwner) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-        <ScreenHeader
-          title="Branches"
-          theme="dark"
-          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
-        />
+      <ScreenShell>
+        <ScreenHeader title="Branches" left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />} />
         <PermissionDenied
-          title="Owner Access Required"
-          description="Only the business owner can manage all branches, switch locations globally, or transfer stock between branches."
+          title="Only the owner manages branches"
+          description="Ask the business owner if you need to work in a different branch."
         />
       </ScreenShell>
     );
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell>
       <ScreenHeader
-        title="Branches & Locations"
-        subtitle={`${branches.length} location${branches.length === 1 ? '' : 's'} · ${currentBusiness?.name ?? ''}`}
-        theme="dark"
+        title="Branches"
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
-        right={<HeaderAction icon="plus" label="New Branch" onPress={openCreateModal} />}
+        right={<IconButton icon="plus" variant="filled" onPress={() => openForm()} accessibilityLabel="Add branch" />}
       />
 
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: SP.page, paddingBottom: 56, gap: 14 }}
+        contentContainerStyle={{ paddingHorizontal: SP.page, paddingBottom: 56 }}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => {
               setRefreshing(true);
-              void loadAll();
+              void load(true);
             }}
-            tintColor={COLORS.accent}
+            tintColor={COLORS.text.muted}
+            colors={[COLORS.accent]}
           />
         }
-        showsVerticalScrollIndicator={false}
       >
-        {/* Consolidated All-Branch Summary */}
-        <Card style={styles.heroCard}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={styles.heroOverline}>ALL BRANCHES TODAY</Text>
-            {loadingStats ? <ActivityIndicator size="small" color={COLORS.gold} /> : null}
-          </View>
-          <Text style={styles.heroAmount}>{fmtCurrency(consolidated.totalRevenue)}</Text>
-
-          <View style={styles.heroMetricsRow}>
-            <View style={styles.heroMetricItem}>
-              <Text style={styles.heroMetricVal}>{branches.length}</Text>
-              <Text style={styles.heroMetricLbl}>Locations</Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroMetricItem}>
-              <Text style={styles.heroMetricVal}>{consolidated.totalTransactions}</Text>
-              <Text style={styles.heroMetricLbl}>Sales Today</Text>
-            </View>
-            <View style={styles.heroDivider} />
-            <View style={styles.heroMetricItem}>
-              <Text style={styles.heroMetricVal}>{consolidated.totalStock.toLocaleString()}</Text>
-              <Text style={styles.heroMetricLbl}>Total Units</Text>
-            </View>
-          </View>
-        </Card>
-
-        {/* Cross-branch quick actions */}
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity
-            onPress={openCreateModal}
-            activeOpacity={0.8}
-            style={[styles.actionPill, { backgroundColor: COLORS.ink }]}
-          >
-            <Feather name="plus-circle" size={16} color="#FFFFFF" />
-            <Text style={[styles.actionPillText, { color: '#FFFFFF' }]}>Add Branch</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={openTransferModal}
-            activeOpacity={0.8}
-            style={[styles.actionPill, { backgroundColor: COLORS.accentLight, borderWidth: 1, borderColor: COLORS.accent }]}
-          >
-            <Feather name="repeat" size={16} color={COLORS.accent} />
-            <Text style={[styles.actionPillText, { color: COLORS.accent }]}>Transfer Stock</Text>
-          </TouchableOpacity>
+        {/* ── All branches today ─────────────────────────────────────── */}
+        <View style={{ marginTop: 8 }}>
+          <Text style={styles.label}>Today across all branches</Text>
+          {stats ? (
+            <Text style={styles.total}>{money(totals.revenue)}</Text>
+          ) : (
+            <ActivityIndicator style={{ alignSelf: 'flex-start', marginVertical: 18 }} color={COLORS.text.muted} />
+          )}
+          <Text style={styles.meta}>
+            {totals.sales} {totals.sales === 1 ? 'sale' : 'sales'} · {branches.length} {branches.length === 1 ? 'branch' : 'branches'} ·{' '}
+            {count(totals.units)} units in stock
+          </Text>
         </View>
 
-        <SectionHeader title="All Locations" />
+        <View style={styles.actions}>
+          <PressableScale onPress={() => openForm()} containerStyle={{ flex: 1 }} style={styles.action}>
+            <Icon name="store" size={20} color={COLORS.text.primary} />
+            <Text style={styles.actionText}>Add branch</Text>
+          </PressableScale>
+          <PressableScale onPress={openTransfer} containerStyle={{ flex: 1 }} style={styles.action}>
+            <Icon name="repeat" size={20} color={COLORS.text.primary} />
+            <Text style={styles.actionText}>Move stock</Text>
+          </PressableScale>
+        </View>
 
-        {branches.map((branch) => {
-          const isActive = currentBranch?.id === branch.id;
-          const bStats = statsByBranch[branch.id] ?? {
-            todayRevenue: 0,
-            todayCount: 0,
-            staffCount: 0,
-            stockUnits: 0,
-          };
-
-          return (
-            <Card
-              key={branch.id}
-              style={{
-                borderWidth: isActive ? 1.5 : 1,
-                borderColor: isActive ? COLORS.accent : COLORS.border,
-                gap: 12,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.text.primary }}>
-                      {branch.name}
-                    </Text>
-                    {branch.is_main ? <Badge label="Main" variant="info" /> : null}
-                    {isActive ? <Badge label="Active" variant="success" /> : null}
+        {/* ── Branch list ─────────────────────────────────────────────── */}
+        <Text style={styles.section}>Your branches</Text>
+        <View style={{ gap: 10 }}>
+          {ordered.map((branch) => {
+            const here = branch.id === currentBranchId;
+            const s = stats?.[branch.id];
+            return (
+              <View key={branch.id} style={[styles.card, here && styles.cardHere]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <View style={[styles.badge, here && { backgroundColor: COLORS.ink }]}>
+                    <Icon name="store" size={18} color={here ? '#FFFFFF' : COLORS.text.secondary} />
                   </View>
-                  <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.text.secondary, marginTop: 3 }}>
-                    {branch.address || 'No street address added'}{branch.phone ? ` · ${branch.phone}` : ''}
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={styles.name} numberOfLines={1}>
+                        {branch.name}
+                      </Text>
+                      {branch.is_main ? <Text style={styles.tag}>Main</Text> : null}
+                    </View>
+                    <Text style={styles.address} numberOfLines={1}>
+                      {branch.address || 'No address yet'}
+                      {branch.phone ? ` · ${branch.phone}` : ''}
+                    </Text>
+                  </View>
+                  <IconButton icon="more-horizontal" variant="plain" size={34} onPress={() => showBranchMenu(branch)} accessibilityLabel={`${branch.name} options`} />
                 </View>
 
-                <TouchableOpacity
-                  onPress={() => openEditModal(branch)}
-                  style={styles.iconBtn}
-                  accessibilityLabel={`Edit ${branch.name}`}
-                >
-                  <Feather name="edit-2" size={15} color={COLORS.text.secondary} />
-                </TouchableOpacity>
-              </View>
+                <View style={styles.figures}>
+                  <Figure value={s ? money(s.todayRevenue) : '–'} label="today" />
+                  <Figure value={s ? String(s.todayCount) : '–'} label={s?.todayCount === 1 ? 'sale' : 'sales'} />
+                  <Figure value={count(unitsByBranch[branch.id] ?? 0)} label="units" />
+                  <Figure value={s ? String(s.staffCount) : '–'} label="staff" />
+                </View>
 
-              <View style={styles.branchStatsGrid}>
-                <View style={styles.branchStatCell}>
-                  <Text style={styles.branchStatValue}>{fmtCurrency(bStats.todayRevenue)}</Text>
-                  <Text style={styles.branchStatLabel}>Today Revenue</Text>
-                </View>
-                <View style={styles.branchStatCell}>
-                  <Text style={styles.branchStatValue}>{bStats.stockUnits.toLocaleString()}</Text>
-                  <Text style={styles.branchStatLabel}>Units in Stock</Text>
-                </View>
-                <View style={styles.branchStatCell}>
-                  <Text style={styles.branchStatValue}>{bStats.staffCount}</Text>
-                  <Text style={styles.branchStatLabel}>Staff Assigned</Text>
-                </View>
-              </View>
-
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <TouchableOpacity
-                  onPress={() => void handleSwitchActive(branch)}
-                  disabled={isActive}
-                  style={[
-                    styles.switchButton,
-                    isActive && styles.switchButtonActive,
-                  ]}
-                >
-                  <Feather
-                    name={isActive ? 'check-circle' : 'arrow-right-circle'}
-                    size={15}
-                    color={isActive ? COLORS.success : '#FFFFFF'}
-                  />
-                  <Text
-                    style={[
-                      styles.switchButtonText,
-                      isActive && { color: COLORS.success },
-                    ]}
+                {here ? (
+                  <View style={styles.hereRow}>
+                    <Icon name="check" size={15} color={COLORS.successText} strokeWidth={2.2} />
+                    <Text style={styles.hereText}>You are working here</Text>
+                  </View>
+                ) : (
+                  <Pressable
+                    onPress={() => switchTo(branch)}
+                    disabled={Boolean(switchingId)}
+                    style={({ pressed }) => [styles.switch, pressed && { opacity: 0.7 }]}
                   >
-                    {isActive ? 'Currently Viewing' : 'Switch to Branch'}
-                  </Text>
-                </TouchableOpacity>
-
-                {!branch.is_main && (
-                  <>
-                    <TouchableOpacity
-                      onPress={() => void handleSetMain(branch)}
-                      style={styles.secondaryIconBtn}
-                      accessibilityLabel="Set as main branch"
-                    >
-                      <Feather name="star" size={15} color={COLORS.text.secondary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => handleDeleteBranch(branch)}
-                      style={[styles.secondaryIconBtn, { borderColor: '#FECACA', backgroundColor: '#FEF2F2' }]}
-                      accessibilityLabel="Delete branch"
-                    >
-                      <Feather name="trash-2" size={15} color={COLORS.danger} />
-                    </TouchableOpacity>
-                  </>
+                    {switchingId === branch.id ? (
+                      <ActivityIndicator size="small" color={COLORS.text.primary} />
+                    ) : (
+                      <Text style={styles.switchText}>Switch to {branch.name}</Text>
+                    )}
+                  </Pressable>
                 )}
               </View>
-            </Card>
-          );
-        })}
+            );
+          })}
+        </View>
+        <Text style={styles.footnote}>
+          Each branch keeps its own stock, sales, expenses and debts. Products and customers are shared across the business.
+        </Text>
       </ScrollView>
 
-      {/* Add / Edit Branch Modal */}
-      <Modal
-        visible={branchModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setBranchModalVisible(false)}
+      {/* ── Add / edit sheet ─────────────────────────────────────────── */}
+      <BottomSheetModal
+        visible={formOpen}
+        onClose={() => !saving && setFormOpen(false)}
+        title={editing ? 'Edit branch' : 'New branch'}
+        subtitle={editing ? undefined : 'Stock, sales and debts are tracked separately for each branch.'}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingBranch ? 'Edit Branch' : 'Add New Branch'}
-              </Text>
-              <TouchableOpacity onPress={() => setBranchModalVisible(false)}>
-                <Feather name="x" size={20} color={COLORS.text.secondary} />
-              </TouchableOpacity>
-            </View>
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }}>
+          <InputField label="Name" value={name} onChangeText={setName} placeholder="e.g. Yaba" autoCapitalize="words" autoFocus={!editing} />
+          <InputField label="Address (optional)" value={address} onChangeText={setAddress} placeholder="Street, market or plaza" />
+          <InputField label="Phone (optional)" value={phone} onChangeText={setPhone} placeholder="0801 234 5678" keyboardType="phone-pad" />
+          {!editing ? (
+            <Toggle label="Make this the main branch" description="The main branch is the default for new staff." value={makeMain} onChange={setMakeMain} />
+          ) : null}
+          <Button title={editing ? 'Save changes' : 'Add branch'} onPress={saveBranch} loading={saving} size="lg" style={{ marginTop: 4 }} />
+        </ScrollView>
+      </BottomSheetModal>
 
-            <KeyboardAwareScrollView showsVerticalScrollIndicator={false}>
-              <InputField
-                label="Branch Name"
-                value={formName}
-                onChangeText={setFormName}
-                placeholder="e.g. Lekki Phase 1 Branch"
-                required
+      {/* ── Move stock sheet ─────────────────────────────────────────── */}
+      <BottomSheetModal visible={transferOpen} onClose={() => !moving && setTransferOpen(false)} title="Move stock" maxHeight="92%">
+        <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false}>
+          <Text style={styles.fieldLabel}>From</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
+            {ordered.map((b) => (
+              <Pill
+                key={b.id}
+                label={b.name}
+                active={fromId === b.id}
+                onPress={() => {
+                  setFromId(b.id);
+                  if (toId === b.id) setToId(ordered.find((x) => x.id !== b.id)?.id ?? '');
+                }}
               />
-              <InputField
-                label="Address"
-                value={formAddress}
-                onChangeText={setFormAddress}
-                placeholder="Street, city or plaza details"
-              />
-              <InputField
-                label="Branch Phone"
-                value={formPhone}
-                onChangeText={setFormPhone}
-                placeholder="08012345678"
-                keyboardType="phone-pad"
-              />
-              {!editingBranch && (
-                <Toggle
-                  label="Set as Main Branch"
-                  description="Default location for new staff and primary overview"
-                  value={formIsMain}
-                  onChange={setFormIsMain}
-                />
-              )}
-              <View style={{ marginTop: 14 }}>
-                <Button
-                  title={editingBranch ? 'Save Branch Changes' : 'Create Branch'}
-                  loading={savingBranch}
-                  onPress={handleSaveBranch}
+            ))}
+          </ScrollView>
+          <Text style={styles.fieldLabel}>To</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
+            {ordered
+              .filter((b) => b.id !== fromId)
+              .map((b) => (
+                <Pill key={b.id} label={b.name} active={toId === b.id} onPress={() => setToId(b.id)} />
+              ))}
+          </ScrollView>
+
+          <Text style={styles.fieldLabel}>Product</Text>
+          {selected ? (
+            <Pressable onPress={() => setProductId('')} style={({ pressed }) => [styles.picked, pressed && { opacity: 0.7 }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{selected.name}</Text>
+                <Text style={styles.address}>
+                  {count(stockIn(selected, fromId))} in {branches.find((b) => b.id === fromId)?.name} · {count(stockIn(selected, toId))} in{' '}
+                  {branches.find((b) => b.id === toId)?.name}
+                </Text>
+              </View>
+              <Text style={styles.change}>Change</Text>
+            </Pressable>
+          ) : (
+            <>
+              <View style={styles.search}>
+                <Icon name="search" size={16} color={COLORS.text.muted} />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder="Find a product"
+                  placeholderTextColor={COLORS.text.muted}
+                  style={styles.searchInput}
                 />
               </View>
-            </KeyboardAwareScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Transfer Stock Between Branches Modal */}
-      <Modal
-        visible={transferModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setTransferModalVisible(false)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalSheet, { maxHeight: '88%' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Transfer Stock Between Branches</Text>
-              <TouchableOpacity onPress={() => setTransferModalVisible(false)}>
-                <Feather name="x" size={20} color={COLORS.text.secondary} />
-              </TouchableOpacity>
-            </View>
-
-            <KeyboardAwareScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.fieldLabel}>From Branch (Source)</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 12 }}>
-                {branches.map((b) => {
-                  const selected = b.id === fromBranchId;
-                  return (
-                    <TouchableOpacity
-                      key={b.id}
-                      onPress={() => {
-                        setFromBranchId(b.id);
-                        if (toBranchId === b.id) {
-                          const other = branches.find((o) => o.id !== b.id);
-                          if (other) setToBranchId(other.id);
-                        }
-                      }}
-                      style={[styles.branchChip, selected && styles.branchChipActive]}
-                    >
-                      <Text style={[styles.branchChipText, selected && styles.branchChipTextActive]}>
-                        {b.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              <Text style={styles.fieldLabel}>To Branch (Destination)</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginBottom: 12 }}>
-                {branches
-                  .filter((b) => b.id !== fromBranchId)
-                  .map((b) => {
-                    const selected = b.id === toBranchId;
+              <View style={styles.list}>
+                {movable.length === 0 ? (
+                  <Text style={[styles.address, { padding: 14 }]}>No products match.</Text>
+                ) : (
+                  movable.map((p, i) => {
+                    const have = stockIn(p, fromId);
                     return (
-                      <TouchableOpacity
-                        key={b.id}
-                        onPress={() => setToBranchId(b.id)}
-                        style={[styles.branchChip, selected && styles.branchChipActive]}
+                      <Pressable
+                        key={p.id}
+                        onPress={() => {
+                          haptics.selection();
+                          setProductId(p.id);
+                        }}
+                        disabled={have <= 0}
+                        style={({ pressed }) => [
+                          styles.listRow,
+                          i < movable.length - 1 && styles.listDivider,
+                          pressed && { backgroundColor: COLORS.surface2 },
+                          have <= 0 && { opacity: 0.4 },
+                        ]}
                       >
-                        <Text style={[styles.branchChipText, selected && styles.branchChipTextActive]}>
-                          {b.name}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-              </ScrollView>
-
-              <Text style={styles.fieldLabel}>Select Product</Text>
-              <TextInput
-                value={productSearch}
-                onChangeText={setProductSearch}
-                placeholder="Search products..."
-                placeholderTextColor={COLORS.text.muted}
-                style={styles.searchInput}
-              />
-
-              <ScrollView style={{ maxHeight: 170, marginBottom: 12 }} nestedScrollEnabled>
-                {filteredTransferProducts.map((p) => {
-                  const available = getProductQtyInBranch(p, fromBranchId);
-                  const destQty = getProductQtyInBranch(p, toBranchId);
-                  const selected = p.id === selectedProductId;
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      onPress={() => setSelectedProductId(p.id)}
-                      style={[styles.productPickRow, selected && styles.productPickRowActive]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontFamily: FONT.semiBold, fontSize: 13.5, color: COLORS.text.primary }}>
+                        <Text style={[styles.listName]} numberOfLines={1}>
                           {p.name}
                         </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.text.muted }}>
-                          Source: {available} {p.unit} · Dest: {destQty} {p.unit}
-                        </Text>
-                      </View>
-                      {selected ? <Feather name="check-circle" size={18} color={COLORS.accent} /> : null}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              <InputField
-                label={`Quantity to Move${selectedTransferProduct ? ` (Available: ${getProductQtyInBranch(selectedTransferProduct, fromBranchId)})` : ''}`}
-                value={transferQty}
-                onChangeText={setTransferQty}
-                placeholder="0"
-                keyboardType="numeric"
-                required
-              />
-              <InputField
-                label="Notes (Optional)"
-                value={transferNotes}
-                onChangeText={setTransferNotes}
-                placeholder="e.g. Weekly stock dispatch"
-              />
-
-              <View style={{ marginTop: 8, marginBottom: 16 }}>
-                <Button
-                  title="Transfer Stock Now"
-                  loading={transferring}
-                  onPress={handleConfirmTransfer}
-                />
+                        <Text style={styles.listQty}>{count(have)}</Text>
+                      </Pressable>
+                    );
+                  })
+                )}
               </View>
-            </KeyboardAwareScrollView>
-          </View>
-        </View>
-      </Modal>
+            </>
+          )}
+
+          {selected ? (
+            <>
+              <InputField
+                label="Quantity"
+                value={qty}
+                onChangeText={setQty}
+                keyboardType="decimal-pad"
+                placeholder="0"
+                suffix={selected.unit}
+                error={qtyError}
+                hint={!qtyError ? `${count(available)} available` : undefined}
+                containerStyle={{ marginTop: 16 }}
+              />
+              <InputField label="Note (optional)" value={note} onChangeText={setNote} placeholder="e.g. Weekend restock for Yaba" />
+              <Button
+                title="Move stock"
+                onPress={doTransfer}
+                loading={moving}
+                disabled={!qtyNum || Boolean(qtyError) || !toId}
+                size="lg"
+              />
+            </>
+          ) : null}
+        </ScrollView>
+      </BottomSheetModal>
     </ScreenShell>
   );
 }
 
+function Figure({ value, label }: { value: string; label: string }) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={styles.figValue} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      <Text style={styles.figLabel}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  heroCard: {
-    backgroundColor: COLORS.ink,
+  label: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary },
+  total: { fontSize: 40, lineHeight: 48, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -1, fontVariant: ['tabular-nums'] },
+  meta: { fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
+  actions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  action: {
+    height: 56,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    backgroundColor: COLORS.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  actionText: { fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary },
+  section: { fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3, marginTop: 28, marginBottom: 10 },
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    padding: 14,
+    gap: 14,
+  },
+  cardHere: { borderColor: COLORS.text.primary, borderWidth: 1 },
+  badge: { width: 40, height: 40, borderRadius: 12, borderCurve: 'continuous', backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  name: { fontSize: 16, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.25, flexShrink: 1 },
+  tag: {
+    fontSize: 10.5,
+    fontFamily: FONT.medium,
+    color: COLORS.text.secondary,
+    backgroundColor: COLORS.surface2,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    overflow: 'hidden',
+  },
+  address: { ...TYPE.footnote, color: COLORS.text.muted, marginTop: 2 },
+  figures: { flexDirection: 'row', gap: 8, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
+  figValue: { fontSize: 15.5, fontFamily: FONT.semiBold, color: COLORS.text.primary, fontVariant: ['tabular-nums'] },
+  figLabel: { fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 },
+  hereRow: { flexDirection: 'row', alignItems: 'center', gap: 6, height: 40, justifyContent: 'center', backgroundColor: COLORS.successLight, borderRadius: 12 },
+  hereText: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.successText },
+  switch: { height: 40, borderRadius: 12, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
+  switchText: { fontSize: 14, fontFamily: FONT.semiBold, color: COLORS.text.primary },
+  footnote: { ...TYPE.footnote, color: COLORS.text.muted, lineHeight: 17, marginTop: 14, paddingHorizontal: 4 },
+  fieldLabel: { fontSize: 13.5, fontFamily: FONT.medium, color: COLORS.text.secondary, marginBottom: 8, marginTop: 4 },
+  pills: { gap: 8, paddingBottom: 14 },
+  picked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.text.primary,
+    padding: 14,
     gap: 10,
   },
-  heroOverline: {
-    fontFamily: FONT.bold,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.65)',
-    letterSpacing: 1,
-  },
-  heroAmount: {
-    fontFamily: FONT.black,
-    fontSize: 32,
-    color: COLORS.gold,
-    letterSpacing: -0.8,
-  },
-  heroMetricsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 6,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.12)',
-  },
-  heroMetricItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  heroMetricVal: {
-    fontFamily: FONT.bold,
-    fontSize: 16,
-    color: '#FFFFFF',
-  },
-  heroMetricLbl: {
-    fontFamily: FONT.regular,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.7)',
-    marginTop: 2,
-  },
-  heroDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-  },
-  actionPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    borderRadius: RADIUS.lg,
-  },
-  actionPillText: {
-    fontFamily: FONT.bold,
-    fontSize: 13.5,
-  },
-  iconBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  change: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.accentDark },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 13, backgroundColor: COLORS.surface2, paddingHorizontal: 12 },
+  searchInput: { flex: 1, fontSize: 15.5, fontFamily: FONT.regular, color: COLORS.text.primary, paddingVertical: 0 },
+  list: {
+    marginTop: 10,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: COLORS.border,
+    overflow: 'hidden',
+    maxHeight: 300,
   },
-  branchStatsGrid: {
-    flexDirection: 'row',
-    backgroundColor: COLORS.surface,
-    borderRadius: RADIUS.md,
-    padding: 10,
-    gap: 8,
-  },
-  branchStatCell: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  branchStatValue: {
-    fontFamily: FONT.bold,
-    fontSize: 13.5,
-    color: COLORS.text.primary,
-  },
-  branchStatLabel: {
-    fontFamily: FONT.regular,
-    fontSize: 11,
-    color: COLORS.text.muted,
-    marginTop: 2,
-  },
-  switchButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: RADIUS.md,
-    backgroundColor: COLORS.accent,
-  },
-  switchButtonActive: {
-    backgroundColor: COLORS.successLight,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-  },
-  switchButtonText: {
-    fontFamily: FONT.bold,
-    fontSize: 13,
-    color: '#FFFFFF',
-  },
-  secondaryIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.md,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: COLORS.surface,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  modalSheet: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: RADIUS.xl,
-    borderTopRightRadius: RADIUS.xl,
-    padding: 20,
-    maxHeight: '85%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  modalTitle: {
-    fontFamily: FONT.bold,
-    fontSize: 17,
-    color: COLORS.text.primary,
-  },
-  fieldLabel: {
-    fontFamily: FONT.semiBold,
-    fontSize: 13,
-    color: COLORS.text.primary,
-    marginBottom: 6,
-  },
-  branchChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: RADIUS.full,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  branchChipActive: {
-    backgroundColor: COLORS.ink,
-    borderColor: COLORS.ink,
-  },
-  branchChipText: {
-    fontFamily: FONT.medium,
-    fontSize: 12.5,
-    color: COLORS.text.secondary,
-  },
-  branchChipTextActive: {
-    color: '#FFFFFF',
-    fontFamily: FONT.bold,
-  },
-  searchInput: {
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: RADIUS.md,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontFamily: FONT.regular,
-    fontSize: 13.5,
-    color: COLORS.text.primary,
-    marginBottom: 8,
-  },
-  productPickRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 9,
-    paddingHorizontal: 10,
-    borderRadius: RADIUS.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    marginBottom: 6,
-  },
-  productPickRowActive: {
-    borderColor: COLORS.accent,
-    backgroundColor: COLORS.accentLight,
-  },
+  listRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, minHeight: 46, gap: 10 },
+  listDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  listName: { flex: 1, fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.primary },
+  listQty: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary, fontVariant: ['tabular-nums'] },
 });

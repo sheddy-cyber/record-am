@@ -1,9 +1,8 @@
 module.exports = function (api) {
   api.cache(true);
   return {
-    presets: ['babel-preset-expo'],
-    plugins: [
-      "react-native-reanimated/plugin"
-    ],
+    // import.meta is used by some ESM builds (zustand) that the web bundle picks up.
+    presets: [['babel-preset-expo', { unstable_transformImportMeta: true }]],
+    plugins: ['react-native-reanimated/plugin'],
   };
 };

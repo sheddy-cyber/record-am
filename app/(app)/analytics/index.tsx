@@ -3,18 +3,16 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
   RefreshControl,
-  ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { useAuthStore } from '@/store/authStore';
 import { DateRange, useAnalyticsStore } from '@/store/analyticsStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { BarChart, ChartLegend, DonutChart, LineChart, MetricCard } from '@/components/charts';
-import { Card, PermissionDenied, RoleGate, SectionHeader } from '@/components/ui';
+import { BarChart, ChartLegend, DonutChart, LineChart } from '@/components/charts';
+import { PermissionDenied, Pill, Skeleton } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from "@/constants";
 import { Product } from '@/types';
@@ -24,10 +22,10 @@ import { hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
 
 const STATIC_RANGES: { key: DateRange; label: string }[] = [
-  { key: '7days', label: '7 Days' },
-  { key: 'this_week', label: 'This Week' },
-  { key: 'this_month', label: 'This Month' },
-  { key: '30days', label: '30 Days' },
+  { key: '7days', label: 'Last 7 days' },
+  { key: 'this_week', label: 'This week' },
+  { key: 'this_month', label: 'This month' },
+  { key: '30days', label: 'Last 30 days' },
 ];
 
 const generateDateRanges = () => {
@@ -45,15 +43,7 @@ const generateDateRanges = () => {
 
 const DATE_RANGES = generateDateRanges();
 
-const EXPENSE_COLORS = [
-  COLORS.accent,
-  COLORS.danger,
-  COLORS.warning,
-  COLORS.success,
-  '#8B5CF6',
-  '#EC4899',
-  '#14B8A6',
-];
+const EXPENSE_COLORS = [...COLORS.chart, '#B5577A', '#4E9184'];
 
 const fmt = (n: number) =>
   n >= 1_000_000
@@ -87,7 +77,6 @@ const formatFullCount = (val: number) => {
 
 export default function AnalyticsScreen() {
   const { currentBusiness, currentBranch, userRole } = useAuthStore();
-  const { products } = useBusinessStore();
   const {
     summary,
     salesTrend,
@@ -156,10 +145,10 @@ export default function AnalyticsScreen() {
 
   if (!canViewAnalytics) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Analytics"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         />
         <PermissionDenied
@@ -170,753 +159,180 @@ export default function AnalyticsScreen() {
     );
   }
 
+  const growth = summary?.revenue_growth;
+  const isOwner = userRole === 'owner';
+
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell>
       <ScreenHeader
         title="Analytics"
-        subtitle={[currentBusiness?.name, currentBranch?.name].filter(Boolean).join(" \u00B7 ")}
-        theme="dark"
+        large
+        left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+        subtitle={currentBranch?.name ? `${currentBranch.name} branch` : undefined}
       />
 
-      <View
-        style={{
-          backgroundColor: COLORS.card,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          borderBottomColor: COLORS.border,
-          paddingHorizontal: 20,
-          paddingVertical: 14,
-        }}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ flexGrow: 0 }}
+        contentContainerStyle={{ gap: 8, paddingHorizontal: SP.page, paddingBottom: 12 }}
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            {DATE_RANGES.map((range) => {
-              const active = dateRange === range.key;
-              return (
-                <TouchableOpacity
-                  key={range.key}
-                  onPress={() => setDateRange(range.key)}
-                  activeOpacity={0.7}
-                  style={{
-                    paddingHorizontal: 14,
-                    height: 34,
-                    justifyContent: 'center',
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderRadius: RADIUS.full,
-                    borderColor: active ? COLORS.navy : COLORS.border,
-                    backgroundColor: active ? COLORS.navy : COLORS.card,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontFamily: FONT.medium,
-                      color: active ? '#ffffff' : COLORS.text.secondary,
-                    }}
-                  >
-                    {range.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </ScrollView>
-      </View>
+        {DATE_RANGES.map((range) => (
+          <Pill key={range.key} label={range.label} active={dateRange === range.key} onPress={() => setDateRange(range.key)} />
+        ))}
+      </ScrollView>
 
       <ScrollView
         style={{ flex: 1 }}
-        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={load} tintColor={COLORS.ink} />}
+        contentContainerStyle={{ paddingHorizontal: SP.page, paddingTop: 8, paddingBottom: 48 }}
+        refreshControl={<RefreshControl refreshing={isLoading && Boolean(summary)} onRefresh={load} tintColor={COLORS.text.muted} />}
         showsVerticalScrollIndicator={false}
       >
         {isLoading && !summary ? (
-          <View style={{ alignItems: 'center', justifyContent: 'center', padding: 60 }}>
-            <ActivityIndicator size="large" color={COLORS.ink} />
-            <Text style={{ fontFamily: FONT.regular, marginTop: 12, color: COLORS.text.muted }}>Loading analytics...</Text>
+          <View style={{ gap: 12, paddingTop: 8 }}>
+            <Skeleton width={120} height={14} />
+            <Skeleton width={220} height={40} radius={10} />
+            <Skeleton width={180} height={14} />
+            <Skeleton height={180} radius={18} style={{ marginTop: 20 }} />
           </View>
         ) : (
-          <View style={{ padding: 20, gap: 24 }}>
-            <View style={{ gap: 14 }}>
-              <SectionHeader
-                title="Financial Overview"
-                color={COLORS.text.secondary}
-                style={{ fontFamily: FONT.bold }}
-              />
-
-              {/* Master Hero Card: Total Revenue & Net Profit */}
-              <Card style={{ padding: 20 }}>
-                {/* Revenue Header & Figure */}
-                <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                      <View
-                        style={{
-                          width: 26,
-                          height: 26,
-                          borderRadius: 8,
-                          backgroundColor: COLORS.ink + '12',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Feather name="trending-up" size={13} color={COLORS.ink} />
-                      </View>
-                      <Text
-                        style={{
-                          fontFamily: FONT.bold,
-                          fontSize: 11,
-                          letterSpacing: 0.8,
-                          color: COLORS.text.secondary,
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        Total Revenue
-                      </Text>
-                    </View>
-
-                    <Text
-                      style={{
-                        fontSize: 28,
-                        fontFamily: FONT.bold,
-                        color: COLORS.text.primary,
-                        letterSpacing: -0.5,
-                      }}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                    >
-                      {formatFullCurrency(revenue)}
-                    </Text>
-
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 4 }}>
-                      Gross cash collected from completed sales
-                    </Text>
-                  </View>
-
-                  {summary?.revenue_growth !== undefined && summary.revenue_growth !== 0 && (
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        backgroundColor: summary.revenue_growth >= 0 ? '#EAFBF1' : '#FEF3F2',
-                        borderColor: summary.revenue_growth >= 0 ? '#A6F4C5' : '#FECDCA',
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderRadius: RADIUS.full,
-                        paddingHorizontal: 10,
-                        paddingVertical: 5,
-                        gap: 4,
-                      }}
-                    >
-                      <Feather
-                        name={summary.revenue_growth >= 0 ? 'arrow-up-right' : 'arrow-down-right'}
-                        size={12}
-                        color={summary.revenue_growth >= 0 ? '#027A48' : '#B42318'}
-                      />
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontFamily: FONT.bold,
-                          color: summary.revenue_growth >= 0 ? '#027A48' : '#B42318',
-                        }}
-                      >
-                        {summary.revenue_growth >= 0 ? '+' : ''}{summary.revenue_growth.toFixed(1)}%
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Net Profit Spotlight Banner */}
-                <View
-                  style={{
-                    marginTop: 18,
-                    padding: 14,
-                    borderRadius: RADIUS.md,
-                    backgroundColor: isProfitable ? '#F0FDF4' : '#FEF2F2',
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: isProfitable ? '#BBF7D0' : '#FECACA',
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Feather
-                        name={isProfitable ? 'check-circle' : 'alert-circle'}
-                        size={14}
-                        color={isProfitable ? '#16A34A' : '#DC2626'}
-                      />
-                      <Text
-                        style={{
-                          fontFamily: FONT.bold,
-                          fontSize: 11,
-                          color: isProfitable ? '#15803D' : '#B91C1C',
-                          textTransform: 'uppercase',
-                          letterSpacing: 0.6,
-                        }}
-                      >
-                        {isProfitable ? 'Net Profit' : 'Net Deficit'}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 3,
-                        borderRadius: RADIUS.full,
-                        backgroundColor: isProfitable ? '#DCFCE7' : '#FEE2E2',
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontFamily: FONT.bold,
-                          color: isProfitable ? '#15803D' : '#B91C1C',
-                        }}
-                      >
-                        {netMarginPct.toFixed(1)}% net margin
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text
-                    style={{
-                      fontSize: 22,
-                      fontFamily: FONT.bold,
-                      color: isProfitable ? '#15803D' : '#DC2626',
-                    }}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {formatFullCurrency(netProfit, { showSign: true })}
-                  </Text>
-
-                  <Text
-                    style={{
-                      fontFamily: FONT.regular,
-                      fontSize: 11,
-                      color: isProfitable ? '#166534' : '#991B1B',
-                      marginTop: 2,
-                    }}
-                  >
-                    {isProfitable
-                      ? 'Clear take-home earnings after product costs & operating expenses'
-                      : 'Total product costs and business expenses exceeded sales revenue'}
+          <>
+            {/* ── Revenue ─────────────────────────────────────────── */}
+            <Text style={styles.label}>Revenue</Text>
+            <Text style={styles.hero} numberOfLines={1} adjustsFontSizeToFit>
+              {formatFullCurrency(revenue)}
+            </Text>
+            <View style={styles.heroMeta}>
+              {growth !== undefined && growth !== 0 ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                  <Icon
+                    name={growth >= 0 ? 'arrow-up-right' : 'arrow-down-right'}
+                    size={14}
+                    color={growth >= 0 ? COLORS.successText : COLORS.dangerText}
+                    strokeWidth={2.2}
+                  />
+                  <Text style={[styles.metaText, { color: growth >= 0 ? COLORS.successText : COLORS.dangerText }]}>
+                    {Math.abs(growth).toFixed(1)}% vs previous period
                   </Text>
                 </View>
-              </Card>
-
-              {/* Breakdown Card: Gross Profit & Operating Expenses */}
-              <Card style={{ padding: 18 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                  <View
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 8,
-                      backgroundColor: COLORS.ink + '12',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="sliders" size={13} color={COLORS.ink} />
-                  </View>
-                  <Text
-                    style={{
-                      fontFamily: FONT.bold,
-                      fontSize: 11,
-                      letterSpacing: 0.8,
-                      color: COLORS.text.secondary,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Cost & Profit Flow
-                  </Text>
-                </View>
-
-                {/* Gross Profit Item */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
-                    <View
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        backgroundColor: COLORS.accent + '15',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Feather name="pie-chart" size={17} color={COLORS.accentDark} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
-                        Gross Profit
-                      </Text>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
-                        Revenue minus goods cost
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text
-                      style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.text.primary }}
-                      numberOfLines={1}
-                    >
-                      {formatFullCurrency(grossProfit)}
-                    </Text>
-                    <View
-                      style={{
-                        backgroundColor: COLORS.accentLight,
-                        borderRadius: RADIUS.full,
-                        paddingHorizontal: 7,
-                        paddingVertical: 2,
-                        marginTop: 2,
-                      }}
-                    >
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.accentDark }}>
-                        {grossMarginPct.toFixed(0)}% gross margin
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginVertical: 14 }} />
-
-                {/* Discounts Given Item */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
-                    <View
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        backgroundColor: COLORS.warning + '18',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Feather name="tag" size={17} color={COLORS.warning} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
-                        Discounts Given
-                      </Text>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
-                        Price reductions granted to customers
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text
-                      style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.warning }}
-                      numberOfLines={1}
-                    >
-                      {formatFullCurrency(totalDiscounts)}
-                    </Text>
-                    <View
-                      style={{
-                        backgroundColor: COLORS.warningLight,
-                        borderRadius: RADIUS.full,
-                        paddingHorizontal: 7,
-                        paddingVertical: 2,
-                        marginTop: 2,
-                      }}
-                    >
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.warning }}>
-                        {discountRatioPct.toFixed(0)}% of sales value
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginVertical: 14 }} />
-
-                {/* Operating Expenses Item */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
-                    <View
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        backgroundColor: COLORS.danger + '14',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Feather name="arrow-down-left" size={17} color={COLORS.danger} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
-                        Operating Expenses
-                      </Text>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
-                        Overhead, bills & running costs
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text
-                      style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.danger }}
-                      numberOfLines={1}
-                    >
-                      {formatFullCurrency(totalExpenses)}
-                    </Text>
-                    <View
-                      style={{
-                        backgroundColor: COLORS.dangerLight,
-                        borderRadius: RADIUS.full,
-                        paddingHorizontal: 7,
-                        paddingVertical: 2,
-                        marginTop: 2,
-                      }}
-                    >
-                      <Text style={{ fontFamily: FONT.medium, fontSize: 10, color: COLORS.danger }}>
-                        {expenseRatioPct.toFixed(0)}% of revenue
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </Card>
-
-              {/* Activity & Valuation Card */}
-              <Card style={{ padding: 18 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                  <View
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 8,
-                      backgroundColor: COLORS.ink + '12',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="layers" size={13} color={COLORS.ink} />
-                  </View>
-                  <Text
-                    style={{
-                      fontFamily: FONT.bold,
-                      fontSize: 11,
-                      letterSpacing: 0.8,
-                      color: COLORS.text.secondary,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Activity & Valuation
-                  </Text>
-                </View>
-
-                {/* Sales Transactions Item */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
-                    <View
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 10,
-                        backgroundColor: COLORS.ink + '12',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Feather name="shopping-bag" size={17} color={COLORS.ink} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
-                        Total Transactions
-                      </Text>
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
-                        Avg ticket: {formatFullCurrency(avgTransaction)} / sale
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={{ alignItems: 'flex-end' }}>
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.text.primary }} numberOfLines={1}>
-                      {formatFullCount(totalTransactions)}
-                    </Text>
-                    <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
-                      sale{totalTransactions === 1 ? '' : 's'} recorded
-                    </Text>
-                  </View>
-                </View>
-
-                <RoleGate allowedRoles={['owner']}>
-                  <React.Fragment>
-                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginVertical: 14 }} />
-
-                    {/* Stock Valuation Item */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1, paddingRight: 8 }}>
-                        <View
-                          style={{
-                            width: 38,
-                            height: 38,
-                            borderRadius: 10,
-                            backgroundColor: COLORS.warning + '16',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <Feather name="package" size={17} color={COLORS.warning} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontFamily: FONT.bold, fontSize: 13, color: COLORS.text.primary }}>
-                            Stock Net Worth
-                          </Text>
-                          <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
-                            {formatFullCount(stockItems)} total items in stock
-                          </Text>
-                        </View>
-                      </View>
-
-                      <View style={{ alignItems: 'flex-end' }}>
-                        <Text
-                          style={{ fontFamily: FONT.bold, fontSize: 16, color: COLORS.text.primary }}
-                          numberOfLines={1}
-                        >
-                          {formatFullCurrency(stockValue)}
-                        </Text>
-                        <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 1 }}>
-                          est. catalog value
-                        </Text>
-                      </View>
-                    </View>
-                  </React.Fragment>
-                </RoleGate>
-              </Card>
+              ) : (
+                <Text style={styles.metaText}>Cash collected from sales and debt payments</Text>
+              )}
             </View>
 
-            <Card style={{ padding: 18 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    backgroundColor: COLORS.ink + '12',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Feather name="trending-up" size={13} color={COLORS.ink} />
-                </View>
-                <Text
-                  style={{
-                    fontFamily: FONT.bold,
-                    fontSize: 11,
-                    letterSpacing: 0.8,
-                    color: COLORS.text.secondary,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Revenue And Profit Trend
-                </Text>
-              </View>
+            {/* ── Where the money went ────────────────────────────── */}
+            <Text style={styles.section}>Where the money went</Text>
+            <View style={styles.group}>
+              <Row label="Gross profit" detail={`${grossMarginPct.toFixed(0)}% margin on goods sold`} value={formatFullCurrency(grossProfit)} />
+              <Row
+                label="Discounts given"
+                detail={`${discountRatioPct.toFixed(0)}% of sales value`}
+                value={totalDiscounts > 0 ? `−${formatFullCurrency(totalDiscounts)}` : formatFullCurrency(0)}
+              />
+              <Row
+                label="Expenses"
+                detail={`${expenseRatioPct.toFixed(0)}% of revenue`}
+                value={totalExpenses > 0 ? `−${formatFullCurrency(totalExpenses)}` : formatFullCurrency(0)}
+              />
+              <Row
+                label={isProfitable ? 'Net profit' : 'Net loss'}
+                detail={`${netMarginPct.toFixed(1)}% of revenue`}
+                value={formatFullCurrency(netProfit, { showSign: true })}
+                tone={isProfitable ? 'good' : 'bad'}
+                strong
+                last
+              />
+            </View>
+
+            {/* ── Activity ────────────────────────────────────────── */}
+            <View style={[styles.group, { marginTop: 12 }]}>
+              <Row
+                label="Sales"
+                detail={`Average ${formatFullCurrency(avgTransaction)} per sale`}
+                value={formatFullCount(totalTransactions)}
+                last={!isOwner}
+              />
+              {isOwner ? (
+                <Row label="Stock on hand" detail={`${formatFullCount(stockItems)} units at selling price`} value={formatFullCurrency(stockValue)} last />
+              ) : null}
+            </View>
+
+            {/* ── Trend ───────────────────────────────────────────── */}
+            <Text style={styles.section}>Revenue and profit</Text>
+            <View style={styles.card}>
               {salesTrend.length === 0 ? (
-                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
-                  No sales data for this period
-                </Text>
+                <Text style={styles.empty}>No sales in this period.</Text>
               ) : (
                 <>
-                  <LineChart
-                    data={barData}
-                    showSecondary
-                    color={COLORS.ink}
-                    secondaryColor={COLORS.success}
-                  />
-                  <View style={{ flexDirection: 'row', gap: 20, marginTop: 12 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View style={{ width: 12, height: 3, backgroundColor: COLORS.ink }} />
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary }}>Revenue</Text>
-                    </View>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <View
-                        style={{
-                          width: 12,
-                          height: 2,
-                          backgroundColor: COLORS.success,
-                          borderStyle: 'dashed',
-                        }}
-                      />
-                      <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary }}>Profit</Text>
-                    </View>
+                  <LineChart data={barData} showSecondary color={COLORS.ink} secondaryColor={COLORS.accent} />
+                  <View style={{ flexDirection: 'row', gap: 18, marginTop: 6 }}>
+                    <Legend color={COLORS.ink} label="Revenue" />
+                    <Legend color={COLORS.accent} label="Profit" dashed />
                   </View>
                 </>
               )}
-            </Card>
+            </View>
 
-            <Card style={{ padding: 18 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    backgroundColor: COLORS.ink + '12',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Feather name="bar-chart-2" size={13} color={COLORS.ink} />
-                </View>
-                <Text
-                  style={{
-                    fontFamily: FONT.bold,
-                    fontSize: 11,
-                    letterSpacing: 0.8,
-                    color: COLORS.text.secondary,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Daily Sales Volume
-                </Text>
-              </View>
+            <Text style={styles.section}>Sales per day</Text>
+            <View style={styles.card}>
               {salesTrend.length === 0 ? (
-                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 20, textAlign: 'center' }}>
-                  No sales data for this period
-                </Text>
+                <Text style={styles.empty}>No sales in this period.</Text>
               ) : (
                 <BarChart
                   data={salesTrend.map((point) => ({ label: point.label, value: point.transactions }))}
                   formatValue={(v) => Math.round(v).toString()}
-                  color={COLORS.ink}
+                  color={COLORS.text.faint}
                 />
               )}
-            </Card>
+            </View>
 
-            <Card style={{ padding: 18 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    backgroundColor: COLORS.ink + '12',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Feather name="award" size={13} color={COLORS.ink} />
-                </View>
-                <Text
-                  style={{
-                    fontFamily: FONT.bold,
-                    fontSize: 11,
-                    letterSpacing: 0.8,
-                    color: COLORS.text.secondary,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Top Selling Products
+            {/* ── Best sellers ───────────────────────────────────── */}
+            <View style={styles.sectionRow}>
+              <Text style={[styles.section, { marginTop: 0, marginBottom: 0 }]}>Best sellers</Text>
+              {topProducts.length > 0 ? (
+                <Text style={styles.link} onPress={() => router.push('/(app)/analytics/products' as any)}>
+                  All products
                 </Text>
-              </View>
+              ) : null}
+            </View>
+            <View style={styles.group}>
               {topProducts.length === 0 ? (
-                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
-                  No product sales in this period
-                </Text>
+                <Text style={styles.empty}>Nothing sold in this period.</Text>
               ) : (
-                <View style={{ gap: 12 }}>
-                  {topProducts.map((product, index) => {
-                    const maxQty = topProducts[0].total_qty;
-                    const pct = maxQty > 0 ? product.total_qty / maxQty : 0;
-
-                    return (
-                      <View key={product.product_id}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-                            <View
-                              style={{
-                                width: 24,
-                                height: 24,
-                                borderWidth: StyleSheet.hairlineWidth,
-                                borderRadius: RADIUS.md,
-                                borderColor: COLORS.ink + '20',
-                                backgroundColor: COLORS.ink + '12',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <Text style={{ fontSize: 11, fontFamily: FONT.bold, color: COLORS.ink }}>{index + 1}</Text>
-                            </View>
-                            <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, flex: 1 }} numberOfLines={1}>
-                              {product.product_name}
-                            </Text>
-                          </View>
-                          <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>
-                              {fmtCount(product.total_qty)} sold
-                            </Text>
-                            <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted }}>
-                              {fmt(product.total_revenue)} rev • {fmt(product.total_profit)} profit
-                            </Text>
-                          </View>
+                topProducts.map((product, index) => {
+                  const maxQty = topProducts[0].total_qty || 1;
+                  return (
+                    <View key={product.product_id} style={[styles.rankRow, index < topProducts.length - 1 && styles.divider]}>
+                      <Text style={styles.rank}>{index + 1}</Text>
+                      <View style={{ flex: 1, gap: 6 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+                          <Text style={styles.rowLabel} numberOfLines={1}>
+                            {product.product_name}
+                          </Text>
+                          <Text style={styles.rowValue}>{fmtCount(product.total_qty)} sold</Text>
                         </View>
-                        <View style={{ height: 6, backgroundColor: '#F3F4F6' }}>
-                          <View
-                            style={{
-                              height: 6,
-                              backgroundColor: COLORS.ink,
-                              width: `${pct * 100}%`,
-                            }}
-                          />
+                        <View style={styles.track}>
+                          <View style={[styles.fill, { width: `${Math.max(4, (product.total_qty / maxQty) * 100)}%` }]} />
                         </View>
+                        <Text style={styles.rowDetail}>
+                          {fmt(product.total_revenue)} revenue · {fmt(product.total_profit)} profit
+                        </Text>
                       </View>
-                    );
-                  })}
-                  <TouchableOpacity
-                    onPress={() => router.push('/(app)/analytics/products' as any)}
-                    style={{
-                      marginTop: 12,
-                      paddingVertical: 12,
-                      alignItems: 'center',
-                      backgroundColor: COLORS.surface,
-                      borderRadius: RADIUS.md,
-                      borderWidth: StyleSheet.hairlineWidth,
-                      borderColor: COLORS.border,
-                    }}
-                  >
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.ink }}>
-                      View Product Analytics
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+                    </View>
+                  );
+                })
               )}
-            </Card>
+            </View>
 
-            <Card style={{ padding: 18 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <View
-                  style={{
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    backgroundColor: COLORS.ink + '12',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Feather name="pie-chart" size={13} color={COLORS.ink} />
-                </View>
-                <Text
-                  style={{
-                    fontFamily: FONT.bold,
-                    fontSize: 11,
-                    letterSpacing: 0.8,
-                    color: COLORS.text.secondary,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Expense Breakdown
-                </Text>
-              </View>
+            {/* ── Expenses ────────────────────────────────────────── */}
+            <Text style={styles.section}>Expenses by category</Text>
+            <View style={styles.card}>
               {expenseBreakdown.length === 0 ? (
-                <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, paddingVertical: 12, textAlign: 'center' }}>
-                  No expenses recorded in this period
-                </Text>
+                <Text style={styles.empty}>No expenses in this period.</Text>
               ) : (
-                <View style={{ flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-                  <DonutChart data={expensePieData} size={180} thickness={32} centerLabel={fmt(totalExpenses)} centerSubLabel="Total" />
-                  <View style={{ width: '100%' }}>
+                <View style={{ alignItems: 'center', gap: 18 }}>
+                  <DonutChart data={expensePieData} size={176} thickness={22} centerLabel={fmt(totalExpenses)} centerSubLabel="total" />
+                  <View style={{ alignSelf: 'stretch' }}>
                     <ChartLegend
                       items={expensePieData.map((item) => ({
                         label: item.label,
@@ -927,91 +343,92 @@ export default function AnalyticsScreen() {
                   </View>
                 </View>
               )}
-            </Card>
-
-            {summary && summary.total_revenue > 0 ? (
-              <Card style={{ padding: 18 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                  <View
-                    style={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 8,
-                      backgroundColor: COLORS.ink + '12',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="activity" size={13} color={COLORS.ink} />
-                  </View>
-                  <Text
-                    style={{
-                      fontFamily: FONT.bold,
-                      fontSize: 11,
-                      letterSpacing: 0.8,
-                      color: COLORS.text.secondary,
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Business Health
-                  </Text>
-                </View>
-                <View style={{ gap: 20 }}>
-                  {[
-                    {
-                      label: 'Profit Margin',
-                      description: 'The percentage of revenue you keep as pure profit after all costs.',
-                      value: `${((summary.net_profit / summary.total_revenue) * 100).toFixed(1)}%`,
-                      pct: summary.net_profit / summary.total_revenue,
-                      color: COLORS.success,
-                      good: summary.net_profit / summary.total_revenue > 0.15,
-                    },
-                    {
-                      label: 'Expense Ratio',
-                      description: 'The percentage of your revenue that gets consumed by running expenses.',
-                      value: `${((summary.total_expenses / summary.total_revenue) * 100).toFixed(1)}%`,
-                      pct: summary.total_expenses / summary.total_revenue,
-                      color: COLORS.danger,
-                      good: summary.total_expenses / summary.total_revenue < 0.4,
-                    },
-                  ].map((metric) => (
-                    <View key={metric.label}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8, alignItems: 'flex-start' }}>
-                        <View style={{ flex: 1, paddingRight: 10 }}>
-                          <Text style={{ fontFamily: FONT.medium, fontSize: 13, color: COLORS.text.primary }}>{metric.label}</Text>
-                          <Text style={{ fontFamily: FONT.regular, fontSize: 11, color: COLORS.text.muted, marginTop: 2, lineHeight: 16 }}>
-                            {metric.description}
-                          </Text>
-                        </View>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                          <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.text.primary }}>{metric.value}</Text>
-                          <Feather
-                            name={metric.good ? 'check-circle' : 'alert-triangle'}
-                            size={12}
-                            color={metric.good ? COLORS.success : COLORS.warning}
-                          />
-                        </View>
-                      </View>
-                      <View style={{ height: 8, backgroundColor: '#F3F4F6', borderRadius: 4, overflow: 'hidden' }}>
-                        <View
-                          style={{
-                            height: 8,
-                            backgroundColor: metric.color,
-                            width: `${Math.min(100, Math.abs(metric.pct) * 100)}%`,
-                            borderRadius: 4,
-                          }}
-                        />
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              </Card>
-            ) : null}
-
-            <View style={{ height: 20 }} />
-          </View>
+            </View>
+          </>
         )}
       </ScrollView>
     </ScreenShell>
   );
 }
+
+function Row({
+  label,
+  detail,
+  value,
+  tone,
+  strong,
+  last,
+}: {
+  label: string;
+  detail?: string;
+  value: string;
+  tone?: 'good' | 'bad';
+  strong?: boolean;
+  last?: boolean;
+}) {
+  return (
+    <View style={[styles.row, !last && styles.divider]}>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text style={[styles.rowLabel, strong && { fontFamily: FONT.semiBold }]}>{label}</Text>
+        {detail ? <Text style={styles.rowDetail}>{detail}</Text> : null}
+      </View>
+      <Text
+        style={[
+          styles.rowValue,
+          strong && { fontSize: 17 },
+          tone === 'good' && { color: COLORS.successText },
+          tone === 'bad' && { color: COLORS.dangerText },
+        ]}
+        numberOfLines={1}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function Legend({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <View style={{ width: 14, height: 0, borderTopWidth: 2, borderColor: color, borderStyle: dashed ? 'dashed' : 'solid' }} />
+      <Text style={{ fontFamily: FONT.regular, fontSize: 12.5, color: COLORS.text.secondary }}>{label}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  label: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary },
+  hero: { fontSize: 44, lineHeight: 52, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -1.1, fontVariant: ['tabular-nums'] },
+  heroMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  metaText: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.muted },
+  section: { fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3, marginTop: 28, marginBottom: 10 },
+  sectionRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 28, marginBottom: 10 },
+  link: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.accentDark },
+  group: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: 16, minHeight: 58 },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  rowLabel: { fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.primary, flexShrink: 1 },
+  rowDetail: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
+  rowValue: { fontSize: 15.5, fontFamily: FONT.semiBold, color: COLORS.text.primary, fontVariant: ['tabular-nums'] },
+  rankRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, paddingHorizontal: 16 },
+  rank: { width: 18, fontSize: 15, fontFamily: FONT.serif, color: COLORS.text.muted, textAlign: 'center' },
+  track: { height: 4, borderRadius: 2, backgroundColor: COLORS.surface2, overflow: 'hidden' },
+  fill: { height: 4, borderRadius: 2, backgroundColor: COLORS.accent },
+  empty: { fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center', paddingVertical: 22 },
+});

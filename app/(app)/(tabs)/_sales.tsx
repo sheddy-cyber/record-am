@@ -19,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { format, isToday, isYesterday, startOfMonth, startOfWeek } from 'date-fns';
@@ -44,7 +44,7 @@ import {
   retryAllSyncConflicts,
 } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { EmptyState } from '@/components/ui';
+import { EmptyState, IconButton } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { ReceiptPreviewModal, SaleActivityCard } from '@/components/sales';
@@ -1041,7 +1041,7 @@ function SalesScreen() {
 
   return (
     <SwipeableTabScreen name="sales">
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         {isSelectionMode ? (
           <ScreenHeader
             title={`${selectedIds.size} Selected`}
@@ -1050,7 +1050,7 @@ function SalesScreen() {
                 ? 'Select at least 2 sales to merge'
                 : `${formatCurrency(selectedTotalAmount)} combined`
             }
-            theme="dark"
+           
             left={
               <HeaderAction
                 icon="x"
@@ -1069,20 +1069,18 @@ function SalesScreen() {
         ) : (
           <ScreenHeader
             title="Sales"
-            subtitle={`${filteredActivities.length} record${filteredActivities.length === 1 ? '' : 's'}${hasMore ? '+' : ''}${branchName ? ` · ${branchName}` : ''}`}
-            theme="dark"
+            subtitle={`${filteredActivities.length}${hasMore ? '+' : ''} ${filteredActivities.length === 1 ? 'record' : 'records'}${branchName ? ` · ${branchName}` : ''}`}
+           
             right={
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <HeaderAction
-                  icon="file-text"
-                  onPress={() => router.push('/(app)/import-sales' as any)}
-                />
-                <HeaderAction
-                  icon="maximize"
+              <>
+                <IconButton
+                  icon="scan"
+                  variant="outline"
+                  accessibilityLabel="Scan to sell"
                   onPress={() => router.push('/(app)/record-sale?scan=1')}
                 />
-                <HeaderAction icon="plus" label="Record" onPress={openRecordSale} />
-              </View>
+                <IconButton icon="plus" variant="filled" accessibilityLabel="Record a sale" onPress={openRecordSale} />
+              </>
             }
           />
         )}
@@ -1094,8 +1092,6 @@ function SalesScreen() {
             paddingHorizontal: SP.page,
             paddingTop: 10,
             paddingBottom: 6,
-            borderBottomWidth: StyleSheet.hairlineWidth,
-            borderBottomColor: COLORS.border,
           }}
         >
           {(pendingCount > 0 || conflictCount > 0) && (
@@ -1110,9 +1106,9 @@ function SalesScreen() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                backgroundColor: conflictCount > 0 ? '#FEF2F2' : '#FFFBEB',
+                backgroundColor: conflictCount > 0 ? '#F8E5E1' : '#F6EDDA',
                 borderWidth: 1,
-                borderColor: conflictCount > 0 ? '#FECACA' : '#FDE68A',
+                borderColor: conflictCount > 0 ? '#EECAC2' : '#E9D6AE',
                 borderRadius: RADIUS.md,
                 paddingHorizontal: 12,
                 paddingVertical: 8,
@@ -1120,16 +1116,16 @@ function SalesScreen() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                <Feather
+                <Icon
                   name={isSyncing ? 'refresh-cw' : 'upload-cloud'}
                   size={14}
-                  color={conflictCount > 0 ? COLORS.danger : '#D97706'}
+                  color={conflictCount > 0 ? COLORS.danger : '#B7791F'}
                 />
                 <Text
                   style={{
                     fontFamily: FONT.semiBold,
                     fontSize: 12,
-                    color: conflictCount > 0 ? COLORS.danger : '#92400E',
+                    color: conflictCount > 0 ? COLORS.danger : '#74490C',
                     flex: 1,
                   }}
                 >
@@ -1142,7 +1138,7 @@ function SalesScreen() {
                 style={{
                   fontFamily: FONT.bold,
                   fontSize: 12,
-                  color: conflictCount > 0 ? COLORS.danger : '#B45309',
+                  color: conflictCount > 0 ? COLORS.danger : '#8A5A12',
                 }}
               >
                 {conflictCount > 0 ? 'Retry' : 'Sync Now'}
@@ -1163,7 +1159,7 @@ function SalesScreen() {
               marginBottom: 8,
             }}
           >
-            <Feather name="search" size={14} color={COLORS.text.muted} />
+            <Icon name="search" size={14} color={COLORS.text.muted} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -1180,7 +1176,7 @@ function SalesScreen() {
             />
             {searchQuery.length > 0 ? (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Feather name="x" size={14} color={COLORS.text.muted} />
+                <Icon name="x" size={14} color={COLORS.text.muted} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -1229,7 +1225,7 @@ function SalesScreen() {
                   }}
                 >
                   {chip.icon ? (
-                    <Feather
+                    <Icon
                       name={chip.icon}
                       size={11}
                       color={active ? '#FFFFFF' : COLORS.text.secondary}
@@ -1292,7 +1288,7 @@ function SalesScreen() {
                       borderColor: COLORS.border,
                     }}
                   >
-                    <Feather name="clock" size={14} color={COLORS.accent} />
+                    <Icon name="clock" size={14} color={COLORS.accent} />
                     <Text style={{ fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.accent }}>
                       Load Older Records
                     </Text>
@@ -1355,7 +1351,7 @@ function SalesScreen() {
               }}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Feather name="calendar" size={12} color={COLORS.text.muted} />
+                <Icon name="calendar" size={12} color={COLORS.text.muted} />
                 <Text
                   style={{
                     fontFamily: FONT.bold,
@@ -1420,7 +1416,7 @@ function SalesScreen() {
                 activeOpacity={0.7}
                 accessibilityLabel="Delete selected sales"
               >
-                <Feather name="trash-2" size={17} color="#EF4444" />
+                <Icon name="trash-2" size={17} color="#C2412D" />
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1436,7 +1432,7 @@ function SalesScreen() {
                   <ActivityIndicator size="small" color={COLORS.onAccent} />
                 ) : (
                   <>
-                    <Feather name="layers" size={15} color={COLORS.onAccent} style={{ marginRight: 6 }} />
+                    <Icon name="layers" size={15} color={COLORS.onAccent} style={{ marginRight: 6 }} />
                     <Text style={styles.dockMergeText}>
                       {selectedSales.length < 2 ? 'Select 2+ to Merge' : `Merge Receipt (${selectedSales.length})`}
                     </Text>
@@ -1596,11 +1592,11 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: RADIUS.md,
-    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    backgroundColor: 'rgba(194, 65, 45, 0.15)',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderColor: 'rgba(194, 65, 45, 0.3)',
   },
   dockMergeButton: {
     flexDirection: 'row',

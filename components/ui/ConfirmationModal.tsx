@@ -1,18 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
+  ActivityIndicator,
+  Animated,
+  Easing,
   Modal,
   Pressable,
-  Animated,
   StyleSheet,
-  TouchableOpacity,
-  ActivityIndicator,
-  ViewStyle,
-  TextStyle,
+  Text,
+  View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
-import { COLORS, FONT, RADIUS, SP } from '@/constants';
+import { Icon, IconName } from '@/components/icons';
+import { COLORS, FONT, SP } from '@/constants';
+import { haptics } from '@/lib/haptics';
 
 export type ConfirmationDialogType = 'danger' | 'warning' | 'info' | 'success';
 
@@ -36,7 +35,7 @@ export interface ConfirmationModalProps {
   buttons?: ConfirmationModalButton[];
   buttonLayout?: 'auto' | 'row' | 'column';
   type?: ConfirmationDialogType;
-  icon?: keyof typeof Feather.glyphMap;
+  icon?: IconName;
   customIcon?: React.ReactNode;
   loading?: boolean;
   disabled?: boolean;
@@ -46,103 +45,55 @@ export interface ConfirmationModalProps {
   testID?: string;
 }
 
-/**
- * Detects if a button label is likely to wrap onto 2 lines when placed
- * inside a side-by-side row button (which only has ~94-116px of horizontal text space).
- */
+/** True when a label will not sit comfortably in a half-width button. */
 export const isOptionTextLikelyToWrap = (text?: string): boolean => {
   if (!text) return false;
   const trimmed = text.trim();
   if (!trimmed) return false;
-  // Explicit line break
   if (trimmed.includes('\n')) return true;
-  // Over 11 characters typically wraps in narrow row buttons at 14px medium font
-  if (trimmed.length > 11) return true;
-  // 3 or more words almost always wrap in narrow row buttons
+  if (trimmed.length > 12) return true;
   const words = trimmed.split(/\s+/);
   if (words.length >= 3) return true;
-  // Any single word >= 9 characters takes up most of the row button width
-  if (words.some((w) => w.length >= 9)) return true;
-  return false;
+  return words.some((w) => w.length >= 10);
 };
 
-/**
- * Determines whether two buttons should be stacked on top of one another (column)
- * instead of placed side-by-side in a row.
- */
 export const shouldStackTwoButtons = (
   textA?: string,
   textB?: string,
-  layoutPreference?: 'auto' | 'row' | 'column'
+  layoutPreference?: 'auto' | 'row' | 'column',
 ): boolean => {
   if (layoutPreference === 'column') return true;
   if (layoutPreference === 'row') return false;
-
-  // Auto detection
   if (!textA && !textB) return false;
-  if (isOptionTextLikelyToWrap(textA) || isOptionTextLikelyToWrap(textB)) {
-    return true;
-  }
-  // Combined length check: even if individually <= 11, together > 20 chars
-  // is tight and prone to awkward line-wrapping on narrow mobile screens
-  const lenA = (textA || '').trim().length;
-  const lenB = (textB || '').trim().length;
-  if (lenA + lenB > 20) {
-    return true;
-  }
-
-  return false;
+  if (isOptionTextLikelyToWrap(textA) || isOptionTextLikelyToWrap(textB)) return true;
+  return (textA || '').trim().length + (textB || '').trim().length > 22;
 };
 
 const TYPE_CONFIG: Record<
   ConfirmationDialogType,
-  {
-    bg: string;
-    border: string;
-    iconColor: string;
-    defaultIcon: keyof typeof Feather.glyphMap;
-    confirmVariant: ConfirmationButtonVariant;
-  }
+  { tint: string; color: string; icon: IconName; confirm: ConfirmationButtonVariant }
 > = {
-  danger: {
-    bg: COLORS.dangerLight,
-    border: '#f5c6c2',
-    iconColor: COLORS.danger,
-    defaultIcon: 'alert-triangle',
-    confirmVariant: 'danger',
-  },
-  warning: {
-    bg: COLORS.warningLight,
-    border: '#f7dfc8',
-    iconColor: COLORS.warning,
-    defaultIcon: 'alert-circle',
-    confirmVariant: 'accent',
-  },
-  info: {
-    bg: COLORS.infoLight,
-    border: '#b8cfdf',
-    iconColor: COLORS.info,
-    defaultIcon: 'info',
-    confirmVariant: 'primary',
-  },
-  success: {
-    bg: COLORS.successLight,
-    border: '#a9dfbf',
-    iconColor: COLORS.success,
-    defaultIcon: 'check-circle',
-    confirmVariant: 'success',
-  },
+  danger: { tint: COLORS.dangerLight, color: COLORS.danger, icon: 'alert-triangle', confirm: 'danger' },
+  warning: { tint: COLORS.warningLight, color: COLORS.warning, icon: 'alert-circle', confirm: 'primary' },
+  info: { tint: COLORS.surface2, color: COLORS.text.secondary, icon: 'info', confirm: 'primary' },
+  success: { tint: COLORS.successLight, color: COLORS.success, icon: 'check-circle', confirm: 'primary' },
 };
 
-const BUTTON_COLORS: Record<
-  ConfirmationButtonVariant,
-  { bg: string; border?: string; text: string }
-> = {
-  primary: { bg: COLORS.ink, text: COLORS.text.inverse },
-  secondary: { bg: COLORS.card, border: COLORS.border, text: COLORS.text.primary },
+const BUTTON_COLORS: Record<ConfirmationButtonVariant | 'cancel', { bg: string; text: string; border?: string }> = {
+  primary: { bg: COLORS.ink, text: '#FFFFFF' },
+  accent: { bg: COLORS.accent, text: '#FFFFFF' },
   danger: { bg: COLORS.danger, text: '#FFFFFF' },
-  accent: { bg: COLORS.accent, text: COLORS.onAccent },
   success: { bg: COLORS.success, text: '#FFFFFF' },
+  secondary: { bg: COLORS.card, text: COLORS.text.primary, border: COLORS.border },
+  cancel: { bg: COLORS.surface2, text: COLORS.text.primary },
+};
+
+type NormalizedButton = {
+  key: string;
+  text: string;
+  isCancel: boolean;
+  colors: { bg: string; text: string; border?: string };
+  onPress: () => void;
 };
 
 export function ConfirmationModal({
@@ -166,26 +117,21 @@ export function ConfirmationModal({
   testID,
 }: ConfirmationModalProps) {
   const [internalLoading, setInternalLoading] = useState(false);
-  const scaleAnim = useRef(new Animated.Value(0.94)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  const iconScaleAnim = useRef(new Animated.Value(0.5)).current;
+  const [pressedKey, setPressedKey] = useState<string | null>(null);
+  const progress = useRef(new Animated.Value(0)).current;
 
   const isSubmitting = loading || internalLoading;
   const config = TYPE_CONFIG[type] || TYPE_CONFIG.info;
 
-  // Smart default icon if not explicitly provided
-  const resolvedIconName: keyof typeof Feather.glyphMap =
+  const autoIcon: IconName =
     icon ||
     (type === 'danger' && /delete|remove|trash/i.test(title)
       ? 'trash-2'
-      : type === 'danger' && /sign out|logout/i.test(title)
+      : type === 'danger' && /sign out|log ?out/i.test(title)
       ? 'log-out'
-      : /manage|inventory|stock|product/i.test(typeof message === 'string' ? message : '') ||
-        /manage/i.test(title)
-      ? 'package'
-      : config.defaultIcon);
+      : config.icon);
+  const showIcon = Boolean(customIcon || icon || type === 'danger' || type === 'warning' || type === 'success');
 
-  // Smart default confirm button label
   const resolvedConfirmText =
     confirmText ||
     (type === 'danger' && /delete/i.test(title)
@@ -193,54 +139,33 @@ export function ConfirmationModal({
       : type === 'danger' && /remove/i.test(title)
       ? 'Remove'
       : type === 'danger' && /sign out/i.test(title)
-      ? 'Sign Out'
+      ? 'Sign out'
       : 'Confirm');
-
-  const resolvedConfirmVariant = confirmVariant || config.confirmVariant;
+  const resolvedConfirmVariant = confirmVariant || config.confirm;
 
   useEffect(() => {
     if (visible) {
-      iconScaleAnim.setValue(0.5);
-      Animated.parallel([
-        Animated.timing(opacityAnim, {
-          toValue: 1,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 70,
-          friction: 8,
-          useNativeDriver: true,
-        }),
-        Animated.sequence([
-          Animated.delay(40),
-          Animated.spring(iconScaleAnim, {
-            toValue: 1,
-            friction: 4,
-            tension: 90,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]).start();
+      progress.setValue(0);
+      Animated.timing(progress, {
+        toValue: 1,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+      if (type === 'danger' || type === 'warning') haptics.warning();
     } else {
-      scaleAnim.setValue(0.94);
-      opacityAnim.setValue(0);
-      iconScaleAnim.setValue(0.5);
       setInternalLoading(false);
+      setPressedKey(null);
     }
-  }, [visible, opacityAnim, scaleAnim, iconScaleAnim]);
+  }, [visible, progress, type]);
 
-  const handleConfirm = async () => {
+  const run = async (key: string, fn?: () => void | Promise<void>) => {
     if (isSubmitting || disabled) return;
+    setPressedKey(key);
     try {
       setInternalLoading(true);
-      if (onConfirm) {
-        const result = onConfirm();
-        if (result && typeof (result as any).then === 'function') {
-          await result;
-        }
-      }
+      const result = fn?.();
+      if (result && typeof (result as any).then === 'function') await result;
     } finally {
       setInternalLoading(false);
     }
@@ -248,487 +173,114 @@ export function ConfirmationModal({
 
   const handleCancel = () => {
     if (isSubmitting) return;
-    if (onCancel) {
-      onCancel();
-    }
+    onCancel?.();
   };
 
-  const handleCustomButtonPress = async (btn: ConfirmationModalButton) => {
-    if (isSubmitting || disabled) return;
-    try {
-      setInternalLoading(true);
-      if (btn.onPress) {
-        const res = btn.onPress();
-        if (res && typeof (res as any).then === 'function') {
-          await res;
-        }
-      }
-    } finally {
-      setInternalLoading(false);
+  // Normalise every input shape into one ordered list of buttons.
+  let list: NormalizedButton[] = [];
+  if (buttons && buttons.length > 0) {
+    list = buttons.map((btn, i) => {
+      const isCancel = btn.style === 'cancel';
+      const variant: ConfirmationButtonVariant | 'cancel' =
+        btn.variant || (btn.style === 'destructive' ? 'danger' : isCancel ? 'cancel' : resolvedConfirmVariant);
+      return {
+        key: `b${i}`,
+        text: btn.text,
+        isCancel,
+        colors: BUTTON_COLORS[variant] ?? BUTTON_COLORS.primary,
+        onPress: () => run(`b${i}`, btn.onPress),
+      };
+    });
+  } else {
+    if (cancelText) {
+      list.push({ key: 'cancel', text: cancelText, isCancel: true, colors: BUTTON_COLORS.cancel, onPress: handleCancel });
     }
-  };
+    list.push({
+      key: 'confirm',
+      text: resolvedConfirmText,
+      isCancel: false,
+      colors: BUTTON_COLORS[resolvedConfirmVariant] ?? BUTTON_COLORS.primary,
+      onPress: () => run('confirm', onConfirm),
+    });
+  }
 
-  const handleBackdropPress = () => {
-    if (dismissOnBackdropPress && !isSubmitting) {
-      handleCancel();
-    }
-  };
-
-  const hasCancelButton = cancelText !== undefined && cancelText !== null && cancelText !== '';
-
-  const confirmBtnStyles = BUTTON_COLORS[resolvedConfirmVariant] || BUTTON_COLORS.primary;
-
-  const renderButtons = () => {
-    if (buttons && buttons.length > 0) {
-      if (buttons.length === 1) {
-        const btn = buttons[0];
-        const isCancel = btn.style === 'cancel';
-        const isDestructive = btn.style === 'destructive';
-        const variant: ConfirmationButtonVariant =
-          btn.variant ||
-          (isDestructive ? 'danger' : isCancel ? 'secondary' : resolvedConfirmVariant);
-        const btnColors = BUTTON_COLORS[variant] || BUTTON_COLORS.primary;
-
-        return (
-          <View style={styles.buttonFullWidth}>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonFullWidth,
-                isCancel
-                  ? styles.cancelButton
-                  : {
-                      backgroundColor: btnColors.bg,
-                      borderColor: btnColors.border || btnColors.bg,
-                    },
-                (isSubmitting || disabled) && styles.buttonDisabled,
-              ]}
-              onPress={() => handleCustomButtonPress(btn)}
-              disabled={isSubmitting || disabled}
-              activeOpacity={0.7}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color={btnColors.text} size="small" />
-              ) : (
-                <Text
-                  style={
-                    isCancel
-                      ? styles.cancelButtonText
-                      : [styles.confirmButtonText, { color: btnColors.text }]
-                  }
-                >
-                  {btn.text}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        );
-      }
-
-      if (buttons.length === 2) {
-        const isStacked = shouldStackTwoButtons(
-          buttons[0].text,
-          buttons[1].text,
-          buttonLayout
-        );
-
-        if (isStacked) {
-          // When stacked vertically:
-          // Place primary/destructive action at top, and cancel/dismiss at bottom.
-          // If neither is cancel, preserve array order.
-          const hasCancel = buttons[0].style === 'cancel' || buttons[1].style === 'cancel';
-          const topBtn = hasCancel
-            ? (buttons[0].style === 'cancel' ? buttons[1] : buttons[0])
-            : buttons[0];
-          const bottomBtn = topBtn === buttons[0] ? buttons[1] : buttons[0];
-
-          const topIsCancel = topBtn.style === 'cancel';
-          const topIsDestructive = topBtn.style === 'destructive';
-          const topVariant: ConfirmationButtonVariant =
-            topBtn.variant ||
-            (topIsDestructive ? 'danger' : topIsCancel ? 'secondary' : resolvedConfirmVariant);
-          const topColors = BUTTON_COLORS[topVariant] || BUTTON_COLORS.primary;
-
-          const bottomIsCancel = bottomBtn.style === 'cancel';
-          const bottomIsDestructive = bottomBtn.style === 'destructive';
-          const bottomVariant: ConfirmationButtonVariant =
-            bottomBtn.variant ||
-            (bottomIsDestructive ? 'danger' : bottomIsCancel ? 'secondary' : 'secondary');
-          const bottomColors = BUTTON_COLORS[bottomVariant] || BUTTON_COLORS.secondary;
-
-          return (
-            <View style={styles.buttonColumn}>
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  styles.buttonFullWidth,
-                  topIsCancel
-                    ? styles.cancelButton
-                    : {
-                        backgroundColor: topColors.bg,
-                        borderColor: topColors.border || topColors.bg,
-                      },
-                  (isSubmitting || disabled) && styles.buttonDisabled,
-                ]}
-                onPress={() => handleCustomButtonPress(topBtn)}
-                disabled={isSubmitting || disabled}
-                activeOpacity={0.7}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator color={topColors.text} size="small" />
-                ) : (
-                  <Text
-                    style={
-                      topIsCancel
-                        ? styles.cancelButtonText
-                        : [styles.confirmButtonText, { color: topColors.text }]
-                    }
-                  >
-                    {topBtn.text}
-                  </Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  styles.buttonFullWidth,
-                  bottomIsCancel
-                    ? styles.cancelButton
-                    : {
-                        backgroundColor: bottomColors.bg,
-                        borderColor: bottomColors.border || bottomColors.bg,
-                      },
-                  (isSubmitting || disabled) && styles.buttonDisabled,
-                ]}
-                onPress={() => handleCustomButtonPress(bottomBtn)}
-                disabled={isSubmitting || disabled}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={
-                    bottomIsCancel
-                      ? styles.cancelButtonText
-                      : [styles.confirmButtonText, { color: bottomColors.text }]
-                  }
-                >
-                  {bottomBtn.text}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          );
-        }
-
-        // Side-by-side row layout (left = cancel/secondary, right = confirm/action)
-        const leftBtn =
-          buttons[0].style === 'cancel'
-            ? buttons[0]
-            : buttons[1].style === 'cancel'
-            ? buttons[1]
-            : buttons[0];
-        const rightBtn = leftBtn === buttons[0] ? buttons[1] : buttons[0];
-
-        const leftIsCancel = leftBtn.style === 'cancel';
-        const leftVariant: ConfirmationButtonVariant =
-          leftBtn.variant || (leftIsCancel ? 'secondary' : 'primary');
-        const leftColors = BUTTON_COLORS[leftVariant] || BUTTON_COLORS.secondary;
-
-        const rightIsDestructive = rightBtn.style === 'destructive';
-        const rightVariant: ConfirmationButtonVariant =
-          rightBtn.variant || (rightIsDestructive ? 'danger' : resolvedConfirmVariant);
-        const rightColors = BUTTON_COLORS[rightVariant] || BUTTON_COLORS.primary;
-
-        return (
-          <View style={styles.buttonRow}>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonInRow,
-                leftIsCancel
-                  ? styles.cancelButton
-                  : {
-                      backgroundColor: leftColors.bg,
-                      borderColor: leftColors.border || leftColors.bg,
-                    },
-                (isSubmitting || disabled) && styles.buttonDisabled,
-              ]}
-              onPress={() => handleCustomButtonPress(leftBtn)}
-              disabled={isSubmitting || disabled}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={
-                  leftIsCancel
-                    ? styles.cancelButtonText
-                    : [styles.confirmButtonText, { color: leftColors.text }]
-                }
-              >
-                {leftBtn.text}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonInRow,
-                {
-                  backgroundColor: rightColors.bg,
-                  borderColor: rightColors.border || rightColors.bg,
-                },
-                (isSubmitting || disabled) && styles.buttonDisabled,
-              ]}
-              onPress={() => handleCustomButtonPress(rightBtn)}
-              disabled={isSubmitting || disabled}
-              activeOpacity={0.7}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color={rightColors.text} size="small" />
-              ) : (
-                <Text
-                  style={[styles.confirmButtonText, { color: rightColors.text }]}
-                >
-                  {rightBtn.text}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        );
-      }
-
-      return (
-        <View style={styles.buttonColumn}>
-          {buttons.map((btn: ConfirmationModalButton, index: number) => {
-            const isCancel = btn.style === 'cancel';
-            const isDestructive = btn.style === 'destructive';
-            const variant: ConfirmationButtonVariant =
-              btn.variant ||
-              (isDestructive
-                ? 'danger'
-                : isCancel
-                ? 'secondary'
-                : 'primary');
-            const btnColors = BUTTON_COLORS[variant] || BUTTON_COLORS.primary;
-
-            return (
-              <TouchableOpacity
-                key={index}
-                style={[
-                  styles.button,
-                  styles.buttonFullWidth,
-                  isCancel
-                    ? styles.cancelButton
-                    : {
-                        backgroundColor: btnColors.bg,
-                        borderColor: btnColors.border || btnColors.bg,
-                      },
-                  (isSubmitting || disabled) && styles.buttonDisabled,
-                ]}
-                onPress={() => handleCustomButtonPress(btn)}
-                disabled={isSubmitting || disabled}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={
-                    isCancel
-                      ? styles.cancelButtonText
-                      : [styles.confirmButtonText, { color: btnColors.text }]
-                  }
-                >
-                  {btn.text}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      );
-    }
-
-    if (hasCancelButton) {
-      const isStacked = shouldStackTwoButtons(
-        cancelText,
-        resolvedConfirmText,
-        buttonLayout
-      );
-
-      if (isStacked) {
-        return (
-          <View style={styles.buttonColumn}>
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonFullWidth,
-                {
-                  backgroundColor: confirmBtnStyles.bg,
-                  borderColor: confirmBtnStyles.border || confirmBtnStyles.bg,
-                },
-                (isSubmitting || disabled) && styles.buttonDisabled,
-              ]}
-              onPress={handleConfirm}
-              disabled={isSubmitting || disabled}
-              activeOpacity={0.7}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color={confirmBtnStyles.text} size="small" />
-              ) : (
-                <Text
-                  style={[styles.confirmButtonText, { color: confirmBtnStyles.text }]}
-                >
-                  {resolvedConfirmText}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.button,
-                styles.buttonFullWidth,
-                styles.cancelButton,
-                isSubmitting && styles.buttonDisabled,
-              ]}
-              onPress={handleCancel}
-              disabled={isSubmitting}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.cancelButtonText}>{cancelText || 'Cancel'}</Text>
-            </TouchableOpacity>
-          </View>
-        );
-      }
-
-      return (
-        <View style={styles.buttonRow}>
-          <TouchableOpacity
-            style={[
-              styles.button,
-              styles.buttonInRow,
-              styles.cancelButton,
-              isSubmitting && styles.buttonDisabled,
-            ]}
-            onPress={handleCancel}
-            disabled={isSubmitting}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.cancelButtonText}>{cancelText || 'Cancel'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.button,
-              styles.buttonInRow,
-              {
-                backgroundColor: confirmBtnStyles.bg,
-                borderColor: confirmBtnStyles.border || confirmBtnStyles.bg,
-              },
-              (isSubmitting || disabled) && styles.buttonDisabled,
-            ]}
-            onPress={handleConfirm}
-            disabled={isSubmitting || disabled}
-            activeOpacity={0.7}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color={confirmBtnStyles.text} size="small" />
-            ) : (
-              <Text
-                style={[styles.confirmButtonText, { color: confirmBtnStyles.text }]}
-              >
-                {resolvedConfirmText}
-              </Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    // Single confirm button (no cancel)
-    return (
-      <View style={styles.buttonFullWidth}>
-        <TouchableOpacity
-          style={[
-            styles.button,
-            styles.buttonFullWidth,
-            {
-              backgroundColor: confirmBtnStyles.bg,
-              borderColor: confirmBtnStyles.border || confirmBtnStyles.bg,
-            },
-            (isSubmitting || disabled) && styles.buttonDisabled,
-          ]}
-          onPress={handleConfirm}
-          disabled={isSubmitting || disabled}
-          activeOpacity={0.7}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color={confirmBtnStyles.text} size="small" />
-          ) : (
-            <Text
-              style={[styles.confirmButtonText, { color: confirmBtnStyles.text }]}
-            >
-              {resolvedConfirmText}
-            </Text>
-          )}
-        </TouchableOpacity>
-      </View>
-    );
-  };
+  const stacked =
+    list.length > 2 || (list.length === 2 && shouldStackTwoButtons(list[0].text, list[1].text, buttonLayout));
+  if (stacked) {
+    // Primary actions first, the way out last.
+    list = [...list.filter((b) => !b.isCancel), ...list.filter((b) => b.isCancel)];
+  } else if (list.length === 2) {
+    // Side by side: the way out on the left.
+    list = [...list.filter((b) => b.isCancel), ...list.filter((b) => !b.isCancel)];
+  }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      statusBarTranslucent
-      onRequestClose={handleCancel}
-      testID={testID}
-    >
-      <Pressable style={styles.backdrop} onPress={handleBackdropPress}>
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleCancel} testID={testID}>
+      <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={() => dismissOnBackdropPress && handleCancel()} />
         <Animated.View
           style={[
             styles.card,
             {
-              opacity: opacityAnim,
-              transform: [{ scale: scaleAnim }],
+              transform: [
+                { scale: progress.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) },
+                { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
+              ],
             },
           ]}
         >
-          {/* Prevent inner clicks from triggering backdrop dismissal */}
-          <Pressable style={styles.cardContent} onPress={(e) => e.stopPropagation()}>
-            {/* Semantic Icon Badge */}
-            <Animated.View
-              style={[
-                styles.iconBadge,
-                {
-                  backgroundColor: config.bg,
-                  borderColor: config.border,
-                  transform: [{ scale: iconScaleAnim }],
-                },
-              ]}
-            >
-              {customIcon ? (
-                customIcon
-              ) : (
-                <Feather name={resolvedIconName} size={26} color={config.iconColor} />
-              )}
-            </Animated.View>
+          {showIcon ? (
+            <View style={[styles.iconBadge, { backgroundColor: config.tint }]}>
+              {customIcon ?? <Icon name={autoIcon} size={22} color={config.color} backgroundColor={config.tint} />}
+            </View>
+          ) : null}
 
-            {/* Title */}
-            <Text style={styles.title}>{title}</Text>
+          <Text style={styles.title}>{title}</Text>
 
-            {/* Message Body */}
-            {message ? (
-              typeof message === 'string' ? (
-                <Text style={styles.message}>{message}</Text>
-              ) : (
-                <View style={styles.customMessageContainer}>{message}</View>
-              )
-            ) : null}
+          {message ? (
+            typeof message === 'string' ? (
+              <Text style={styles.message}>{message}</Text>
+            ) : (
+              <View style={{ marginTop: 8, alignSelf: 'stretch' }}>{message}</View>
+            )
+          ) : null}
 
-            {/* Custom Content Slot */}
-            {children ? <View style={styles.childrenContainer}>{children}</View> : null}
+          {children ? <View style={{ marginTop: 14, alignSelf: 'stretch' }}>{children}</View> : null}
 
-            {/* Action Buttons */}
-            {renderButtons()}
-          </Pressable>
+          <View style={[styles.buttons, stacked ? styles.column : styles.row]}>
+            {list.map((btn) => {
+              const busy = isSubmitting && pressedKey === btn.key;
+              const inactive = btn.isCancel ? isSubmitting : isSubmitting || disabled;
+              return (
+                <Pressable
+                  key={btn.key}
+                  onPress={btn.onPress}
+                  disabled={inactive}
+                  style={({ pressed }) => [
+                    styles.button,
+                    !stacked && { flex: 1 },
+                    {
+                      backgroundColor: btn.colors.bg,
+                      borderWidth: btn.colors.border ? 1 : 0,
+                      borderColor: btn.colors.border,
+                      opacity: inactive && !busy ? 0.45 : pressed ? 0.85 : 1,
+                      transform: [{ scale: pressed ? 0.98 : 1 }],
+                    },
+                  ]}
+                >
+                  {busy ? (
+                    <ActivityIndicator color={btn.colors.text} size="small" />
+                  ) : (
+                    <Text style={[styles.buttonText, { color: btn.colors.text }]} numberOfLines={1}>
+                      {btn.text}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
         </Animated.View>
-      </Pressable>
+      </Animated.View>
     </Modal>
   );
 }
@@ -736,110 +288,60 @@ export function ConfirmationModal({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 20, 50, 0.48)',
-    justifyContent: 'center',
+    backgroundColor: COLORS.scrim,
     alignItems: 'center',
-    padding: 24,
+    justifyContent: 'center',
+    padding: SP.xl,
   },
   card: {
     width: '100%',
-    maxWidth: 356,
+    maxWidth: 380,
     backgroundColor: COLORS.card,
-    borderRadius: RADIUS.xl,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: COLORS.border,
-    padding: 24,
-    shadowColor: '#002040',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  cardContent: {
+    borderRadius: 26,
+    borderCurve: 'continuous',
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 18,
     alignItems: 'center',
-    width: '100%',
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.16,
+    shadowRadius: 32,
+    elevation: 12,
   },
   iconBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: StyleSheet.hairlineWidth,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   title: {
     fontSize: 18,
-    fontFamily: FONT.bold,
+    fontFamily: FONT.semiBold,
     color: COLORS.text.primary,
     textAlign: 'center',
-    marginBottom: 8,
-    lineHeight: 24,
+    letterSpacing: -0.3,
   },
   message: {
-    fontSize: 14,
+    marginTop: 8,
+    fontSize: 14.5,
+    lineHeight: 21,
     fontFamily: FONT.regular,
-    color: '#4A5568',
+    color: COLORS.text.secondary,
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
   },
-  customMessageContainer: {
-    marginBottom: 20,
-    width: '100%',
-  },
-  childrenContainer: {
-    width: '100%',
-    marginBottom: 20,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    gap: 12,
-    width: '100%',
-  },
-  buttonColumn: {
-    width: '100%',
-    gap: 10,
-  },
+  buttons: { alignSelf: 'stretch', marginTop: 22, gap: 8 },
+  row: { flexDirection: 'row' },
+  column: { flexDirection: 'column' },
   button: {
     minHeight: 48,
-    borderRadius: RADIUS.md,
+    borderRadius: 14,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
   },
-  buttonInRow: {
-    flex: 1,
-  },
-  buttonFullWidth: {
-    width: '100%',
-  },
-  cancelButton: {
-    backgroundColor: COLORS.card,
-    borderColor: COLORS.border,
-  },
-  cancelButtonText: {
-    fontSize: 14,
-    fontFamily: FONT.medium,
-    color: COLORS.text.primary,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  confirmButtonText: {
-    fontSize: 14,
-    fontFamily: FONT.medium,
-    letterSpacing: 0.1,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  buttonDisabled: {
-    opacity: 0.55,
-  },
+  buttonText: { fontSize: 15.5, fontFamily: FONT.semiBold, letterSpacing: -0.2 },
 });
-
-// Backward compatibility aliases
-export type ConfirmDialogProps = ConfirmationModalProps;
-export const ConfirmDialog = ConfirmationModal;
-

@@ -1,58 +1,58 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { AppState, View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated, Pressable, InteractionManager, StyleSheet } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AppState, InteractionManager, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { format, startOfDay, endOfDay } from 'date-fns';
-import { useAuthStore } from '@/store/authStore';
+import { StatusBar } from 'expo-status-bar';
+import { format } from 'date-fns';
+import { Icon, IconName } from '@/components/icons';
+import { Avatar, IconButton, PressableScale, Skeleton } from '@/components/ui';
+import { BusinessAvatar } from '@/components/layout';
+import { BranchPill, BranchSwitcherSheet } from '@/components/branches/BranchSwitcher';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { canViewFinancialData } from '@/lib/permissions';
+import { flushOfflineQueue, retryAllSyncConflicts } from '@/lib/offlineStore';
+import { useAuthStore } from '@/store/authStore';
+import { useBusinessStore } from '@/store/businessStore';
+import { useDashboardStore } from '@/store/dashboardStore';
+import { useNotificationStore } from '@/store/notificationStore';
 import { useOfflineStore } from '@/store/offlineStore';
 import { useTabStore } from '@/store/tabStore';
-import { useBusinessStore } from '@/store/businessStore';
-import { flushOfflineQueue, retryAllSyncConflicts } from '@/lib/offlineStore';
-import { supabase } from '@/lib/supabase';
-import { fetchRevenueActivities } from '@/lib/revenue';
-import { isDebtSettlementSale } from '@/lib/records';
-import { useDashboardStore } from '@/store/dashboardStore';
-import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { Badge, Card, EmptyState, LoadingScreen, SectionHeader, StatCard, PaymentSummary, SmartChip, PressableScale } from '@/components/ui';
-import { BrandMark, ScreenShell, ScreenHeader, HeaderAction, BusinessAvatar } from '@/components/layout';
-import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
-import { useNotificationStore } from '@/store/notificationStore';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP, TYPE } from '@/constants';
-import { CustomerDebt, DashboardStats, RevenueActivity } from '@/types';
+import { COLORS, CURRENCY_SYMBOL, FONT, SP, TYPE } from '@/constants';
+import { RevenueActivity } from '@/types';
 
-// Formats with 2 decimal places for the hero number
-const fmtFull = (value: number) =>
-  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (value: number, decimals = 0) =>
+  `${CURRENCY_SYMBOL}${Math.abs(value).toLocaleString('en-NG', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`;
 
-// Compact format for secondary stats
-const fmt = (value: number) =>
-  `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const greeting = () => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+};
+
+const QUICK_ACTIONS: { icon: IconName; label: string; route: string; primary?: boolean }[] = [
+  { icon: 'receipt', label: 'Sell', route: '/(app)/record-sale', primary: true },
+  { icon: 'box', label: 'Add stock', route: '/(app)/add-stock' },
+  { icon: 'cash', label: 'Expense', route: '/(app)/record-expense' },
+  { icon: 'user', label: 'Debt', route: '/(app)/record-debt' },
+];
 
 function DashboardScreen() {
   const insets = useSafeAreaInsets();
-  // Use ID-only selectors — stable primitives that don't change reference on unrelated store updates
   const userId = useAuthStore((s) => s.user?.id);
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const businessName = useAuthStore((s) => s.currentBusiness?.name) ?? 'My Business';
   const businessLogoUrl = useAuthStore((s) => s.currentBusiness?.logo_url);
   const branchId = useAuthStore((s) => s.currentBranch?.id);
-  const branchName = useAuthStore((s) => s.currentBranch?.name);
   const userRole = useAuthStore((s) => s.userRole);
   const canViewCosts = canViewFinancialData(userRole);
-  const profileName = useAuthStore((s) => s.profile?.full_name);
-  const branches = useBusinessStore((s) => s.branches);
+  const firstName = useAuthStore((s) => s.profile?.full_name?.trim().split(/\s+/)[0]);
   const getStockAlerts = useBusinessStore((s) => s.getStockAlerts);
 
-  const notifications = useNotificationStore((s) => s.notifications);
-  const unreadCount = notifications.filter((n) => !n.read).length;
-
-  useEffect(() => {
-    if (userId) {
-      useNotificationStore.getState().loadNotifications(userId);
-    }
-  }, [userId]);
+  const unreadCount = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
 
   const stats = useDashboardStore((s) => s.stats);
   const recentActivities = useDashboardStore((s) => s.recentActivities);
@@ -60,63 +60,51 @@ function DashboardScreen() {
   const fetchDashboardData = useDashboardStore((s) => s.fetchDashboardData);
   const revenueVisible = useDashboardStore((s) => s.revenueVisible);
   const toggleRevenueVisibility = useDashboardStore((s) => s.toggleRevenueVisibility);
-  const [refreshing, setRefreshing] = useState(false);
 
   const isOnline = useOfflineStore((s) => s.isOnline);
   const isSyncing = useOfflineStore((s) => s.isSyncing);
   const pendingCount = useOfflineStore((s) => s.pendingCount);
   const conflictCount = useOfflineStore((s) => s.conflictCount);
 
+  const [refreshing, setRefreshing] = useState(false);
+  const [branchSheet, setBranchSheet] = useState(false);
+
+  useEffect(() => {
+    if (userId) useNotificationStore.getState().loadNotifications(userId);
+  }, [userId]);
+
   useEffect(() => {
     useDashboardStore.getState().loadRevenueVisibility(businessId);
   }, [businessId]);
 
-  // Deps are stable primitives (IDs), so this callback only recreates when business/branch actually changes
   const fetchData = useCallback(async () => {
     if (!businessId || !branchId) return;
     await fetchDashboardData(businessId, branchId, getStockAlerts);
     setRefreshing(false);
   }, [businessId, branchId, getStockAlerts, fetchDashboardData]);
 
-  // Refetch when the dashboard tab becomes active — without subscribing to activeTab
-  // (subscribing would re-render this entire heavy component on EVERY tab switch)
+  // Refetch when Home becomes the active tab, on mount, and on app resume.
   useEffect(() => {
-    let fetchTimeout: ReturnType<typeof setTimeout>;
+    let timer: ReturnType<typeof setTimeout>;
     const unsub = useTabStore.subscribe(
       (state) => state.activeTab,
-      (activeTab, prevActiveTab) => {
-        // Clear any pending fetch from a previous rapid tap
-        clearTimeout(fetchTimeout);
-        if (activeTab === 'dashboard' && prevActiveTab !== 'dashboard') {
-          // Debounce: wait 150ms before fetching, so rapid tapping through
-          // the dashboard tab doesn't queue up multiple network requests
-          fetchTimeout = setTimeout(() => {
-            InteractionManager.runAfterInteractions(() => {
-              fetchData();
-            });
-          }, 150);
+      (activeTab, prev) => {
+        clearTimeout(timer);
+        if (activeTab === 'dashboard' && prev !== 'dashboard') {
+          timer = setTimeout(() => InteractionManager.runAfterInteractions(() => fetchData()), 150);
         }
-      }
+      },
     );
-    // Also fetch on initial mount
-    InteractionManager.runAfterInteractions(() => {
-      fetchData();
+    InteractionManager.runAfterInteractions(() => fetchData());
+    const appState = AppState.addEventListener('change', (next) => {
+      if (next === 'active') fetchData();
     });
-
-    const appStateSub = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active') {
-        fetchData();
-      }
-    });
-
     return () => {
-      clearTimeout(fetchTimeout);
-      appStateSub.remove();
+      clearTimeout(timer);
+      appState.remove();
       unsub();
     };
   }, [fetchData]);
-
-  // Refetch handled by subscribe above — no focus listener needed
 
   useRealtimeRefresh({
     channelName: `dashboard-${branchId ?? 'unknown'}`,
@@ -136,668 +124,377 @@ function DashboardScreen() {
     onRefresh: fetchData,
   });
 
-  const greeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
+  const todayKey = format(new Date(), 'yyyy-MM-dd');
+  const todaySalesCount = useMemo(
+    () =>
+      Math.max(
+        stats?.today_sales_count ?? 0,
+        recentActivities.filter((a) => {
+          try {
+            return format(new Date(a.created_at), 'yyyy-MM-dd') === todayKey;
+          } catch {
+            return false;
+          }
+        }).length,
+      ),
+    [stats?.today_sales_count, recentActivities, todayKey],
+  );
+
+  const outOfStock = stats?.out_of_stock_count ?? 0;
+  const lowStock = stats?.low_stock_count ?? 0;
+  const outstanding = stats?.outstanding_debts ?? 0;
+  const unsynced = pendingCount + conflictCount;
+  const overdueDebts = useMemo(
+    () => recentDebts.filter((d) => d.due_date && new Date(d.due_date) < new Date() && d.status !== 'settled').length,
+    [recentDebts],
+  );
+
+  const retrySync = async () => {
+    if (conflictCount > 0) await retryAllSyncConflicts();
+    await flushOfflineQueue();
+    await fetchData();
   };
 
-  // Derive a simple visual trend direction for profit
-  const profitPositive = (stats?.today_profit ?? 0) >= 0;
-  const profitRatio =
-    (stats?.today_sales ?? 0) > 0
-      ? Math.min(((stats?.today_profit ?? 0) / (stats?.today_sales ?? 1)) * 100, 100)
-      : 0;
-  const outOfStockCount = stats?.out_of_stock_count ?? 0;
-  const lowStockCount = stats?.low_stock_count ?? 0;
-  const hasStockAlerts = outOfStockCount > 0 || lowStockCount > 0;
+  // ── Attention list: only what genuinely needs a decision ───────────────────
+  const attention: { key: string; icon: IconName; tone: 'danger' | 'warning' | 'neutral'; title: string; detail: string; onPress: () => void }[] = [];
+  if (unsynced > 0) {
+    attention.push({
+      key: 'sync',
+      icon: isSyncing ? 'refresh-cw' : 'upload-cloud',
+      tone: conflictCount > 0 ? 'danger' : 'neutral',
+      title: isSyncing ? 'Syncing your records…' : `${unsynced} ${unsynced === 1 ? 'record' : 'records'} not yet synced`,
+      detail: isOnline ? 'Tap to sync now' : 'Will sync when you are back online',
+      onPress: retrySync,
+    });
+  }
+  if (outOfStock > 0) {
+    attention.push({
+      key: 'out',
+      icon: 'alert-circle',
+      tone: 'danger',
+      title: `${outOfStock} ${outOfStock === 1 ? 'product is' : 'products are'} out of stock`,
+      detail: 'Restock before customers ask',
+      onPress: () => useTabStore.getState().setActiveTab('inventory'),
+    });
+  }
+  if (lowStock > 0) {
+    attention.push({
+      key: 'low',
+      icon: 'box',
+      tone: 'warning',
+      title: `${lowStock} running low`,
+      detail: 'Review stock levels',
+      onPress: () => useTabStore.getState().setActiveTab('inventory'),
+    });
+  }
+  if (overdueDebts > 0 || outstanding > 0) {
+    attention.push({
+      key: 'debts',
+      icon: 'clock',
+      tone: overdueDebts > 0 ? 'warning' : 'neutral',
+      title: overdueDebts > 0 ? `${overdueDebts} overdue ${overdueDebts === 1 ? 'debt' : 'debts'}` : 'Money owed to you',
+      detail: revenueVisible ? `${money(outstanding)} outstanding` : 'Outstanding balance hidden',
+      onPress: () => router.push('/(app)/debts' as any),
+    });
+  }
 
-  const todaySalesCount = Math.max(
-    stats?.today_sales_count ?? 0,
-    recentActivities.filter((a) => {
-      try {
-        return format(new Date(a.created_at), 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
-      } catch {
-        return false;
-      }
-    }).length
-  );
-
-  // ─── Micro-animations ───────────────────────────────────────────────────────
-  const revenueAnim = useRef(new Animated.Value(1)).current;
-  const alertAnim = useRef(new Animated.Value(hasStockAlerts ? 1 : 0)).current;
-
-  // Revenue privacy toggle transition
-  const isFirstRevenueMount = useRef(true);
-  useEffect(() => {
-    if (isFirstRevenueMount.current) {
-      isFirstRevenueMount.current = false;
-      return;
-    }
-    revenueAnim.setValue(0.8);
-    Animated.spring(revenueAnim, {
-      toValue: 1,
-      speed: 28,
-      bounciness: 6,
-      useNativeDriver: true,
-    }).start();
-  }, [revenueVisible, revenueAnim]);
-
-  // Stock alert slide entrance
-  useEffect(() => {
-    if (hasStockAlerts) {
-      Animated.spring(alertAnim, {
-        toValue: 1,
-        bounciness: 6,
-        speed: 18,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      alertAnim.setValue(0);
-    }
-  }, [hasStockAlerts, alertAnim]);
-
-  // Render instantly without blocking UI. RefreshControl will indicate background fetching.
+  const todaySales = stats?.today_sales ?? 0;
+  const [whole, cents] = money(todaySales, 2).split('.');
+  const profit = stats?.today_profit ?? 0;
 
   return (
-    <SwipeableTabScreen name="dashboard">
-      <ScreenShell backgroundColor={COLORS.ink} statusBarStyle="light">
-        <ScreenHeader
-          title={`${greeting()}`}
-          titleStyle={{ fontSize: 21, fontFamily: FONT.bold, letterSpacing: -0.3 }}
-          subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEE, d MMM')}${branchName ? ` · ${branchName}` : ''}`}
-          theme="dark"
-          left={
-            <TouchableOpacity activeOpacity={0.75} onPress={() => router.push('/(app)/settings')}>
-              <BusinessAvatar name={businessName} logoUrl={businessLogoUrl} size={38} />
-            </TouchableOpacity>
-          }
-          right={
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              {!isOnline ? (
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => router.push('/(app)/settings')}
-                  style={{
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    width: 36,
-                    height: 36,
-                    borderRadius: RADIUS.full,
-                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                  }}
-                >
-                  <Feather name="wifi-off" size={15} color={COLORS.danger} />
-                </TouchableOpacity>
-              ) : null}
-
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={() => router.push('/(app)/notifications')}
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: RADIUS.full,
-                  backgroundColor: 'rgba(255, 255, 255, 0.12)',
-                  borderWidth: 1,
-                  borderColor: 'rgba(255, 255, 255, 0.18)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  position: 'relative',
-                }}
-              >
-                <Feather name="bell" size={17} color="#FFFFFF" />
-                {unreadCount > 0 ? (
-                  <View
-                    style={{
-                      position: 'absolute',
-                      top: -2,
-                      right: -2,
-                      backgroundColor: COLORS.danger,
-                      borderRadius: RADIUS.full,
-                      minWidth: 16,
-                      height: 16,
-                      paddingHorizontal: 3,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderWidth: 1.5,
-                      borderColor: COLORS.ink,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: '#FFFFFF',
-                        fontSize: 9.5,
-                        fontFamily: FONT.bold,
-                      }}
-                    >
-                      {unreadCount > 99 ? '99+' : unreadCount}
-                    </Text>
-                  </View>
-                ) : null}
-              </TouchableOpacity>
-            </View>
-          }
-        />
-
-        <ScrollView
-          style={{ flex: 1, backgroundColor: COLORS.surface }}
-          contentContainerStyle={{ paddingBottom: insets.bottom + 92 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                fetchData();
-              }}
-              tintColor={COLORS.accent}
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Top overscroll background filler so pulling/bouncing down never exposes a white gap */}
-          <View
-            style={{
-              position: 'absolute',
-              top: -1000,
-              left: 0,
-              right: 0,
-              height: 1002,
-              backgroundColor: COLORS.ink,
+    <View style={{ flex: 1, backgroundColor: COLORS.surface }}>
+      <StatusBar style="dark" />
+      <ScrollView
+        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 110 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchData();
             }}
+            tintColor={COLORS.text.muted}
+            colors={[COLORS.accent]}
+            progressViewOffset={insets.top}
           />
-
-          {/* ── Executive Hero Card ───────────────────────────────────────── */}
-          <View
-            style={{
-              backgroundColor: COLORS.ink,
-              paddingHorizontal: SP.page,
-              paddingTop: 8,
-              paddingBottom: 24,
-              borderBottomLeftRadius: RADIUS.xl,
-              borderBottomRightRadius: RADIUS.xl,
-            }}
-          >
-            {(userRole === 'owner' || branches.length > 1) && branchName ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <TouchableOpacity
-                  activeOpacity={0.75}
-                  disabled={userRole !== 'owner'}
-                  onPress={() => router.push('/(app)/branches' as any)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 6,
-                    paddingHorizontal: 10,
-                    paddingVertical: 5,
-                    borderRadius: RADIUS.full,
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: 'rgba(255, 255, 255, 0.18)',
-                  }}
-                >
-                  <Feather name="map-pin" size={12} color={COLORS.gold} />
-                  <Text style={{ fontFamily: FONT.semiBold, fontSize: 12, color: '#FFFFFF' }}>
-                    {branchName}
-                  </Text>
-                  {userRole === 'owner' ? (
-                    <Feather name="chevron-right" size={12} color="rgba(255,255,255,0.7)" />
-                  ) : null}
-                </TouchableOpacity>
-
-                {pendingCount > 0 || conflictCount > 0 ? (
-                  <TouchableOpacity
-                    activeOpacity={0.75}
-                    onPress={async () => {
-                      if (conflictCount > 0) await retryAllSyncConflicts();
-                      await flushOfflineQueue();
-                      await fetchData();
-                    }}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 5,
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
-                      borderRadius: RADIUS.full,
-                      backgroundColor: conflictCount > 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
-                    }}
-                  >
-                    <Feather
-                      name={isSyncing ? 'refresh-cw' : 'upload-cloud'}
-                      size={12}
-                      color={conflictCount > 0 ? '#FCA5A5' : '#FCD34D'}
-                    />
-                    <Text
-                      style={{
-                        fontFamily: FONT.semiBold,
-                        fontSize: 11,
-                        color: conflictCount > 0 ? '#FECACA' : '#FDE68A',
-                      }}
-                    >
-                      {isSyncing
-                        ? 'Syncing...'
-                        : `${pendingCount + conflictCount} unsynced · Retry`}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-            ) : pendingCount > 0 || conflictCount > 0 ? (
-              <TouchableOpacity
-                activeOpacity={0.75}
-                onPress={async () => {
-                  if (conflictCount > 0) await retryAllSyncConflicts();
-                  await flushOfflineQueue();
-                  await fetchData();
-                }}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 10,
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: RADIUS.md,
-                  backgroundColor: conflictCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.18)',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Feather
-                    name={isSyncing ? 'refresh-cw' : 'upload-cloud'}
-                    size={13}
-                    color={conflictCount > 0 ? '#FCA5A5' : '#FCD34D'}
-                  />
-                  <Text style={{ fontFamily: FONT.semiBold, fontSize: 12, color: '#FFFFFF' }}>
-                    {isSyncing
-                      ? 'Syncing records...'
-                      : `${pendingCount + conflictCount} record${pendingCount + conflictCount === 1 ? '' : 's'} waiting to sync`}
-                  </Text>
-                </View>
-                <Text style={{ fontFamily: FONT.bold, fontSize: 12, color: COLORS.gold }}>
-                  Sync Now
-                </Text>
-              </TouchableOpacity>
+        }
+      >
+        {/* ── Header ─────────────────────────────────────────────────── */}
+        <View style={styles.header}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.date}>{format(new Date(), 'EEEE, d MMMM')}</Text>
+            <Text style={styles.greeting} numberOfLines={2}>
+              {greeting()}
+              {firstName ? `, ${firstName}` : ''}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingTop: 2 }}>
+            {!isOnline ? (
+              <IconButton icon="wifi-off" variant="tinted" color={COLORS.danger} onPress={() => router.push('/(app)/settings')} accessibilityLabel="Offline" />
             ) : null}
+            <IconButton
+              icon="bell"
+              variant="outline"
+              badge={unreadCount > 0 ? unreadCount : undefined}
+              onPress={() => router.push('/(app)/notifications')}
+              accessibilityLabel="Notifications"
+            />
+            <PressableScale onPress={() => router.push('/(app)/settings')} activeScale={0.92} accessibilityLabel="Business settings">
+              <BusinessAvatar name={businessName} logoUrl={businessLogoUrl} size={38} />
+            </PressableScale>
+          </View>
+        </View>
 
-            {/* Balance Card Container */}
-            <View
-              style={{
-                backgroundColor: 'rgba(255, 255, 255, 0.08)',
-                borderRadius: RADIUS.lg,
-                borderWidth: StyleSheet.hairlineWidth,
-                borderColor: 'rgba(255, 255, 255, 0.12)',
-                padding: 20,
-              }}
+        <View style={{ paddingHorizontal: SP.page, marginTop: 10 }}>
+          <BranchPill onPress={() => setBranchSheet(true)} />
+        </View>
+
+        {/* ── Today ──────────────────────────────────────────────────── */}
+        <View style={styles.hero}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={styles.heroLabel}>Sales today</Text>
+            <Pressable
+              onPress={() => toggleRevenueVisibility(businessId)}
+              hitSlop={12}
+              style={({ pressed }) => [styles.eye, pressed && { opacity: 0.6 }]}
+              accessibilityLabel={revenueVisible ? 'Hide amounts' : 'Show amounts'}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ ...TYPE.overline, color: 'rgba(255, 255, 255, 0.65)', letterSpacing: 1.2 }}>
-                  TODAY'S REVENUE
-                </Text>
-                <TouchableOpacity
-                  onPress={() => toggleRevenueVisibility(businessId)}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 6,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    borderRadius: RADIUS.full,
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                  }}
-                >
-                  <Feather name={revenueVisible ? 'eye' : 'eye-off'} size={12} color="rgba(255, 255, 255, 0.8)" />
-                  <Text style={{ fontSize: 11, fontFamily: FONT.medium, color: 'rgba(255, 255, 255, 0.8)' }}>
-                    {revenueVisible ? 'Hide' : 'Show'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              <Icon name={revenueVisible ? 'eye' : 'eye-off'} size={17} color={COLORS.text.muted} />
+            </Pressable>
+          </View>
 
-              <Animated.View style={{ opacity: revenueAnim, transform: [{ scale: revenueAnim }] }}>
-                <Text
-                  style={{
-                    fontSize: 38,
-                    fontFamily: FONT.black,
-                    color: COLORS.gold,
-                    letterSpacing: -1,
-                    marginVertical: 4,
-                  }}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                >
-                  {revenueVisible ? (
-                    <>
-                      {fmtFull(stats?.today_sales ?? 0).split('.')[0]}
-                      <Text style={{ fontSize: 24, fontFamily: FONT.bold, letterSpacing: 0, opacity: 0.85 }}>
-                        .{fmtFull(stats?.today_sales ?? 0).split('.')[1]}
+          {stats === null ? (
+            <Skeleton width={190} height={44} radius={10} style={{ marginTop: 10 }} />
+          ) : (
+            <Text style={styles.heroAmount} numberOfLines={1} adjustsFontSizeToFit>
+              {revenueVisible ? (
+                <>
+                  {whole}
+                  <Text style={styles.heroCents}>.{cents}</Text>
+                </>
+              ) : (
+                `${CURRENCY_SYMBOL} ••••••`
+              )}
+            </Text>
+          )}
+
+          <View style={styles.heroMeta}>
+            <Text style={styles.heroMetaText}>
+              {todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'}
+            </Text>
+            {canViewCosts && stats ? (
+              <>
+                <View style={styles.dot} />
+                <Text style={[styles.heroMetaText, { color: profit >= 0 ? COLORS.successText : COLORS.dangerText }]}>
+                  {revenueVisible ? `${profit >= 0 ? '+' : '−'}${money(profit)} profit` : '•••• profit'}
+                </Text>
+              </>
+            ) : null}
+            {canViewCosts && (stats?.today_expenses ?? 0) > 0 ? (
+              <>
+                <View style={styles.dot} />
+                <Text style={styles.heroMetaText}>
+                  {revenueVisible ? `${money(stats?.today_expenses ?? 0)} spent` : '•••• spent'}
+                </Text>
+              </>
+            ) : null}
+          </View>
+        </View>
+
+        {/* ── Quick actions ──────────────────────────────────────────── */}
+        <View style={styles.actions}>
+          {QUICK_ACTIONS.map((a) => (
+            <PressableScale
+              key={a.label}
+              onPress={() => router.push(a.route as any)}
+              activeScale={0.94}
+              haptic
+              containerStyle={{ flex: 1 }}
+              style={[styles.action, a.primary && styles.actionPrimary]}
+              accessibilityLabel={a.label}
+            >
+              <Icon name={a.icon} size={22} color={a.primary ? '#FFFFFF' : COLORS.text.primary} />
+              <Text style={[styles.actionLabel, a.primary && { color: '#FFFFFF' }]} numberOfLines={1}>
+                {a.label}
+              </Text>
+            </PressableScale>
+          ))}
+        </View>
+
+        {/* ── Needs attention ────────────────────────────────────────── */}
+        {attention.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Needs attention</Text>
+            <View style={styles.group}>
+              {attention.map((item, i) => {
+                const tint =
+                  item.tone === 'danger' ? COLORS.dangerLight : item.tone === 'warning' ? COLORS.warningLight : COLORS.surface2;
+                const fg = item.tone === 'danger' ? COLORS.danger : item.tone === 'warning' ? COLORS.warning : COLORS.text.secondary;
+                return (
+                  <Pressable
+                    key={item.key}
+                    onPress={item.onPress}
+                    style={({ pressed }) => [styles.row, i < attention.length - 1 && styles.rowDivider, pressed && styles.rowPressed]}
+                  >
+                    <View style={[styles.rowIcon, { backgroundColor: tint }]}>
+                      <Icon name={item.icon} size={17} color={fg} backgroundColor={tint} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rowTitle} numberOfLines={1}>
+                        {item.title}
                       </Text>
-                    </>
-                  ) : (
-                    '₦••••••'
-                  )}
-                </Text>
-              </Animated.View>
-
-              {/* Sub-pulse KPIs */}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 16,
-                  marginTop: 12,
-                  paddingTop: 12,
-                  borderTopWidth: 1,
-                  borderTopColor: 'rgba(255, 255, 255, 0.08)',
-                }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Feather name="shopping-bag" size={13} color="rgba(255, 255, 255, 0.7)" />
-                  <Text style={{ fontSize: 12.5, fontFamily: FONT.medium, color: 'rgba(255, 255, 255, 0.85)' }}>
-                    {todaySalesCount} {todaySalesCount === 1 ? 'sale' : 'sales'} today
-                  </Text>
-                </View>
-
-                {canViewCosts && stats?.today_profit !== undefined ? (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Feather
-                      name={profitPositive ? 'trending-up' : 'trending-down'}
-                      size={13}
-                      color={profitPositive ? COLORS.success : COLORS.danger}
-                    />
-                    <Text
-                      style={{
-                        fontSize: 12.5,
-                        fontFamily: FONT.bold,
-                        color: profitPositive ? '#34d399' : '#f87171',
-                      }}
-                    >
-                      {revenueVisible ? `${profitPositive ? '+' : ''}${fmt(stats.today_profit)} profit` : '•••• profit'}
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
+                      <Text style={styles.rowDetail} numberOfLines={1}>
+                        {item.detail}
+                      </Text>
+                    </View>
+                    <Icon name="chevron-right" size={16} color={COLORS.text.faint} />
+                  </Pressable>
+                );
+              })}
             </View>
+          </View>
+        ) : null}
 
-            {/* ── Quick Actions Grid ────────────────────── */}
-            <View style={{ marginTop: 18, gap: 10 }}>
-              {[
-                [
-                  { icon: 'shopping-cart' as const, label: 'Record Sale', route: '/(app)/record-sale', primary: true },
-                  { icon: 'plus-circle' as const, label: 'Add Stock', route: '/(app)/add-stock', primary: false },
-                ],
-                [
-                  { icon: 'minus-circle' as const, label: 'Record Expense', route: '/(app)/record-expense', primary: false },
-                  { icon: 'credit-card' as const, label: 'Record Debt', route: '/(app)/record-debt', primary: false },
-                ],
-              ].map((row, rowIndex) => (
-                <View key={rowIndex} style={{ flexDirection: 'row', gap: 10 }}>
-                  {row.map((action) => (
-                    <PressableScale
-                      key={action.label}
-                      onPress={() => router.push(action.route as any)}
-                      activeScale={0.95}
-                      containerStyle={{ flex: 1 }}
-                      style={{
-                        flex: 1,
-                        width: '100%',
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        paddingVertical: 13,
-                        paddingHorizontal: 12,
-                        borderRadius: RADIUS.md,
-                        backgroundColor: action.primary ? COLORS.accent : 'rgba(255, 255, 255, 0.08)',
-                        borderWidth: StyleSheet.hairlineWidth,
-                        borderColor: action.primary ? COLORS.accent : 'rgba(255, 255, 255, 0.12)',
-                      }}
-                    >
-                      <Feather name={action.icon} size={15} color={action.primary ? COLORS.onAccent : '#FFFFFF'} />
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          fontFamily: FONT.bold,
-                          color: action.primary ? COLORS.onAccent : '#FFFFFF',
-                          letterSpacing: -0.1,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {action.label}
-                      </Text>
-                    </PressableScale>
-                  ))}
-                </View>
+        {/* ── Recent activity ────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Recent activity</Text>
+            {recentActivities.length > 0 ? (
+              <Pressable hitSlop={10} onPress={() => useTabStore.getState().setActiveTab('sales')}>
+                {({ pressed }) => <Text style={[styles.link, pressed && { opacity: 0.5 }]}>See all</Text>}
+              </Pressable>
+            ) : null}
+          </View>
+
+          {recentActivities.length === 0 ? (
+            <View style={[styles.group, styles.empty]}>
+              <Icon name="receipt" size={22} color={COLORS.text.faint} />
+              <Text style={styles.emptyTitle}>No sales yet today</Text>
+              <Text style={styles.emptyText}>When you record a sale or a customer pays a debt, it shows up here.</Text>
+            </View>
+          ) : (
+            <View style={styles.group}>
+              {recentActivities.slice(0, 8).map((activity, i, list) => (
+                <ActivityRow key={`${activity.kind}-${activity.id}`} activity={activity} hidden={!revenueVisible} last={i === list.length - 1} />
               ))}
             </View>
-          </View>
+          )}
+        </View>
+      </ScrollView>
 
-          {/* ── Lower Section on Crisp Surface ───────────────────────────── */}
-          <View style={{ paddingHorizontal: SP.page, paddingTop: 20 }}>
-            {/* ── Inventory Alert / Stock Notice ── */}
-            {hasStockAlerts ? (
-              <Animated.View
-                style={{
-                  opacity: alertAnim,
-                  transform: [
-                    {
-                      translateY: alertAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [12, 0],
-                      }),
-                    },
-                  ],
-                }}
-              >
-                <PressableScale
-                  onPress={() => useTabStore.getState().setActiveTab('inventory')}
-                  activeScale={0.97}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 13,
-                    borderRadius: RADIUS.lg,
-                    backgroundColor: COLORS.dangerLight,
-                    borderWidth: 1,
-                    borderColor: '#fecaca',
-                    paddingHorizontal: 15,
-                    paddingVertical: 13,
-                    marginBottom: 18,
-                    shadowColor: COLORS.danger,
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.06,
-                    shadowRadius: 6,
-                    elevation: 1,
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 38,
-                      height: 38,
-                      borderRadius: RADIUS.full,
-                      backgroundColor: COLORS.danger,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Feather name="alert-triangle" size={17} color="#FFFFFF" />
-                  </View>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={{ fontSize: 10.5, fontFamily: FONT.bold, color: '#b91c1c', letterSpacing: 0.5 }}>
-                      {outOfStockCount > 0 && lowStockCount > 0
-                        ? 'STOCK REMINDER'
-                        : outOfStockCount > 0
-                          ? 'RESTOCK REMINDER'
-                          : 'LOW STOCK NOTICE'}
-                    </Text>
-                    {outOfStockCount > 0 ? (
-                      <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
-                        {outOfStockCount} product{outOfStockCount === 1 ? ' is' : 's are'} out of stock
-                      </Text>
-                    ) : null}
-                    {lowStockCount > 0 ? (
-                      <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary }}>
-                        {lowStockCount} product{lowStockCount === 1 ? ' is' : 's are'} running low
-                      </Text>
-                    ) : null}
-                    <Text style={{ fontSize: 11, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 }}>
-                      Tap to review and reorder
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      gap: 3,
-                      backgroundColor: '#fee2e2',
-                      borderWidth: StyleSheet.hairlineWidth,
-                      borderColor: '#fecaca',
-                      paddingHorizontal: 9,
-                      paddingVertical: 5,
-                      borderRadius: RADIUS.full,
-                    }}
-                  >
-                    <Text style={{ fontSize: 11.5, fontFamily: FONT.bold, color: '#b91c1c' }}>View</Text>
-                    <Feather name="arrow-right" size={12} color="#b91c1c" />
-                  </View>
-                </PressableScale>
-              </Animated.View>
-            ) : null}
-
-            {/* ── Recent Activity Ledger ─────────────────── */}
-            <SectionHeader
-              title="Recent Activity"
-              action={
-                recentActivities.length > 0
-                  ? { label: 'View all sales', onPress: () => useTabStore.getState().setActiveTab('sales') }
-                  : undefined
-              }
-            />
-
-            {recentActivities.length === 0 ? (
-              <Card style={{ paddingVertical: 28, alignItems: 'center', gap: 8 }}>
-                <Feather name="clock" size={24} color={COLORS.text.muted} />
-                <Text style={{ fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.primary }}>
-                  No activity recorded today
-                </Text>
-                <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center' }}>
-                  Transactions and debt settlements made today will appear here in real time.
-                </Text>
-              </Card>
-            ) : (
-              <Card style={{ padding: 0, overflow: 'hidden' }}>
-                {recentActivities.map((activity, index) => {
-                  const isRepayment = activity.kind === 'debt_repayment';
-                  const initials = (activity.customer_name || 'C').charAt(0).toUpperCase();
-                  const formattedMethod =
-                    activity.payment_method === 'mixed'
-                      ? 'Mixed'
-                      : activity.payment_method?.replace('_', ' ') || 'Cash';
-
-                  return (
-                    <View key={`${activity.kind}-${activity.id}`}>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          paddingVertical: 14,
-                          paddingHorizontal: 16,
-                          gap: 12,
-                        }}
-                      >
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
-                          <View
-                            style={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: RADIUS.full,
-                              backgroundColor: isRepayment ? COLORS.successLight : COLORS.navyLight,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 13,
-                                fontFamily: FONT.bold,
-                                color: isRepayment ? COLORS.success : COLORS.ink,
-                              }}
-                            >
-                              {initials}
-                            </Text>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                              <Text
-                                style={{ fontSize: 14.5, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.1 }}
-                                numberOfLines={1}
-                              >
-                                {activity.customer_name}
-                              </Text>
-                              {isRepayment ? (
-                                <View
-                                  style={{
-                                    backgroundColor: COLORS.successLight,
-                                    paddingHorizontal: 5,
-                                    paddingVertical: 1.5,
-                                    borderRadius: RADIUS.xs,
-                                  }}
-                                >
-                                  <Text style={{ fontSize: 9.5, fontFamily: FONT.bold, color: COLORS.success }}>Settlement</Text>
-                                </View>
-                              ) : null}
-                            </View>
-                            <Text
-                              style={{ fontSize: 12, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 }}
-                              numberOfLines={1}
-                            >
-                              {activity.items_summary || (isRepayment ? 'Debt settlement' : 'General sale')}
-                              {' · '}
-                              {format(new Date(activity.created_at), 'h:mm a')}
-                            </Text>
-                          </View>
-                        </View>
-                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
-                          <Text
-                            style={{
-                              fontSize: 15,
-                              fontFamily: FONT.bold,
-                              color: isRepayment ? COLORS.success : COLORS.text.primary,
-                              letterSpacing: -0.2,
-                            }}
-                          >
-                            +{fmt(activity.amount_paid)}
-                          </Text>
-                          {activity.amount_owed > 0 ? (
-                            <SmartChip
-                              label={`Owes ${fmt(activity.amount_owed)}`}
-                              deep
-                              variant="danger"
-                              size="xs"
-                            />
-                          ) : (
-                            <SmartChip
-                              label={formattedMethod}
-                              variant="neutral"
-                              size="xs"
-                            />
-                          )}
-                        </View>
-                      </View>
-                      {index < recentActivities.length - 1 ? (
-                        <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.borderSubtle, marginLeft: 66 }} />
-                      ) : null}
-                    </View>
-                  );
-                })}
-              </Card>
-            )}
-          </View>
-        </ScrollView>
-      </ScreenShell>
-    </SwipeableTabScreen>
+      <BranchSwitcherSheet visible={branchSheet} onClose={() => setBranchSheet(false)} />
+    </View>
   );
 }
+
+const ActivityRow = React.memo(function ActivityRow({
+  activity,
+  hidden,
+  last,
+}: {
+  activity: RevenueActivity;
+  hidden: boolean;
+  last: boolean;
+}) {
+  const isRepayment = activity.kind === 'debt_repayment';
+  const method =
+    activity.payment_method === 'mixed'
+      ? 'Split payment'
+      : activity.payment_method === 'pos'
+      ? 'POS'
+      : (activity.payment_method?.replace('_', ' ') || 'cash').replace(/^\w/, (c) => c.toUpperCase());
+  let time = '';
+  try {
+    time = format(new Date(activity.created_at), 'h:mm a');
+  } catch {}
+
+  return (
+    <View style={[styles.row, !last && styles.rowDivider]}>
+      <Avatar name={activity.customer_name || 'Walk-in'} size={36} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {activity.customer_name || 'Walk-in customer'}
+        </Text>
+        <Text style={styles.rowDetail} numberOfLines={1}>
+          {isRepayment ? 'Debt payment' : activity.items_summary || 'Sale'} · {time}
+        </Text>
+      </View>
+      <View style={{ alignItems: 'flex-end', gap: 2 }}>
+        <Text style={[styles.amount, isRepayment && { color: COLORS.successText }]}>
+          {hidden ? '••••' : `+${money(activity.amount_paid)}`}
+        </Text>
+        <Text style={[styles.rowDetail, activity.amount_owed > 0 && { color: COLORS.dangerText }]} numberOfLines={1}>
+          {activity.amount_owed > 0 ? (hidden ? 'Owes ••••' : `Owes ${money(activity.amount_owed)}`) : method}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+const styles = StyleSheet.create({
+  header: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: SP.page, gap: 12 },
+  date: { ...TYPE.footnote, fontFamily: FONT.medium, color: COLORS.text.muted, marginBottom: 4 },
+  greeting: { ...TYPE.largeTitle, fontSize: 30, lineHeight: 36, color: COLORS.text.primary },
+
+  hero: { marginTop: 22, marginHorizontal: SP.page },
+  heroLabel: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary },
+  eye: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', marginRight: -6 },
+  heroAmount: {
+    fontSize: 46,
+    lineHeight: 54,
+    fontFamily: FONT.serif,
+    color: COLORS.text.primary,
+    letterSpacing: -1.2,
+    marginTop: 2,
+    fontVariant: ['tabular-nums'],
+  },
+  heroCents: { fontSize: 26, color: COLORS.text.muted, letterSpacing: -0.4 },
+  heroMeta: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  heroMetaText: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary, fontVariant: ['tabular-nums'] },
+  dot: { width: 3, height: 3, borderRadius: 2, backgroundColor: COLORS.text.faint },
+
+  actions: { flexDirection: 'row', gap: 10, paddingHorizontal: SP.page, marginTop: 24 },
+  action: {
+    height: 84,
+    borderRadius: 20,
+    borderCurve: 'continuous',
+    backgroundColor: COLORS.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  actionPrimary: { backgroundColor: COLORS.ink, borderColor: COLORS.ink },
+  actionLabel: { fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.2 },
+
+  section: { marginTop: 28, paddingHorizontal: SP.page },
+  sectionHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  sectionTitle: { fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3, marginBottom: 10 },
+  link: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.accentDark },
+
+  group: {
+    backgroundColor: COLORS.card,
+    borderRadius: 18,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 60 },
+  rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
+  rowPressed: { backgroundColor: COLORS.surface2 },
+  rowIcon: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
+  rowTitle: { fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary, letterSpacing: -0.15 },
+  rowDetail: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
+  amount: { fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary, fontVariant: ['tabular-nums'], letterSpacing: -0.2 },
+
+  empty: { alignItems: 'center', paddingVertical: 28, paddingHorizontal: 28, gap: 6 },
+  emptyTitle: { fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary, marginTop: 4 },
+  emptyText: { ...TYPE.callout, color: COLORS.text.muted, textAlign: 'center' },
+});
 
 export default React.memo(DashboardScreen);

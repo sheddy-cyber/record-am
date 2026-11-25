@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, Text, TouchableOpacity, View } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
 import { COLORS, FONT, RADIUS } from '@/constants';
 import { PaymentAccount, PaymentAccountChannel } from '@/types';
@@ -93,7 +93,7 @@ export const PaymentAccountsSection: React.FC<PaymentAccountsSectionProps> = ({ 
                     justifyContent: 'center',
                   }}
                 >
-                  <Feather
+                  <Icon
                     name={acc.channel === 'pos' ? 'credit-card' : 'send'}
                     size={16}
                     color={acc.channel === 'pos' ? COLORS.warning : COLORS.navy}
@@ -119,7 +119,7 @@ export const PaymentAccountsSection: React.FC<PaymentAccountsSectionProps> = ({ 
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 style={{ padding: 4 }}
               >
-                <Feather name="trash-2" size={16} color={COLORS.danger} />
+                <Icon name="trash-2" size={16} color={COLORS.danger} />
               </TouchableOpacity>
             </View>
           ))}
@@ -138,7 +138,7 @@ export const PaymentAccountsSection: React.FC<PaymentAccountsSectionProps> = ({ 
             marginVertical: 10,
           }}
         >
-          <Feather name="credit-card" size={24} color={COLORS.text.muted} />
+          <Icon name="credit-card" size={24} color={COLORS.text.muted} />
           <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.primary, textAlign: 'center' }}>
             No bank accounts or POS terminals added yet.
           </Text>

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Text, View, RefreshControl, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { dismissScreen } from '@/lib/navigation';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
@@ -108,10 +108,10 @@ export default function CloseDayScreen() {
 
   if (!summary) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title="Close and Balance Day"
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         />
         <EmptyState
@@ -125,11 +125,11 @@ export default function CloseDayScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Close and Balance Day"
         subtitle={format(new Date(selectedDate), 'EEEE, MMMM d, yyyy')}
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
       />
       <KeyboardAwareScrollView
@@ -146,7 +146,7 @@ export default function CloseDayScreen() {
         }
       >
           <Card style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+            <Text style={{ fontSize: 13, fontFamily: FONT.semiBold, color: COLORS.text.muted, letterSpacing: 0.5, marginBottom: 12 }}>
               {canViewFinancials ? 'Day Financial Summary' : 'Day Summary'}
             </Text>
             {[
@@ -220,7 +220,7 @@ export default function CloseDayScreen() {
                   gap: 10,
                 }}
               >
-                <Feather
+                <Icon
                   name={
                     parseFloat(actualCash) === (summary.cash_in_hand_expected ?? 0)
                       ? 'check-circle'

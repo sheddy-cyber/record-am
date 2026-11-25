@@ -15,7 +15,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
-import { Feather } from '@expo/vector-icons';
+import { Icon, IconName } from '@/components/icons';
 import { format, isToday, isYesterday, isThisWeek, subMonths, subDays } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
@@ -38,19 +38,19 @@ import { dismissScreen } from '@/lib/navigation';
 // Category metadata with styling and icons
 const CATEGORY_META: Record<
   string,
-  { label: string; icon: keyof typeof Feather.glyphMap; color: string; bg: string }
+  { label: string; icon: IconName; color: string; bg: string }
 > = {
-  rent: { label: 'Rent', icon: 'home', color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.12)' },
-  electricity: { label: 'Electricity', icon: 'zap', color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' },
-  transport: { label: 'Transport', icon: 'truck', color: '#3B82F6', bg: 'rgba(59, 130, 246, 0.12)' },
-  salary: { label: 'Salary', icon: 'users', color: '#10B981', bg: 'rgba(16, 185, 129, 0.12)' },
+  rent: { label: 'Rent', icon: 'home', color: '#9C7AA0', bg: 'rgba(139, 92, 246, 0.12)' },
+  electricity: { label: 'Electricity', icon: 'zap', color: '#B7791F', bg: 'rgba(183, 121, 31, 0.12)' },
+  transport: { label: 'Transport', icon: 'truck', color: '#3B6B9A', bg: 'rgba(59, 130, 246, 0.12)' },
+  salary: { label: 'Salary', icon: 'users', color: '#2E7D4F', bg: 'rgba(46, 125, 79, 0.12)' },
   supplies: { label: 'Supplies', icon: 'package', color: '#6366F1', bg: 'rgba(99, 102, 241, 0.12)' },
-  maintenance: { label: 'Maintenance', icon: 'tool', color: '#F97316', bg: 'rgba(249, 115, 22, 0.12)' },
-  marketing: { label: 'Marketing', icon: 'volume-2', color: '#EC4899', bg: 'rgba(236, 72, 153, 0.12)' },
+  maintenance: { label: 'Maintenance', icon: 'tool', color: '#C4713A', bg: 'rgba(249, 115, 22, 0.12)' },
+  marketing: { label: 'Marketing', icon: 'volume-2', color: '#B5577A', bg: 'rgba(236, 72, 153, 0.12)' },
   internet: { label: 'Internet', icon: 'wifi', color: '#06B6D4', bg: 'rgba(6, 182, 212, 0.12)' },
-  water: { label: 'Water', icon: 'droplet', color: '#0EA5E9', bg: 'rgba(14, 165, 233, 0.12)' },
-  security: { label: 'Security', icon: 'shield', color: '#64748B', bg: 'rgba(100, 116, 139, 0.12)' },
-  damage: { label: 'Damaged Goods', icon: 'x-octagon', color: '#EF4444', bg: 'rgba(239, 68, 68, 0.12)' },
+  water: { label: 'Water', icon: 'droplet', color: '#3B6B9A', bg: 'rgba(14, 165, 233, 0.12)' },
+  security: { label: 'Security', icon: 'shield', color: '#6B675F', bg: 'rgba(100, 116, 139, 0.12)' },
+  damage: { label: 'Damaged Goods', icon: 'x-octagon', color: '#C2412D', bg: 'rgba(194, 65, 45, 0.12)' },
   other: { label: 'Other', icon: 'tag', color: COLORS.accentDark, bg: 'rgba(202, 138, 4, 0.12)' },
 };
 
@@ -59,7 +59,7 @@ const getCategoryMeta = (cat: string) => {
   return (
     CATEGORY_META[key] ?? {
       label: cat ? cat.charAt(0).toUpperCase() + cat.slice(1) : 'Expense',
-      icon: 'tag' as keyof typeof Feather.glyphMap,
+      icon: 'tag' as IconName,
       color: COLORS.accentDark,
       bg: 'rgba(202, 138, 4, 0.12)',
     }
@@ -81,7 +81,14 @@ export default function ExpensesScreen() {
   const insets = useSafeAreaInsets();
   const { currentBusiness, currentBranch, user, userRole } = useAuthStore();
   const isOwnerOrManager = userRole === 'owner' || userRole === 'manager';
-  const params = useLocalSearchParams<{ expenseId?: string | string[]; action?: string }>();
+  const params = useLocalSearchParams<{
+    expenseId?: string | string[];
+    action?: string;
+    amount?: string;
+    category?: string;
+    description?: string;
+  }>();
+  const prefillAppliedRef = React.useRef(false);
 
   // State
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -178,10 +185,17 @@ export default function ExpensesScreen() {
         }
         startEditExpense(match);
       }
+    } else if (params.amount && !prefillAppliedRef.current) {
+      // Opened from a voice command: land straight on a filled-in form.
+      prefillAppliedRef.current = true;
+      startNewExpense();
+      setExpenseAmount(String(params.amount));
+      if (params.category) setExpenseCategory(String(params.category));
+      if (params.description) setExpenseDescription(String(params.description));
     } else if (params.action === 'new') {
       startNewExpense();
     }
-  }, [params.expenseId, params.action, expenses, isOwnerOrManager, user?.id]);
+  }, [params.expenseId, params.action, params.amount, expenses, isOwnerOrManager, user?.id]);
 
   // Start new expense
   const startNewExpense = () => {
@@ -532,11 +546,11 @@ export default function ExpensesScreen() {
   // ─────────────────────────────────────────────────────────────────────────────
   if (viewMode === 'form') {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+      <ScreenShell backgroundColor={COLORS.surface}>
         <ScreenHeader
           title={editingExpense ? 'Edit Expense' : 'Record Expense'}
           subtitle={editingExpense ? 'Update expense details' : 'Log branch expense'}
-          theme="dark"
+         
           left={<HeaderAction icon="arrow-left" onPress={closeForm} />}
         />
         <KeyboardAwareScrollView
@@ -658,7 +672,7 @@ export default function ExpensesScreen() {
                   size="md"
                   variant="ghost"
                   textStyle={{ color: COLORS.danger }}
-                  style={{ borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                  style={{ borderColor: 'rgba(194, 65, 45, 0.3)' }}
                 />
               ) : null}
             </View>
@@ -672,7 +686,7 @@ export default function ExpensesScreen() {
   // LIST VIEW (Expenses with period filter & date grouping)
   // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title="Expenses"
         subtitle={
@@ -680,7 +694,7 @@ export default function ExpensesScreen() {
             ? `${filteredExpenses.length} shown`
             : `${filteredExpenses.length} by you`
         }
-        theme="dark"
+       
         left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
         right={<HeaderAction icon="plus" label="Record" onPress={startNewExpense} />}
       />
@@ -709,7 +723,7 @@ export default function ExpensesScreen() {
             gap: 10,
           }}
         >
-          <Feather name="search" size={16} color={COLORS.text.muted} />
+          <Icon name="search" size={16} color={COLORS.text.muted} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -732,7 +746,7 @@ export default function ExpensesScreen() {
               onPress={() => setSearchQuery('')}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Feather name="x" size={16} color={COLORS.text.muted} />
+              <Icon name="x" size={16} color={COLORS.text.muted} />
             </TouchableOpacity>
           ) : null}
         </View>
@@ -763,13 +777,13 @@ export default function ExpensesScreen() {
                 backgroundColor: COLORS.accentLight,
               }}
             >
-              <Feather name="calendar" size={14} color={COLORS.accentDark} />
+              <Icon name="calendar" size={14} color={COLORS.accentDark} />
             </View>
             <View style={{ flex: 1, marginLeft: 9 }}>
               <Text style={{ fontFamily: FONT.medium, fontSize: 10.5, color: COLORS.text.muted }}>Time Period</Text>
               <Text style={{ marginTop: 1, fontFamily: FONT.semiBold, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedPeriodLabel}</Text>
             </View>
-            <Feather name="chevron-down" size={15} color={COLORS.text.muted} />
+            <Icon name="chevron-down" size={15} color={COLORS.text.muted} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -797,13 +811,13 @@ export default function ExpensesScreen() {
                 backgroundColor: selectedCategory === 'all' ? COLORS.surface2 : COLORS.accentLight,
               }}
             >
-              <Feather name="tag" size={14} color={selectedCategory === 'all' ? COLORS.text.muted : COLORS.accentDark} />
+              <Icon name="tag" size={14} color={selectedCategory === 'all' ? COLORS.text.muted : COLORS.accentDark} />
             </View>
             <View style={{ flex: 1, marginLeft: 9 }}>
               <Text style={{ fontFamily: FONT.medium, fontSize: 10.5, color: COLORS.text.muted }}>Category</Text>
               <Text style={{ marginTop: 1, fontFamily: FONT.semiBold, fontSize: 12.5, color: COLORS.text.primary }} numberOfLines={1}>{selectedCategoryLabel}</Text>
             </View>
-            <Feather name="sliders" size={14} color={COLORS.text.muted} />
+            <Icon name="sliders" size={14} color={COLORS.text.muted} />
           </TouchableOpacity>
         </View>
 
@@ -828,7 +842,7 @@ export default function ExpensesScreen() {
           </View>
           {hasExtraFilters ? (
             <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ marginLeft: 10, flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-              <Feather name="x-circle" size={14} color={COLORS.text.muted} />
+              <Icon name="x-circle" size={14} color={COLORS.text.muted} />
               <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Clear</Text>
             </TouchableOpacity>
           ) : null}
@@ -868,7 +882,7 @@ export default function ExpensesScreen() {
             }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Feather name="calendar" size={13} color={COLORS.text.muted} />
+              <Icon name="calendar" size={13} color={COLORS.text.muted} />
               <Text
                 style={{
                   fontFamily: FONT.bold,
@@ -936,7 +950,7 @@ export default function ExpensesScreen() {
                       justifyContent: 'center',
                     }}
                   >
-                    <Feather name={meta.icon} size={18} color={meta.color} />
+                    <Icon name={meta.icon} size={18} color={meta.color} />
                   </View>
 
                   {/* Details */}
@@ -1022,7 +1036,7 @@ export default function ExpensesScreen() {
                         borderColor: COLORS.border,
                       }}
                     >
-                      <Feather name="edit-2" size={11} color={COLORS.text.secondary} />
+                      <Icon name="edit-2" size={11} color={COLORS.text.secondary} />
                       <Text
                         style={{
                           fontFamily: FONT.medium,
@@ -1094,7 +1108,7 @@ export default function ExpensesScreen() {
         maxHeight="86%"
       >
         <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 14 }} showsVerticalScrollIndicator={false}>
-          <Text style={{ marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>TIME PERIOD</Text>
+          <Text style={{ marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>Time period</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {periodOptions.map((period) => {
               const active = selectedPeriod === period.key;
@@ -1111,7 +1125,7 @@ export default function ExpensesScreen() {
             })}
           </View>
 
-          <Text style={{ marginTop: 22, marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>CATEGORY</Text>
+          <Text style={{ marginTop: 22, marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>Category</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {CATEGORY_CHIPS.map((category) => {
               const active = selectedCategory === category.key;

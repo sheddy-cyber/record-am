@@ -2,12 +2,13 @@ import React, { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useSupplierStore } from '@/store/supplierStore';
 import { EmptyState, PermissionDenied, SmartChip } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { dismissScreen } from '@/lib/navigation';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from '@/constants';
 import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
 import { canManagePurchases, hasPermission } from '@/lib/permissions';
@@ -72,8 +73,8 @@ export default function SuppliersScreen() {
 
   if (!canViewPurchases) {
     return (
-      <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
-        <ScreenHeader title="Suppliers & Purchases" theme="dark" />
+      <ScreenShell backgroundColor={COLORS.surface}>
+        <ScreenHeader title="Suppliers" left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />} />
         <PermissionDenied
           title="Supplier purchases are restricted"
           description="Supplier balances and goods costs are available to owners, managers, and auditors only."
@@ -83,12 +84,14 @@ export default function SuppliersScreen() {
   }
 
   return (
-    <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
+    <ScreenShell backgroundColor={COLORS.surface}>
       <View style={{ flex: 1 }}>
         <ScreenHeader
-          title="Suppliers & Purchases"
-          subtitle={`${filtered.length} shown`}
-          theme="dark"
+          title="Suppliers"
+          large
+          left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
+          subtitle={`${filtered.length} ${filtered.length === 1 ? 'supplier' : 'suppliers'}`}
+         
           right={
             canManageSupplierPurchases ? (
               <HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/supplier-create')} />
@@ -118,7 +121,7 @@ export default function SuppliersScreen() {
               paddingHorizontal: 14,
             }}
           >
-            <Feather name="search" size={16} color={COLORS.text.muted} />
+            <Icon name="search" size={16} color={COLORS.text.muted} />
             <TextInput
               value={search}
               onChangeText={setSearch}
@@ -132,7 +135,7 @@ export default function SuppliersScreen() {
             />
             {search ? (
               <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}>
-                <Feather name="x" size={16} color={COLORS.text.muted} />
+                <Icon name="x" size={16} color={COLORS.text.muted} />
               </TouchableOpacity>
             ) : null}
           </View>
@@ -178,7 +181,7 @@ export default function SuppliersScreen() {
                 backgroundColor: supplierView === 'owing' ? COLORS.dangerLight : COLORS.card,
               }}
             >
-              <Feather name="alert-circle" size={13} color={supplierView === 'owing' ? COLORS.danger : COLORS.text.muted} />
+              <Icon name="alert-circle" size={13} color={supplierView === 'owing' ? COLORS.danger : COLORS.text.muted} />
               <Text
                 style={{
                   fontFamily: FONT.medium,
@@ -193,7 +196,7 @@ export default function SuppliersScreen() {
             <View style={{ flex: 1 }} />
             {hasActiveFilter ? (
               <TouchableOpacity onPress={clearFilters} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
-                <Feather name="x-circle" size={14} color={COLORS.text.muted} />
+                <Icon name="x-circle" size={14} color={COLORS.text.muted} />
                 <Text style={{ fontFamily: FONT.medium, fontSize: 11, color: COLORS.text.muted }}>Clear</Text>
               </TouchableOpacity>
             ) : null}
@@ -333,7 +336,7 @@ export default function SuppliersScreen() {
                       ) : null}
                     </View>
 
-                    <Feather name="chevron-right" size={15} color={COLORS.text.muted} />
+                    <Icon name="chevron-right" size={15} color={COLORS.text.muted} />
                   </View>
                 </TouchableOpacity>
               );

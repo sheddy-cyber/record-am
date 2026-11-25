@@ -22,7 +22,7 @@ export default function Root({ children }: PropsWithChildren) {
           textarea:-webkit-autofill:focus,
           textarea:-webkit-autofill:active {
             -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
-            -webkit-text-fill-color: #0F172A !important;
+            -webkit-text-fill-color: #1A1917 !important;
             transition: background-color 5000000s ease-in-out 0s !important;
           }
         ` }} />
