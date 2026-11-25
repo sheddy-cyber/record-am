@@ -17,7 +17,7 @@ export default function JoinBusinessScreen() {
   const [businessId, setBusinessId] = useState('');
   const [loading, setLoading] = useState(false);
   
-  const { user, setCurrentBusiness, setCurrentBranch, setUserRole } = useAuthStore();
+  const { user, setCurrentBusiness, setCurrentBranch, setUserRole, setStaffId } = useAuthStore();
 
   const handleJoin = async () => {
     if (!businessId.trim()) {
@@ -40,24 +40,48 @@ export default function JoinBusinessScreen() {
         throw new Error('User session not found. Please log in first.');
       }
 
-      // Call the RPC to join the business and get the details
+      // Call the RPC to join the business and get the details (including generated staff_id)
       const { data, error: rpcError } = await supabase.rpc('join_business_by_id', {
-        p_business_id: businessId.trim()
+        p_business_id: businessId.trim(),
       });
 
       if (rpcError || !data) {
         throw new Error(rpcError?.message || 'Failed to join business.');
       }
 
-      // The RPC returns a JSON object with { business, branch, role }
-      const { business, branch, role } = data as { business: Business, branch: any, role: string };
+      const payload = data as {
+        success?: boolean;
+        error?: string;
+        business?: Business;
+        branch?: any;
+        role?: string;
+        staff_id?: string;
+        member?: { role?: string; staff_id?: string };
+      };
 
-      setCurrentBusiness(business);
-      setCurrentBranch(branch);
-      setUserRole(role as any);
+      if (payload.success === false) {
+        throw new Error(payload.error || 'Failed to join business.');
+      }
+
+      const assignedStaffId = payload.staff_id || payload.member?.staff_id || null;
+      const assignedRole = payload.role || payload.member?.role || 'cashier';
+
+      if (payload.business) setCurrentBusiness(payload.business);
+      if (payload.branch) setCurrentBranch(payload.branch);
+      setUserRole(assignedRole as any);
+      setStaffId(assignedStaffId);
       useTabStore.getState().setActiveTab('dashboard');
-      router.replace('/(app)/(tabs)');
 
+      const navNext = () => router.replace('/(app)/(tabs)');
+      if (assignedStaffId) {
+        Alert.alert(
+          'Joined Business',
+          `Welcome to ${payload.business?.name ?? 'the team'}!\n\nYour Staff ID is ${assignedStaffId}.`,
+          [{ text: 'Continue', onPress: navNext }],
+        );
+      } else {
+        navNext();
+      }
     } catch (err: any) {
       Alert.alert('Join Failed', err.message);
     } finally {

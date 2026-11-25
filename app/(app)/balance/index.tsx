@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
+import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { addDays, format, subDays } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { useDailyBalanceStore } from '@/store/dailyBalanceStore';
+import { useBusinessStore } from '@/store/businessStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDailyReport, shareStaffShiftReport } from '@/lib/reports';
+import { parseLocalDateString } from '@/lib/revenue';
 import { Badge, Button, Card, EmptyState, SectionHeader } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
@@ -21,9 +23,11 @@ const formatCurrency = (value: number) => {
 
 export default function DailyBalanceScreen() {
   const { currentBusiness, currentBranch, userRole, profile, user } = useAuthStore();
+  const branches = useBusinessStore((s) => s.branches);
   const canViewFinancials = canViewFinancialData(userRole);
 
   const [showPicker, setShowPicker] = useState(false);
+  const [iosDraftDate, setIosDraftDate] = useState<Date>(() => new Date());
   const touchStartX = useRef(0);
 
   const {
@@ -62,7 +66,7 @@ export default function DailyBalanceScreen() {
   });
 
   const changeDate = (direction: 1 | -1) => {
-    const current = new Date(selectedDate);
+    const current = parseLocalDateString(selectedDate);
     const next = direction === 1 ? addDays(current, 1) : subDays(current, 1);
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const nextStr = format(next, 'yyyy-MM-dd');
@@ -70,13 +74,20 @@ export default function DailyBalanceScreen() {
     setSelectedDate(nextStr);
   };
 
-  const isToday = selectedDate === format(new Date(), 'yyyy-MM-dd');
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const yesterdayStr = format(subDays(new Date(), 1), 'yyyy-MM-dd');
+  const isToday = selectedDate === todayStr;
+
+  const openDatePicker = () => {
+    setIosDraftDate(parseLocalDateString(selectedDate));
+    setShowPicker(true);
+  };
 
   const handleReopenDay = () => {
     if (!currentBusiness || !currentBranch || !summary?.is_closed) return;
     Alert.alert(
       'Reopen Day',
-      `Are you sure you want to reopen the balance for ${format(new Date(selectedDate), 'MMM d, yyyy')}? This will unlock editing for that day.`,
+      `Are you sure you want to reopen the balance for ${format(parseLocalDateString(selectedDate), 'MMM d, yyyy')}? This will unlock editing for that day.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -191,7 +202,7 @@ export default function DailyBalanceScreen() {
       <View style={{ flex: 1 }}>
         <ScreenHeader
           title="Daily Balance"
-          subtitle={format(new Date(selectedDate), 'EEEE, MMMM d, yyyy')}
+          subtitle={`${format(parseLocalDateString(selectedDate), 'EEEE, MMMM d, yyyy')}${branches.length > 1 && currentBranch ? ` · ${currentBranch.name}` : ''}`}
           theme="dark"
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
           right={isClosed ? <Badge label="Closed" variant="success" /> : undefined}
@@ -238,12 +249,12 @@ export default function DailyBalanceScreen() {
 
             <TouchableOpacity
               style={{ alignItems: 'center', paddingVertical: 2, paddingHorizontal: 12 }}
-              onPress={() => setShowPicker(true)}
+              onPress={openDatePicker}
               activeOpacity={0.7}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={{ color: '#ffffff', fontFamily: FONT.bold, fontSize: 16 }}>
-                  {format(new Date(selectedDate), 'EEEE')}
+                  {format(parseLocalDateString(selectedDate), 'EEEE')}
                 </Text>
                 <Feather name="calendar" size={13} color="rgba(255, 255, 255, 0.7)" />
               </View>
@@ -255,7 +266,7 @@ export default function DailyBalanceScreen() {
                   marginTop: 2,
                 }}
               >
-                {format(new Date(selectedDate), 'MMMM d, yyyy')}
+                {format(parseLocalDateString(selectedDate), 'MMMM d, yyyy')}
               </Text>
             </TouchableOpacity>
 
@@ -275,6 +286,42 @@ export default function DailyBalanceScreen() {
             >
               <Feather name="chevron-right" size={18} color="#ffffff" />
             </TouchableOpacity>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10 }}>
+            {[
+              { label: 'Today', active: selectedDate === todayStr, onPress: () => setSelectedDate(todayStr) },
+              { label: 'Yesterday', active: selectedDate === yesterdayStr, onPress: () => setSelectedDate(yesterdayStr) },
+              { label: 'Select Any Date', active: false, onPress: openDatePicker, icon: 'calendar' as const },
+            ].map((chip) => (
+              <TouchableOpacity
+                key={chip.label}
+                onPress={chip.onPress}
+                activeOpacity={0.75}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 5,
+                  paddingHorizontal: 12,
+                  paddingVertical: 6,
+                  borderRadius: RADIUS.full,
+                  backgroundColor: chip.active ? COLORS.accent : 'rgba(255, 255, 255, 0.1)',
+                  borderWidth: StyleSheet.hairlineWidth,
+                  borderColor: chip.active ? COLORS.accent : 'rgba(255, 255, 255, 0.18)',
+                }}
+              >
+                {chip.icon ? <Feather name={chip.icon} size={12} color="#FFFFFF" /> : null}
+                <Text
+                  style={{
+                    fontFamily: FONT.semiBold,
+                    fontSize: 11.5,
+                    color: '#FFFFFF',
+                  }}
+                >
+                  {chip.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
 
@@ -915,19 +962,88 @@ export default function DailyBalanceScreen() {
           </View>
         </ScrollView>
 
-        {showPicker && (
+        {showPicker && Platform.OS === 'android' && (
           <DateTimePicker
-            value={new Date(selectedDate)}
+            value={parseLocalDateString(selectedDate)}
             mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            display="default"
             onChange={(event, date) => {
-              setShowPicker(Platform.OS === 'ios');
-              if (date) {
-                setSelectedDate(format(date, 'yyyy-MM-dd'));
+              setShowPicker(false);
+              if (event?.type === 'dismissed' || !date) return;
+              const pickedStr = format(date, 'yyyy-MM-dd');
+              if (pickedStr <= todayStr) {
+                setSelectedDate(pickedStr);
               }
             }}
             maximumDate={new Date()}
           />
+        )}
+
+        {Platform.OS === 'ios' && (
+          <Modal
+            visible={showPicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowPicker(false)}
+          >
+            <View
+              style={{
+                flex: 1,
+                backgroundColor: 'rgba(0,0,0,0.45)',
+                justifyContent: 'flex-end',
+              }}
+            >
+              <View
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderTopLeftRadius: RADIUS.xl,
+                  borderTopRightRadius: RADIUS.xl,
+                  paddingHorizontal: 20,
+                  paddingTop: 14,
+                  paddingBottom: 28,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 8,
+                  }}
+                >
+                  <TouchableOpacity onPress={() => setShowPicker(false)}>
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text.muted }}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.text.primary }}>
+                    Jump to Date
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const pickedStr = format(iosDraftDate, 'yyyy-MM-dd');
+                      setSelectedDate(pickedStr > todayStr ? todayStr : pickedStr);
+                      setShowPicker(false);
+                    }}
+                  >
+                    <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.accent }}>
+                      Done
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <DateTimePicker
+                  value={iosDraftDate}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={(_event, date) => {
+                    if (date) setIosDraftDate(date);
+                  }}
+                />
+              </View>
+            </View>
+          </Modal>
         )}
       </View>
     </ScreenShell>

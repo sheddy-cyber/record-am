@@ -334,6 +334,7 @@ export function generateReceiptHTML(sale: Sale, business: Business, branch: Bran
 <body>
 <div class="receipt">
   <div class="header">
+    ${business.logo_url ? `<img src="${business.logo_url.replace(/"/g, '&quot;')}" alt="${business.name.replace(/"/g, '&quot;')}" style="width:48px;height:48px;border-radius:24px;object-fit:cover;margin-bottom:8px;border:1.5px solid rgba(255,255,255,0.28);" />` : ''}
     <div class="biz-name">${business.name}</div>
     <div class="biz-sub">${branch.name}${business.address ? ' · ' + business.address : ''}${business.phone ? ' · ' + business.phone : ''}</div>
   </div>

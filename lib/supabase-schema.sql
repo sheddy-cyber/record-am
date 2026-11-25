@@ -58,12 +58,17 @@ CREATE TABLE IF NOT EXISTS business_members (
   business_id UUID NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   branch_id UUID REFERENCES branches(id) ON DELETE SET NULL,
+  staff_id TEXT,
   role TEXT NOT NULL DEFAULT 'cashier', -- owner, manager, cashier, auditor
   is_active BOOLEAN DEFAULT TRUE,
   invited_at TIMESTAMPTZ DEFAULT NOW(),
   joined_at TIMESTAMPTZ,
   UNIQUE(business_id, user_id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_members_business_staff_id
+  ON business_members(business_id, staff_id)
+  WHERE staff_id IS NOT NULL;
 
 -- ============================================================
 -- CATEGORIES
@@ -407,8 +412,17 @@ CREATE POLICY "Users can view their businesses" ON businesses
 CREATE POLICY "Owners can insert businesses" ON businesses
   FOR INSERT WITH CHECK (owner_id = auth.uid());
 
-CREATE POLICY "Owners can update businesses" ON businesses
-  FOR UPDATE USING (owner_id = auth.uid());
+CREATE POLICY "Owners and managers can update businesses" ON businesses
+  FOR UPDATE USING (
+    owner_id = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM business_members bm
+      WHERE bm.business_id = businesses.id
+        AND bm.user_id = auth.uid()
+        AND bm.is_active = TRUE
+        AND bm.role IN ('owner', 'manager')
+    )
+  );
 
 -- USER PROFILES policies
 CREATE POLICY "Users can view own profile" ON user_profiles
@@ -546,6 +560,46 @@ BEGIN
   RETURN 'SALE-' || LPAD((count + 1)::TEXT, 5, '0');
 END;
 $$ LANGUAGE plpgsql;
+
+-- Generate Staff ID (STF-0001, STF-0002, ...)
+CREATE OR REPLACE FUNCTION generate_staff_id(p_business_id UUID)
+RETURNS TEXT AS $$
+DECLARE
+  max_seq BIGINT := 0;
+  candidate TEXT;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtext('staff_id:' || p_business_id::TEXT));
+  SELECT COALESCE(MAX((substring(bm.staff_id FROM '^STF-([0-9]+)$'))::BIGINT), 0)
+  INTO max_seq
+  FROM business_members bm
+  WHERE bm.business_id = p_business_id AND bm.staff_id ~ '^STF-[0-9]+$';
+
+  LOOP
+    max_seq := max_seq + 1;
+    candidate := 'STF-' || LPAD(max_seq::TEXT, 4, '0');
+    EXIT WHEN NOT EXISTS (
+      SELECT 1 FROM business_members bm
+      WHERE bm.business_id = p_business_id AND bm.staff_id = candidate
+    );
+  END LOOP;
+  RETURN candidate;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+CREATE OR REPLACE FUNCTION assign_staff_id_before_insert()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.staff_id IS NULL OR BTRIM(NEW.staff_id) = '' THEN
+    NEW.staff_id := generate_staff_id(NEW.business_id);
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+DROP TRIGGER IF EXISTS trg_assign_staff_id ON business_members;
+CREATE TRIGGER trg_assign_staff_id
+  BEFORE INSERT ON business_members
+  FOR EACH ROW EXECUTE FUNCTION assign_staff_id_before_insert();
 
 -- Generate purchase number
 CREATE OR REPLACE FUNCTION generate_purchase_number(p_business_id UUID)

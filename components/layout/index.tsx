@@ -119,7 +119,21 @@ export function BrandWordmark({
 }
 
 // ─── Business Avatar ──────────────────────────────────────────────────────────
-export function BusinessAvatar({ name, size = 40 }: { name: string; size?: number }) {
+export function BusinessAvatar({
+  name,
+  logoUrl,
+  size = 40,
+}: {
+  name: string;
+  logoUrl?: string | null;
+  size?: number;
+}) {
+  const [imageError, setImageError] = React.useState(false);
+
+  React.useEffect(() => {
+    setImageError(false);
+  }, [logoUrl]);
+
   const initials = (name || '')
     .trim()
     .split(' ')
@@ -128,6 +142,29 @@ export function BusinessAvatar({ name, size = 40 }: { name: string; size?: numbe
     .slice(0, 2)
     .join('')
     .toUpperCase();
+
+  if (logoUrl && !imageError) {
+    return (
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          overflow: 'hidden',
+          backgroundColor: 'rgba(239, 239, 208, 0.15)',
+          borderWidth: 1,
+          borderColor: 'rgba(239, 239, 208, 0.35)',
+        }}
+      >
+        <Image
+          source={{ uri: logoUrl }}
+          style={{ width: size, height: size }}
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+      </View>
+    );
+  }
 
   return (
     <View

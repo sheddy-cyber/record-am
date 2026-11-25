@@ -195,7 +195,30 @@ export async function deleteDebtRepaymentRecord(repaymentId: string) {
   }
 }
 
+import { productsTable, saleItemsTable } from './dataAccess';
+
 export async function deleteSaleRecord(saleId: string) {
+  // Prefer atomic server RPC so restricted roles (cashiers) do not fail on
+  // direct sale_items/products SELECT policies during deletion.
+  const { error: rpcError } = await supabase.rpc('delete_sale_record_atomic', {
+    p_sale_id: saleId,
+  });
+
+  if (!rpcError) {
+    return;
+  }
+
+  const rpcMsg = (rpcError.message || '').toLowerCase();
+  const isMissingRpc =
+    rpcError.code === 'PGRST202' ||
+    rpcError.code === '42883' ||
+    rpcMsg.includes('does not exist') ||
+    rpcMsg.includes('could not find the function');
+
+  if (!isMissingRpc) {
+    throw rpcError;
+  }
+
   const { data: sale, error } = await supabase
     .from('sales')
     .select('id, branch_id, sale_number')
@@ -206,16 +229,30 @@ export async function deleteSaleRecord(saleId: string) {
   if (!sale) return;
 
   const { data: items, error: itemsError } = await supabase
-    .from('sale_items')
-    .select('product_id, quantity, product:products(is_service)')
+    .from(saleItemsTable())
+    .select('product_id, quantity')
     .eq('sale_id', sale.id);
 
   throwIfError(itemsError);
 
+  const productIds = Array.from(
+    new Set((items ?? []).map((item: any) => item.product_id).filter(Boolean)),
+  );
+  const serviceMap = new Map<string, boolean>();
+
+  if (productIds.length > 0) {
+    const { data: prods } = await supabase
+      .from(productsTable())
+      .select('id, is_service')
+      .in('id', productIds);
+    for (const p of prods ?? []) {
+      serviceMap.set((p as any).id, Boolean((p as any).is_service));
+    }
+  }
+
   for (const item of items ?? []) {
-    const product = Array.isArray(item.product) ? item.product[0] : item.product;
-    if (product?.is_service) continue;
-    await adjustInventory(item.product_id, sale.branch_id, Number(item.quantity));
+    if ((item as any).product_id && serviceMap.get((item as any).product_id)) continue;
+    await adjustInventory((item as any).product_id, sale.branch_id, Number((item as any).quantity));
   }
 
   const { error: debtError } = await supabase

@@ -80,13 +80,16 @@ const ROLE_THEMES: Record<string, { bg: string; text: string; label: string }> =
 };
 
 export default function EditTeamMemberScreen() {
-  const { id, userId, name, email, phone, role: initialRole } = useLocalSearchParams<{ 
+  const { id, userId, name, email, phone, role: initialRole, staffId, branchId: initialBranchId, branchName } = useLocalSearchParams<{ 
     id: string; 
     userId: string;
     name: string; 
     email: string; 
     phone: string;
     role: string;
+    staffId?: string;
+    branchId?: string;
+    branchName?: string;
   }>();
   
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
@@ -94,9 +97,10 @@ export default function EditTeamMemberScreen() {
   const currentUserRole = useAuthStore((s) => s.userRole);
   const canManageTeam = hasPermission(currentUserRole, 'business-settings.manage');
   const setUserRole = useAuthStore((s) => s.setUserRole);
-  const { updateTeamMemberRole, updateTeamMemberProfile, removeTeamMember, transferOwnership } = useBusinessStore();
+  const { branches, updateTeamMemberRole, updateTeamMemberBranch, updateTeamMemberProfile, removeTeamMember, transferOwnership } = useBusinessStore();
 
   const [role, setRole] = useState<UserRole>((initialRole as UserRole) || 'cashier');
+  const [assignedBranchId, setAssignedBranchId] = useState<string>(initialBranchId || '');
   const [editedName, setEditedName] = useState(name || '');
   const [editedPhone, setEditedPhone] = useState(phone || '');
   const [saving, setSaving] = useState(false);
@@ -143,6 +147,9 @@ export default function EditTeamMemberScreen() {
       if (initialRole !== role) {
         await updateTeamMemberRole(id, role);
       }
+      if (assignedBranchId && assignedBranchId !== (initialBranchId || '')) {
+        await updateTeamMemberBranch(id, assignedBranchId);
+      }
       if (userId === currentUserId) {
         const curProf = useAuthStore.getState().profile;
         if (curProf) {
@@ -151,6 +158,10 @@ export default function EditTeamMemberScreen() {
             full_name: editedName.trim(),
             phone: editedPhone.trim(),
           });
+        }
+        const matchedBranch = branches.find((b) => b.id === assignedBranchId);
+        if (matchedBranch) {
+          useAuthStore.getState().setCurrentBranch(matchedBranch);
         }
       }
       Toast.show({ type: 'success', text1: 'Staff profile updated successfully' });
@@ -415,6 +426,61 @@ export default function EditTeamMemberScreen() {
                 <Text style={styles.verifiedBadgeText}>VERIFIED</Text>
               </View>
             </View>
+
+            {staffId ? (
+              <View style={[styles.emailCard, { marginTop: 10 }]}>
+                <View style={styles.emailIconBox}>
+                  <Feather name="hash" size={14} color={COLORS.navy} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={styles.emailOverline}>ASSIGNED STAFF ID</Text>
+                  <Text style={styles.emailValue}>{staffId}</Text>
+                </View>
+                <View style={styles.verifiedBadge}>
+                  <Text style={styles.verifiedBadgeText}>UNIQUE ID</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {branches.length > 0 && !isSubjectOwner ? (
+              <View style={{ marginTop: 14 }}>
+                <Text style={{ fontFamily: FONT.semiBold, fontSize: 12.5, color: COLORS.text.secondary, marginBottom: 8 }}>
+                  Assigned Branch{currentUserRole !== 'owner' ? ` (${branchName || 'Owner managed'})` : ''}
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {branches.map((branch) => {
+                    const selected = assignedBranchId === branch.id;
+                    const disabled = currentUserRole !== 'owner';
+                    return (
+                      <TouchableOpacity
+                        key={branch.id}
+                        disabled={disabled}
+                        onPress={() => setAssignedBranchId(branch.id)}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: RADIUS.full,
+                          borderWidth: 1,
+                          borderColor: selected ? COLORS.accent : COLORS.border,
+                          backgroundColor: selected ? COLORS.accentLight : COLORS.surface,
+                          opacity: disabled && !selected ? 0.6 : 1,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontFamily: selected ? FONT.bold : FONT.medium,
+                            fontSize: 12.5,
+                            color: selected ? COLORS.accent : COLORS.text.secondary,
+                          }}
+                        >
+                          {branch.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </View>
         </View>
 

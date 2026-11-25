@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 import { format } from 'date-fns';
+import { productsTable } from '@/lib/dataAccess';
 import { supabase } from '@/lib/supabase';
 import { useOfflineStore } from '@/store/offlineStore';
 import { CustomerDebt, DashboardStats, Expense, Product, RevenueActivity, SaleItem } from '@/types';
@@ -17,12 +18,14 @@ type OfflineOperation =
   | 'update'
   | 'delete'
   | 'inventory_adjust'
-  | 'sale_payment_recalculate';
+  | 'sale_payment_recalculate'
+  | 'rpc';
 
 export interface OfflineMutation {
   id: string;
   operation: OfflineOperation;
   table?: string;
+  rpc?: string;
   payload?: Record<string, any> | Record<string, any>[];
   match?: Record<string, Primitive>;
   onConflict?: string;
@@ -44,11 +47,19 @@ export interface OfflineConflict {
 const QUEUE_KEY = 'record-am:offline-queue:v1';
 const CONFLICTS_KEY = 'record-am:offline-conflicts:v1';
 const CACHE_PREFIX = 'record-am:offline-cache:v1';
-const MAX_CACHE_ROWS = 500;
-const MAX_SYNC_ATTEMPTS = 5;
+const MAX_CACHE_ROWS = 2500;
+const MAX_REVENUE_CACHE_ROWS = 2500;
+const MAX_SYNC_ATTEMPTS = 8;
 
 let syncInFlight = false;
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
+let queueLock: Promise<unknown> = Promise.resolve();
+
+const withQueueLock = <T>(task: () => Promise<T>): Promise<T> => {
+  const next = queueLock.then(task, task);
+  queueLock = next.catch(() => {});
+  return next;
+};
 
 export const createLocalId = () =>
   'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (token) => {
@@ -88,20 +99,69 @@ const getErrorCode = (error: unknown) => {
   return '';
 };
 
+const NON_RETRYABLE_CODES = new Set([
+  '22P02', // invalid input syntax (e.g. malformed UUID)
+  '22003', // numeric value out of range
+  '23502', // NOT NULL violation
+  '23514', // CHECK constraint violation
+  '42703', // undefined column
+  '42P01', // undefined table
+  'PGRST204', // schema cache column mismatch
+]);
+
 const isRetryableError = (error: unknown) => {
   const message = getErrorMessage(error).toLowerCase();
   const code = getErrorCode(error);
 
-  if (code) return false;
+  // Permanent structural/syntax SQL errors cannot succeed via blind retry.
+  if (NON_RETRYABLE_CODES.has(code)) {
+    return false;
+  }
 
-  return (
+  // Auth/JWT expiration, server 5xx, rate-limits, and network/socket errors are retryable.
+  if (
+    code === 'PGRST301' ||
+    code === 'PGRST302' ||
+    code === 'PGRST303' ||
+    code === '401' ||
+    code === '408' ||
+    code === '429' ||
+    code.startsWith('5') ||
+    code.startsWith('08')
+  ) {
+    return true;
+  }
+
+  if (
     message.includes('network request failed') ||
     message.includes('failed to fetch') ||
     message.includes('timeout') ||
     message.includes('timed out') ||
     message.includes('networkerror') ||
     message.includes('offline') ||
-    message.includes('load failed')
+    message.includes('load failed') ||
+    message.includes('jwt') ||
+    message.includes('token') ||
+    message.includes('expired') ||
+    message.includes('connection') ||
+    message.includes('econnreset')
+  ) {
+    return true;
+  }
+
+  // Other error codes (e.g. 23503 FK ordering or 42501 RLS) may retry up to MAX_SYNC_ATTEMPTS
+  // before moving to visible failed conflicts so they never silently stall other records.
+  return !code;
+};
+
+const isMissingRpcError = (error: unknown) => {
+  const code = getErrorCode(error);
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    code === 'PGRST202' ||
+    code === '42883' ||
+    message.includes('could not find the function') ||
+    message.includes('does not exist')
   );
 };
 
@@ -205,34 +265,123 @@ export async function enqueueMutation(
 
 export async function enqueueMutations(
   mutations: Array<Omit<OfflineMutation, 'id' | 'attempts' | 'createdAt' | 'updatedAt'> & { id?: string }>,
+  options?: { syncDelayMs?: number },
 ) {
   if (mutations.length === 0) return;
 
-  const timestamp = nowIso();
-  const queue = await readOfflineQueue();
-  const nextQueue = [
-    ...queue,
-    ...mutations.map((mutation) => ({
-      ...mutation,
-      id: mutation.id ?? createLocalId(),
-      attempts: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    })),
-  ];
+  await withQueueLock(async () => {
+    const timestamp = nowIso();
+    const queue = await readOfflineQueue();
+    const nextQueue = [
+      ...queue,
+      ...mutations.map((mutation) => ({
+        ...mutation,
+        id: mutation.id ?? createLocalId(),
+        attempts: 0,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      })),
+    ];
 
-  await writeOfflineQueue(nextQueue);
+    await writeOfflineQueue(nextQueue);
+  });
+
   void useOfflineStore.getState().updatePendingCount();
-  scheduleOfflineSync();
+  scheduleOfflineSync(options?.syncDelayMs ?? 120);
 }
 
-export function scheduleOfflineSync(delayMs = 800) {
-  if (syncTimer) return;
+export function scheduleOfflineSync(delayMs = 150) {
+  if (syncTimer) {
+    if (delayMs === 0) {
+      clearTimeout(syncTimer);
+      syncTimer = null;
+    } else {
+      return;
+    }
+  }
 
   syncTimer = setTimeout(() => {
     syncTimer = null;
     void flushOfflineQueue();
   }, delayMs);
+}
+
+export async function readSyncConflicts(): Promise<OfflineConflict[]> {
+  return parseArray<OfflineConflict>(await AsyncStorage.getItem(CONFLICTS_KEY));
+}
+
+export async function retryAllSyncConflicts(): Promise<number> {
+  let requeuedCount = 0;
+
+  await withQueueLock(async () => {
+    const [queue, conflicts] = await Promise.all([readOfflineQueue(), readSyncConflicts()]);
+    if (conflicts.length === 0) return;
+
+    const existingIds = new Set(queue.map((m) => m.id));
+    const retried: OfflineMutation[] = [];
+
+    // Re-queue in chronological creation order so parent rows execute before child rows.
+    const sortedConflicts = [...conflicts].sort(
+      (a, b) => new Date(a.mutation.createdAt).getTime() - new Date(b.mutation.createdAt).getTime(),
+    );
+
+    for (const conflict of sortedConflicts) {
+      if (!existingIds.has(conflict.mutation.id)) {
+        retried.push({
+          ...conflict.mutation,
+          attempts: 0,
+          lastError: undefined,
+          updatedAt: nowIso(),
+        });
+      }
+    }
+
+    requeuedCount = retried.length;
+    await Promise.all([
+      writeOfflineQueue([...queue, ...retried]),
+      AsyncStorage.removeItem(CONFLICTS_KEY),
+    ]);
+  });
+
+  await useOfflineStore.getState().updatePendingCount();
+  if (requeuedCount > 0) {
+    await flushOfflineQueue();
+  }
+  return requeuedCount;
+}
+
+export async function discardSyncConflict(conflictId: string) {
+  await withQueueLock(async () => {
+    const conflicts = await readSyncConflicts();
+    await AsyncStorage.setItem(
+      CONFLICTS_KEY,
+      JSON.stringify(conflicts.filter((c) => c.id !== conflictId)),
+    );
+  });
+  await useOfflineStore.getState().updatePendingCount();
+}
+
+export async function getPendingSyncEntityIds() {
+  const [queue, conflicts] = await Promise.all([readOfflineQueue(), readSyncConflicts()]);
+  const allMutations = [...queue, ...conflicts.map((c) => c.mutation)];
+
+  const saleIds = new Set<string>();
+  const debtIds = new Set<string>();
+  const repaymentIds = new Set<string>();
+  const expenseIds = new Set<string>();
+
+  for (const m of allMutations) {
+    const payload = Array.isArray(m.payload) ? m.payload[0] : m.payload;
+    const id = (payload?.id ?? m.match?.id) as string | undefined;
+    if (!id) continue;
+
+    if (m.table === 'sales') saleIds.add(id);
+    else if (m.table === 'customer_debts') debtIds.add(id);
+    else if (m.table === 'debt_repayments') repaymentIds.add(id);
+    else if (m.table === 'expenses') expenseIds.add(id);
+  }
+
+  return { saleIds, debtIds, repaymentIds, expenseIds };
 }
 
 const appendConflict = async (mutation: OfflineMutation, error: unknown) => {
@@ -269,13 +418,19 @@ const assertMutationTable = (mutation: OfflineMutation) => {
 const readServerUpdatedAt = async (table: string, match?: Record<string, Primitive>) => {
   if (!match?.id) return null;
 
+  const readTable = table === 'products' ? productsTable() : table;
   const { data, error } = await supabase
-    .from(table)
+    .from(readTable)
     .select('updated_at')
     .eq('id', match.id)
     .maybeSingle();
 
-  throwIfError(error);
+  if (error) {
+    if (getErrorCode(error) === '42501') {
+      return null;
+    }
+    throw error;
+  }
   return (data as { updated_at?: string } | null)?.updated_at ?? null;
 };
 
@@ -447,6 +602,49 @@ const executeMutation = async (mutation: OfflineMutation) => {
     throwIfError(error);
     return;
   }
+
+  if (mutation.operation === 'rpc' && mutation.rpc) {
+    const payload = (mutation.payload ?? {}) as Record<string, any>;
+    const { error } = await supabase.rpc(mutation.rpc, payload);
+
+    if (error && isMissingRpcError(error)) {
+      if (mutation.rpc === 'clear_sale_items_for_sale' && payload.p_sale_id) {
+        const { error: deleteErr } = await supabase
+          .from('sale_items')
+          .delete()
+          .eq('sale_id', payload.p_sale_id);
+        throwIfError(deleteErr);
+        return;
+      }
+
+      if (mutation.rpc === 'upsert_daily_summary_close') {
+        const { error: upsertErr } = await supabase.from('daily_summaries').upsert(
+          {
+            id: payload.p_id,
+            business_id: payload.p_business_id,
+            branch_id: payload.p_branch_id,
+            summary_date: payload.p_summary_date,
+            total_sales: payload.p_total_sales,
+            total_expenses: payload.p_total_expenses,
+            total_purchases: payload.p_total_purchases ?? 0,
+            total_discounts: payload.p_total_discounts ?? 0,
+            cash_in_hand_expected: payload.p_cash_in_hand_expected ?? 0,
+            cash_in_hand_actual: payload.p_cash_in_hand_actual ?? 0,
+            discrepancy: payload.p_discrepancy ?? 0,
+            notes: payload.p_notes ?? null,
+            is_closed: true,
+            updated_at: nowIso(),
+          },
+          { onConflict: 'business_id,branch_id,summary_date' },
+        );
+        throwIfError(upsertErr);
+        return;
+      }
+    }
+
+    throwIfError(error);
+    return;
+  }
 };
 
 export async function flushOfflineQueue() {
@@ -460,29 +658,82 @@ export async function flushOfflineQueue() {
     return { synced: 0, remaining: await getPendingMutationCount(), conflicts: 0 };
   }
 
+  // Verify user auth session is active (refresh if expired after idle) before syncing
+  let { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData?.session) {
+    const { data: refreshed } = await supabase.auth.refreshSession().catch(() => ({ data: { session: null } }));
+    sessionData = refreshed;
+    if (!sessionData?.session) {
+      return { synced: 0, remaining: await getPendingMutationCount(), conflicts: 0 };
+    }
+  }
+
   syncInFlight = true;
   useOfflineStore.getState().setSyncing(true);
 
+  let hasNewQueuedItems = false;
+
   try {
-    const queue = await readOfflineQueue();
-    if (queue.length === 0) {
+    const snapshotQueue = await withQueueLock(() => readOfflineQueue());
+    if (snapshotQueue.length === 0) {
       return { synced: 0, remaining: 0, conflicts: 0 };
     }
 
+    const succeededIds = new Set<string>();
+    const droppedIds = new Set<string>();
+    const failedUpdates = new Map<string, OfflineMutation>();
+
+    // Track failed parent records so dependent children stay queued in order
+    // while unrelated sales and payments keep syncing without head-of-line blocking.
+    const blockedCustomerIds = new Set<string>();
+    const blockedSaleIds = new Set<string>();
+    const blockedDebtIds = new Set<string>();
+
     let synced = 0;
     let conflicts = 0;
-    let remainingQueue: OfflineMutation[] = [];
 
-    for (let index = 0; index < queue.length; index += 1) {
-      const mutation = queue[index];
+    for (const mutation of snapshotQueue) {
+      const singlePayload = !Array.isArray(mutation.payload) ? mutation.payload : undefined;
+
+      const blockedByParent =
+        (mutation.table === 'sales' && singlePayload?.customer_id && blockedCustomerIds.has(singlePayload.customer_id)) ||
+        (mutation.table === 'sale_items' && singlePayload?.sale_id && blockedSaleIds.has(singlePayload.sale_id)) ||
+        (mutation.operation === 'rpc' &&
+          mutation.rpc === 'clear_sale_items_for_sale' &&
+          singlePayload?.p_sale_id &&
+          blockedSaleIds.has(singlePayload.p_sale_id)) ||
+        (mutation.table === 'customer_debts' &&
+          ((singlePayload?.sale_id && blockedSaleIds.has(singlePayload.sale_id)) ||
+            (singlePayload?.customer_id && blockedCustomerIds.has(singlePayload.customer_id)))) ||
+        (mutation.table === 'debt_repayments' && singlePayload?.debt_id && blockedDebtIds.has(singlePayload.debt_id)) ||
+        (mutation.operation === 'sale_payment_recalculate' &&
+          ((singlePayload?.sale_id && blockedSaleIds.has(singlePayload.sale_id)) ||
+            (singlePayload?.debt_id && blockedDebtIds.has(singlePayload.debt_id))));
+
+      if (blockedByParent) {
+        failedUpdates.set(mutation.id, mutation);
+        continue;
+      }
 
       try {
         await executeMutation(mutation);
+        succeededIds.add(mutation.id);
         synced += 1;
       } catch (error) {
         if (isDuplicateKeyError(error)) {
+          succeededIds.add(mutation.id);
           synced += 1;
           continue;
+        }
+
+        if (mutation.table === 'customers' && singlePayload?.id) {
+          blockedCustomerIds.add(singlePayload.id);
+        } else if (mutation.table === 'sales' && singlePayload?.id) {
+          blockedSaleIds.add(singlePayload.id);
+        } else if (mutation.operation === 'rpc' && mutation.rpc === 'clear_sale_items_for_sale' && singlePayload?.p_sale_id) {
+          blockedSaleIds.add(singlePayload.p_sale_id);
+        } else if (mutation.table === 'customer_debts' && singlePayload?.id) {
+          blockedDebtIds.add(singlePayload.id);
         }
 
         const nextMutation: OfflineMutation = {
@@ -494,22 +745,37 @@ export async function flushOfflineQueue() {
 
         if (!isRetryableError(error) && nextMutation.attempts >= MAX_SYNC_ATTEMPTS) {
           await appendConflict(nextMutation, error);
+          droppedIds.add(mutation.id);
           conflicts += 1;
           continue;
         }
 
-        remainingQueue = [nextMutation, ...queue.slice(index + 1)];
-        break;
+        failedUpdates.set(mutation.id, nextMutation);
       }
     }
 
-    await writeOfflineQueue(remainingQueue);
+    const remainingQueue = await withQueueLock(async () => {
+      const latestQueue = await readOfflineQueue();
+      const snapshotIds = new Set(snapshotQueue.map((m) => m.id));
+      hasNewQueuedItems = latestQueue.some((m) => !snapshotIds.has(m.id));
+
+      const merged = latestQueue
+        .filter((m) => !succeededIds.has(m.id) && !droppedIds.has(m.id))
+        .map((m) => failedUpdates.get(m.id) ?? m);
+
+      await writeOfflineQueue(merged);
+      return merged;
+    });
+
     useOfflineStore.getState().setLastSyncTime(new Date().toISOString());
     return { synced, remaining: remainingQueue.length, conflicts };
   } finally {
     syncInFlight = false;
     useOfflineStore.getState().setSyncing(false);
-    void useOfflineStore.getState().updatePendingCount();
+    await useOfflineStore.getState().updatePendingCount();
+    if (hasNewQueuedItems) {
+      scheduleOfflineSync(50);
+    }
   }
 }
 
@@ -599,20 +865,21 @@ export async function cacheRevenueActivities(
     { businessId, branchId },
     'revenue_activities',
     activities,
-    300,
+    MAX_REVENUE_CACHE_ROWS,
   );
 }
 
 export async function readCachedRevenueActivities(
   businessId: string,
   branchId: string,
-  limit = 60,
+  limit = 200,
 ) {
   const activities = await readCachedRows<RevenueActivity>(
     { businessId, branchId },
     'revenue_activities',
   );
-  return sortByFreshness(activities).slice(0, limit);
+  const sorted = sortByFreshness(activities);
+  return limit > 0 ? sorted.slice(0, limit) : sorted;
 }
 
 export async function upsertCachedRevenueActivities(
@@ -624,7 +891,7 @@ export async function upsertCachedRevenueActivities(
     { businessId, branchId },
     'revenue_activities',
     activities,
-    300,
+    MAX_REVENUE_CACHE_ROWS,
   );
 }
 

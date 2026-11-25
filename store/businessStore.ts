@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { Business, Branch, Category, Product, StockAlertSummary, BusinessMember, UserProfile, UserRole } from '@/types';
 import {
@@ -10,6 +11,23 @@ import {
   upsertCachedProducts,
 } from '@/lib/offlineStore';
 import { hasArrayChanged } from '@/lib/storeUtils';
+
+const BRANCH_CACHE_KEY_PREFIX = 'record-am:branches:v1';
+
+const readCachedBranches = async (businessId: string): Promise<Branch[]> => {
+  try {
+    const raw = await AsyncStorage.getItem(`${BRANCH_CACHE_KEY_PREFIX}:${businessId}`);
+    return raw ? (JSON.parse(raw) as Branch[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeCachedBranches = async (businessId: string, branches: Branch[]) => {
+  try {
+    await AsyncStorage.setItem(`${BRANCH_CACHE_KEY_PREFIX}:${businessId}`, JSON.stringify(branches));
+  } catch {}
+};
 
 const getBranchStock = (product: Product, branchId: string) =>
   product.inventory?.find((item) => item.branch_id === branchId)?.quantity ?? 0;
@@ -63,13 +81,34 @@ interface BusinessState {
 
   // Actions
   fetchBusinesses: (userId: string) => Promise<void>;
-  fetchBranches: (businessId: string) => Promise<void>;
+  fetchBranches: (businessId: string) => Promise<Branch[]>;
+  createBranch: (
+    businessId: string,
+    data: { name: string; address?: string; phone?: string; is_main?: boolean },
+  ) => Promise<Branch>;
+  updateBranch: (
+    branchId: string,
+    data: { name?: string; address?: string; phone?: string },
+  ) => Promise<Branch>;
+  deleteBranch: (businessId: string, branchId: string) => Promise<void>;
+  setMainBranch: (businessId: string, branchId: string) => Promise<void>;
+  transferBranchStock: (params: {
+    businessId: string;
+    productId: string;
+    fromBranchId: string;
+    toBranchId: string;
+    quantity: number;
+    notes?: string;
+  }) => Promise<void>;
   hydrateCache: (businessId: string, includeCosts?: boolean) => Promise<void>;
   fetchCategories: (businessId: string) => Promise<void>;
   fetchProducts: (businessId: string, includeCosts?: boolean) => Promise<void>;
   createBusiness: (data: Partial<Business>, userId: string) => Promise<Business | null>;
-  fetchTeamMembers: (businessId: string) => Promise<(BusinessMember & { user_profiles: UserProfile })[]>;
+  fetchTeamMembers: (
+    businessId: string,
+  ) => Promise<(BusinessMember & { user_profiles: UserProfile; branches?: Branch | null })[]>;
   updateTeamMemberRole: (memberId: string, role: UserRole) => Promise<void>;
+  updateTeamMemberBranch: (memberId: string, branchId: string) => Promise<void>;
   updateTeamMemberProfile: (userId: string, fullName: string, phone: string) => Promise<void>;
   removeTeamMember: (memberId: string) => Promise<void>;
   transferOwnership: (businessId: string, newOwnerUserId: string) => Promise<void>;
@@ -113,19 +152,167 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
   fetchBranches: async (businessId) => {
     set({ isLoading: true });
     try {
+      if (get().branches.length === 0) {
+        const cached = await readCachedBranches(businessId);
+        if (cached.length > 0) {
+          set({ branches: cached });
+        }
+      }
+
       const { data, error } = await supabase
         .from('branches')
         .select('*')
         .eq('business_id', businessId)
-        .order('is_main', { ascending: false });
+        .order('is_main', { ascending: false })
+        .order('created_at', { ascending: true });
 
       if (error) throw error;
-      set({ branches: data ?? [] });
+      const list = (data ?? []) as Branch[];
+      set({ branches: list });
+      await writeCachedBranches(businessId, list);
+      return list;
     } catch (err: any) {
       set({ error: err.message });
+      return get().branches;
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  createBranch: async (businessId, data) => {
+    const cleanName = data.name.trim();
+    if (!cleanName) {
+      throw new Error('Branch name is required.');
+    }
+
+    const { data: created, error } = await supabase
+      .from('branches')
+      .insert({
+        business_id: businessId,
+        name: cleanName,
+        address: data.address?.trim() || null,
+        phone: data.phone?.trim() || null,
+        is_main: Boolean(data.is_main),
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    let branch = created as Branch;
+
+    if (data.is_main) {
+      await get().setMainBranch(businessId, branch.id);
+      branch = { ...branch, is_main: true };
+    } else {
+      const next = [...get().branches, branch];
+      set({ branches: next });
+      await writeCachedBranches(businessId, next);
+    }
+
+    return branch;
+  },
+
+  updateBranch: async (branchId, data) => {
+    const patch: Record<string, any> = { updated_at: nowIso() };
+    if (data.name !== undefined) patch.name = data.name.trim();
+    if (data.address !== undefined) patch.address = data.address.trim() || null;
+    if (data.phone !== undefined) patch.phone = data.phone.trim() || null;
+
+    const { data: updated, error } = await supabase
+      .from('branches')
+      .update(patch)
+      .eq('id', branchId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+    const branch = updated as Branch;
+    const next = get().branches.map((b) => (b.id === branchId ? branch : b));
+    set({ branches: next });
+    if (branch.business_id) {
+      await writeCachedBranches(branch.business_id, next);
+    }
+    return branch;
+  },
+
+  deleteBranch: async (businessId, branchId) => {
+    const target = get().branches.find((b) => b.id === branchId);
+    if (target?.is_main) {
+      throw new Error('You cannot delete the Main Branch. Set another branch as Main first.');
+    }
+
+    const { error } = await supabase
+      .from('branches')
+      .delete()
+      .eq('id', branchId)
+      .eq('business_id', businessId);
+
+    if (error) throw error;
+    const next = get().branches.filter((b) => b.id !== branchId);
+    set({ branches: next });
+    await writeCachedBranches(businessId, next);
+  },
+
+  setMainBranch: async (businessId, branchId) => {
+    const { error } = await supabase.rpc('set_main_branch', {
+      p_business_id: businessId,
+      p_branch_id: branchId,
+    });
+
+    if (error) throw error;
+
+    const next = get().branches
+      .map((b) => ({ ...b, is_main: b.id === branchId }))
+      .sort((a, b) => Number(b.is_main) - Number(a.is_main));
+    set({ branches: next });
+    await writeCachedBranches(businessId, next);
+  },
+
+  transferBranchStock: async ({ businessId, productId, fromBranchId, toBranchId, quantity, notes }) => {
+    const { data, error } = await supabase.rpc('transfer_branch_stock', {
+      p_business_id: businessId,
+      p_product_id: productId,
+      p_from_branch_id: fromBranchId,
+      p_to_branch_id: toBranchId,
+      p_quantity: quantity,
+      p_notes: notes?.trim() || null,
+    });
+
+    if (error) throw error;
+
+    const fromQty = Number((data as any)?.from_quantity ?? NaN);
+    const toQty = Number((data as any)?.to_quantity ?? NaN);
+    const timestamp = nowIso();
+
+    const updatedProducts = get().products.map((product) => {
+      if (product.id !== productId) return product;
+      const existingInv = [...(product.inventory ?? [])];
+      const applyQty = (branchId: string, nextQty: number, delta: number) => {
+        const idx = existingInv.findIndex((item) => item.branch_id === branchId);
+        if (idx >= 0) {
+          existingInv[idx] = {
+            ...existingInv[idx],
+            quantity: Number.isFinite(nextQty) ? nextQty : Math.max(0, existingInv[idx].quantity + delta),
+            last_updated: timestamp,
+          };
+        } else {
+          existingInv.push({
+            id: createLocalId(),
+            product_id: productId,
+            branch_id: branchId,
+            quantity: Number.isFinite(nextQty) ? nextQty : Math.max(0, delta),
+            last_updated: timestamp,
+          });
+        }
+      };
+
+      applyQty(fromBranchId, fromQty, -quantity);
+      applyQty(toBranchId, toQty, quantity);
+      return { ...product, inventory: existingInv };
+    });
+
+    set({ products: updatedProducts });
+    await cacheProducts(businessId, updatedProducts);
   },
 
   fetchCategories: async (businessId) => {
@@ -378,13 +565,15 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         .from('business_members')
         .select(`
           *,
-          user_profiles (*)
+          user_profiles (*),
+          branches (*)
         `)
         .eq('business_id', businessId)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .order('joined_at', { ascending: true });
 
       if (error) throw error;
-      return data || [];
+      return (data || []) as (BusinessMember & { user_profiles: UserProfile; branches?: Branch | null })[];
     } catch (err: any) {
       console.error('[fetchTeamMembers] Error:', err.message);
       return [];
@@ -402,6 +591,20 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     } catch (err: any) {
       console.error('[updateTeamMemberRole] Error:', err.message);
       throw new Error('Failed to update team member role.');
+    }
+  },
+
+  updateTeamMemberBranch: async (memberId: string, branchId: string) => {
+    try {
+      const { error } = await supabase
+        .from('business_members')
+        .update({ branch_id: branchId })
+        .eq('id', memberId);
+
+      if (error) throw error;
+    } catch (err: any) {
+      console.error('[updateTeamMemberBranch] Error:', err.message);
+      throw new Error(err.message || 'Failed to assign branch to team member.');
     }
   },
 

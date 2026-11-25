@@ -61,9 +61,13 @@ export async function executeVoiceAction(
     throw new Error('No active business or branch selected.');
   }
 
+  if (!user?.id) {
+    throw new Error('You must be signed in to record transactions.');
+  }
+
   const businessId = currentBusiness.id;
   const branchId = currentBranch.id;
-  const userId = user?.id || 'offline-user';
+  const userId = user.id;
   const soldByName = profile?.full_name || user?.user_metadata?.full_name || 'Staff';
 
   switch (action.type) {

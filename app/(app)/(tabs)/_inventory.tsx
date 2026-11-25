@@ -1,7 +1,9 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   AlertButton,
+  AppState,
+  InteractionManager,
   Modal,
   Pressable,
   RefreshControl,
@@ -19,6 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { useTabStore } from '@/store/tabStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { deleteProductRecord } from '@/lib/recordDeletion';
 import { removeCachedProduct } from '@/lib/offlineStore';
@@ -57,6 +60,7 @@ function InventoryScreen() {
   const userRole = useAuthStore((s) => s.userRole);
   const canViewCosts = canViewFinancialData(userRole);
   const products = useBusinessStore((s) => s.products);
+  const branches = useBusinessStore((s) => s.branches);
   const businessCategories = useBusinessStore((s) => s.categories);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
   const fetchCategories = useBusinessStore((s) => s.fetchCategories);
@@ -160,6 +164,30 @@ function InventoryScreen() {
     ],
     onRefresh: load,
   });
+
+  useEffect(() => {
+    const unsubTab = useTabStore.subscribe(
+      (state) => state.activeTab,
+      (activeTab, prevActiveTab) => {
+        if (activeTab === 'inventory' && prevActiveTab !== 'inventory') {
+          InteractionManager.runAfterInteractions(() => {
+            void load();
+          });
+        }
+      },
+    );
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void load();
+      }
+    });
+
+    return () => {
+      unsubTab();
+      appStateSub.remove();
+    };
+  }, [load]);
 
   const getProductStock = useCallback(
     (product: Product) => {
@@ -411,7 +439,7 @@ function InventoryScreen() {
       <ScreenShell backgroundColor={COLORS.surface} statusBarStyle="light">
         <ScreenHeader
           title="Inventory"
-          subtitle={`${products.length} ${products.length === 1 ? 'product' : 'products'} in catalog`}
+          subtitle={`${products.length} ${products.length === 1 ? 'product' : 'products'} in catalog${branches.length > 1 && currentBranch?.name ? ` · ${currentBranch.name}` : ''}`}
           theme="dark"
           right={
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>

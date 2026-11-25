@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated, Pressable, InteractionManager, StyleSheet } from 'react-native';
+import { AppState, View, Text, ScrollView, RefreshControl, TouchableOpacity, Animated, Pressable, InteractionManager, StyleSheet } from 'react-native';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { canViewFinancialData } from '@/lib/permissions';
 import { useOfflineStore } from '@/store/offlineStore';
 import { useTabStore } from '@/store/tabStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { flushOfflineQueue, retryAllSyncConflicts } from '@/lib/offlineStore';
 import { supabase } from '@/lib/supabase';
 import { fetchRevenueActivities } from '@/lib/revenue';
 import { isDebtSettlementSale } from '@/lib/records';
@@ -35,10 +36,13 @@ function DashboardScreen() {
   const userId = useAuthStore((s) => s.user?.id);
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const businessName = useAuthStore((s) => s.currentBusiness?.name) ?? 'My Business';
+  const businessLogoUrl = useAuthStore((s) => s.currentBusiness?.logo_url);
   const branchId = useAuthStore((s) => s.currentBranch?.id);
+  const branchName = useAuthStore((s) => s.currentBranch?.name);
   const userRole = useAuthStore((s) => s.userRole);
   const canViewCosts = canViewFinancialData(userRole);
   const profileName = useAuthStore((s) => s.profile?.full_name);
+  const branches = useBusinessStore((s) => s.branches);
   const getStockAlerts = useBusinessStore((s) => s.getStockAlerts);
 
   const notifications = useNotificationStore((s) => s.notifications);
@@ -59,6 +63,9 @@ function DashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const isOnline = useOfflineStore((s) => s.isOnline);
+  const isSyncing = useOfflineStore((s) => s.isSyncing);
+  const pendingCount = useOfflineStore((s) => s.pendingCount);
+  const conflictCount = useOfflineStore((s) => s.conflictCount);
 
   useEffect(() => {
     useDashboardStore.getState().loadRevenueVisibility(businessId);
@@ -95,8 +102,16 @@ function DashboardScreen() {
     InteractionManager.runAfterInteractions(() => {
       fetchData();
     });
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        fetchData();
+      }
+    });
+
     return () => {
       clearTimeout(fetchTimeout);
+      appStateSub.remove();
       unsub();
     };
   }, [fetchData]);
@@ -191,11 +206,11 @@ function DashboardScreen() {
         <ScreenHeader
           title={`${greeting()}`}
           titleStyle={{ fontSize: 21, fontFamily: FONT.bold, letterSpacing: -0.3 }}
-          subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEE, d MMM')}`}
+          subtitle={`${profileName?.split(' ')[0] ?? 'Boss'} · ${format(new Date(), 'EEE, d MMM')}${branchName ? ` · ${branchName}` : ''}`}
           theme="dark"
           left={
             <TouchableOpacity activeOpacity={0.75} onPress={() => router.push('/(app)/settings')}>
-              <BusinessAvatar name={businessName} size={38} />
+              <BusinessAvatar name={businessName} logoUrl={businessLogoUrl} size={38} />
             </TouchableOpacity>
           }
           right={
@@ -304,6 +319,107 @@ function DashboardScreen() {
               borderBottomRightRadius: RADIUS.xl,
             }}
           >
+            {(userRole === 'owner' || branches.length > 1) && branchName ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  disabled={userRole !== 'owner'}
+                  onPress={() => router.push('/(app)/branches' as any)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: 'rgba(255, 255, 255, 0.18)',
+                  }}
+                >
+                  <Feather name="map-pin" size={12} color={COLORS.gold} />
+                  <Text style={{ fontFamily: FONT.semiBold, fontSize: 12, color: '#FFFFFF' }}>
+                    {branchName}
+                  </Text>
+                  {userRole === 'owner' ? (
+                    <Feather name="chevron-right" size={12} color="rgba(255,255,255,0.7)" />
+                  ) : null}
+                </TouchableOpacity>
+
+                {pendingCount > 0 || conflictCount > 0 ? (
+                  <TouchableOpacity
+                    activeOpacity={0.75}
+                    onPress={async () => {
+                      if (conflictCount > 0) await retryAllSyncConflicts();
+                      await flushOfflineQueue();
+                      await fetchData();
+                    }}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 5,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: conflictCount > 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                    }}
+                  >
+                    <Feather
+                      name={isSyncing ? 'refresh-cw' : 'upload-cloud'}
+                      size={12}
+                      color={conflictCount > 0 ? '#FCA5A5' : '#FCD34D'}
+                    />
+                    <Text
+                      style={{
+                        fontFamily: FONT.semiBold,
+                        fontSize: 11,
+                        color: conflictCount > 0 ? '#FECACA' : '#FDE68A',
+                      }}
+                    >
+                      {isSyncing
+                        ? 'Syncing...'
+                        : `${pendingCount + conflictCount} unsynced · Retry`}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : pendingCount > 0 || conflictCount > 0 ? (
+              <TouchableOpacity
+                activeOpacity={0.75}
+                onPress={async () => {
+                  if (conflictCount > 0) await retryAllSyncConflicts();
+                  await flushOfflineQueue();
+                  await fetchData();
+                }}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 10,
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: RADIUS.md,
+                  backgroundColor: conflictCount > 0 ? 'rgba(239, 68, 68, 0.18)' : 'rgba(245, 158, 11, 0.18)',
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Feather
+                    name={isSyncing ? 'refresh-cw' : 'upload-cloud'}
+                    size={13}
+                    color={conflictCount > 0 ? '#FCA5A5' : '#FCD34D'}
+                  />
+                  <Text style={{ fontFamily: FONT.semiBold, fontSize: 12, color: '#FFFFFF' }}>
+                    {isSyncing
+                      ? 'Syncing records...'
+                      : `${pendingCount + conflictCount} record${pendingCount + conflictCount === 1 ? '' : 's'} waiting to sync`}
+                  </Text>
+                </View>
+                <Text style={{ fontFamily: FONT.bold, fontSize: 12, color: COLORS.gold }}>
+                  Sync Now
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+
             {/* Balance Card Container */}
             <View
               style={{

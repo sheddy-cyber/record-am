@@ -8,9 +8,10 @@ import { Button, Card, PermissionDenied, SectionHeader } from '@/components/ui';
 import { hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
 import { InputField, KeyboardAwareScrollView, SelectField, Toggle } from '@/components/forms';
-import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { BusinessAvatar, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { BUSINESS_TYPES, COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { BusinessType } from '@/types';
+import { pickAndUploadBusinessLogo, removeBusinessLogo } from '@/lib/businessLogo';
 import { getAppSettings, getTimeParts, isValidTimeInput, saveAppSettings } from '@/lib/appSettings';
 import {
   cancelDailySummaryNotification,
@@ -37,6 +38,7 @@ export default function SettingsScreen() {
   const [bizAddress, setBizAddress] = useState(currentBusiness?.address ?? '');
   const [taxRate, setTaxRate] = useState(String(currentBusiness?.tax_rate ?? '0'));
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [dailyCloseSaving, setDailyCloseSaving] = useState(false);
   const [inventorySaving, setInventorySaving] = useState(false);
 
@@ -303,6 +305,78 @@ export default function SettingsScreen() {
         }
       >
           <Card>
+            <SectionHeader title="Business Logo" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+              <BusinessAvatar
+                name={currentBusiness?.name ?? 'B'}
+                logoUrl={currentBusiness?.logo_url}
+                size={60}
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: FONT.semiBold, fontSize: 14, color: COLORS.text.primary }}>
+                  {currentBusiness?.logo_url ? 'Custom Logo Active' : 'No Logo Uploaded'}
+                </Text>
+                <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 2 }}>
+                  Displayed on your dashboard, business profile, and printed customer receipts.
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  title={currentBusiness?.logo_url ? 'Change Logo' : 'Upload Logo'}
+                  variant="primary"
+                  size="sm"
+                  loading={uploadingLogo}
+                  onPress={async () => {
+                    if (!currentBusiness) return;
+                    setUploadingLogo(true);
+                    try {
+                      const uploaded = await pickAndUploadBusinessLogo(currentBusiness.id);
+                      if (uploaded) {
+                        Toast.show({ type: 'success', text1: 'Business logo updated' });
+                      }
+                    } catch (err: any) {
+                      Alert.alert('Upload Failed', err?.message || 'Unable to upload business logo.');
+                    } finally {
+                      setUploadingLogo(false);
+                    }
+                  }}
+                />
+              </View>
+              {currentBusiness?.logo_url ? (
+                <Button
+                  title="Remove"
+                  variant="ghost"
+                  size="sm"
+                  disabled={uploadingLogo}
+                  onPress={() => {
+                    if (!currentBusiness) return;
+                    Alert.alert('Remove Logo', 'Remove your business logo and revert to initials?', [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Remove',
+                        style: 'destructive',
+                        onPress: async () => {
+                          setUploadingLogo(true);
+                          try {
+                            await removeBusinessLogo(currentBusiness.id);
+                            Toast.show({ type: 'success', text1: 'Business logo removed' });
+                          } catch (err: any) {
+                            Alert.alert('Error', err?.message || 'Failed to remove logo.');
+                          } finally {
+                            setUploadingLogo(false);
+                          }
+                        },
+                      },
+                    ]);
+                  }}
+                />
+              ) : null}
+            </View>
+          </Card>
+
+          <Card>
             <SectionHeader title="Business Information" />
             <InputField label="Business Name" value={bizName} onChangeText={setBizName} placeholder="Your business name" required />
             <SelectField label="Business Type" value={bizType} options={BUSINESS_TYPES} onChange={(value) => setBizType(value as BusinessType)} />
@@ -334,9 +408,9 @@ export default function SettingsScreen() {
           </Card>
 
           <Card style={{ backgroundColor: '#F9FAFB' }}>
-            <SectionHeader title="Current Branch" />
+            <SectionHeader title="Branches & Locations" />
             {[
-              { label: 'Branch Name', value: currentBranch?.name ?? '-' },
+              { label: 'Active Branch', value: currentBranch?.name ?? '-' },
               { label: 'Branch Address', value: currentBranch?.address ?? 'Not set' },
               {
                 label: 'Currency',
@@ -360,7 +434,20 @@ export default function SettingsScreen() {
                 </Text>
               </View>
             ))}
-            <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 10 }}>Multi-branch management is not available yet.</Text>
+            {userRole === 'owner' ? (
+              <View style={{ marginTop: 12 }}>
+                <Button
+                  title="Manage All Branches & Locations"
+                  variant="primary"
+                  size="sm"
+                  onPress={() => router.push('/(app)/branches' as any)}
+                />
+              </View>
+            ) : (
+              <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 10 }}>
+                Your assigned location is managed by your business owner.
+              </Text>
+            )}
           </Card>
 
           {currentBusiness ? (

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import {
   Alert,
+  Image,
   Modal,
   ScrollView,
   Share,
@@ -28,6 +29,7 @@ interface ReceiptPreviewModalProps {
   businessId?: string;
   branchId?: string;
   businessName?: string;
+  businessLogoUrl?: string | null;
   branchName?: string;
   businessAddress?: string | null;
   businessPhone?: string | null;
@@ -42,6 +44,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   businessId,
   branchId,
   businessName = 'Record Am Merchant',
+  businessLogoUrl,
   branchName = 'Main Branch',
   businessAddress,
   businessPhone,
@@ -203,6 +206,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
                   <ReceiptShareCard
                     sale={previewSale}
                     businessName={businessName}
+                    businessLogoUrl={businessLogoUrl}
                     businessAddress={businessAddress}
                     businessPhone={businessPhone}
                     branchName={branchName}
@@ -287,12 +291,14 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
 export function ReceiptShareCard({
   sale,
   businessName,
+  businessLogoUrl,
   businessAddress,
   businessPhone,
   branchName,
 }: {
   sale: Sale;
   businessName: string;
+  businessLogoUrl?: string | null;
   businessAddress?: string | null;
   businessPhone?: string | null;
   branchName: string;
@@ -357,19 +363,40 @@ export function ReceiptShareCard({
           alignItems: 'center',
         }}
       >
-        <View
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 19,
-            backgroundColor: 'rgba(255, 255, 255, 0.15)',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 10,
-          }}
-        >
-          <Feather name="shopping-bag" size={18} color="#FFFFFF" />
-        </View>
+        {businessLogoUrl ? (
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              overflow: 'hidden',
+              backgroundColor: 'rgba(255, 255, 255, 0.15)',
+              borderWidth: 1.5,
+              borderColor: 'rgba(255, 255, 255, 0.3)',
+              marginBottom: 10,
+            }}
+          >
+            <Image
+              source={{ uri: businessLogoUrl }}
+              style={{ width: 48, height: 48 }}
+              resizeMode="cover"
+            />
+          </View>
+        ) : (
+          <View
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: 'rgba(255, 255, 255, 0.15)',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10,
+            }}
+          >
+            <Feather name="shopping-bag" size={18} color="#FFFFFF" />
+          </View>
+        )}
         <Text
           style={{
             fontSize: 18,

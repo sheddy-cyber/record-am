@@ -167,6 +167,9 @@ export default function TeamScreen() {
         email: member.user_profiles?.email || '',
         phone: member.user_profiles?.phone || '',
         role: member.role,
+        staffId: member.staff_id || '',
+        branchId: member.branch_id || '',
+        branchName: (member as any).branches?.name || '',
       },
     });
   };
@@ -380,6 +383,45 @@ export default function TeamScreen() {
                           {ROLE_LABELS[member.role] || member.role}
                         </Text>
                       </View>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 2, marginBottom: 2 }}>
+                      {member.staff_id ? (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                            paddingHorizontal: 7,
+                            paddingVertical: 2,
+                            borderRadius: RADIUS.xs,
+                            backgroundColor: '#EEF4FF',
+                          }}
+                        >
+                          <Feather name="hash" size={10} color={COLORS.navy} />
+                          <Text style={{ fontFamily: FONT.bold, fontSize: 10.5, color: COLORS.navy }}>
+                            {member.staff_id}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {(member as any).branches?.name ? (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            gap: 4,
+                            paddingHorizontal: 7,
+                            paddingVertical: 2,
+                            borderRadius: RADIUS.xs,
+                            backgroundColor: COLORS.surface2,
+                          }}
+                        >
+                          <Feather name="map-pin" size={10} color={COLORS.text.secondary} />
+                          <Text style={{ fontFamily: FONT.medium, fontSize: 10.5, color: COLORS.text.secondary }}>
+                            {(member as any).branches.name}
+                          </Text>
+                        </View>
+                      ) : null}
                     </View>
 
                     {profile.phone ? (

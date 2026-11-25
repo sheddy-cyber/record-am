@@ -73,6 +73,7 @@ function Bootloader({ children }: { children: React.ReactNode }) {
       setIsBooted(true);
 
       // 3. Trigger background network syncs silently (these handle their own errors)
+      useBusinessStore.getState().fetchBranches(currentBusiness.id).catch(() => {});
       useCustomerStore.getState().fetchCustomers(currentBusiness.id).catch(() => {});
       if (canViewPurchases) {
         useSupplierStore.getState().fetchSuppliers(currentBusiness.id).catch(() => {});
@@ -115,6 +116,8 @@ export default function AppLayout() {
           <Stack.Screen name="add-stock" />
           <Stack.Screen name="rapid-add-stock" />
           <Stack.Screen name="import-stock" />
+          <Stack.Screen name="import-sales" />
+          <Stack.Screen name="branches/index" />
           <Stack.Screen name="record-expense" />
           <Stack.Screen name="debts" />
           <Stack.Screen name="record-debt" />

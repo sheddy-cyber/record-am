@@ -36,6 +36,18 @@ import {
   upsertCachedRevenueActivities,
   upsertCachedRows,
 } from '@/lib/offlineStore';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const toValidUuid = (value?: string | null) => (value && UUID_REGEX.test(value) ? value : undefined);
+const isSameLocalCalendarDay = (isoA: string, dateB = new Date()) => {
+  const d = new Date(isoA);
+  if (Number.isNaN(d.getTime())) return false;
+  return (
+    d.getFullYear() === dateB.getFullYear() &&
+    d.getMonth() === dateB.getMonth() &&
+    d.getDate() === dateB.getDate()
+  );
+};
 import { supabase } from '@/lib/supabase';
 
 const roundAmount = (value: number) => Number(value.toFixed(2));
@@ -128,8 +140,12 @@ export async function recordSaleOffline(params: {
   paymentStatus: PaymentStatus;
   saleNumber?: string;
   soldByName?: string;
+  createdAt?: string;
+  deductStock?: boolean;
+  immediateSync?: boolean;
 }) {
-  const timestamp = nowIso();
+  const timestamp = params.createdAt || nowIso();
+  const safeUserId = toValidUuid(params.userId);
   const saleId = createLocalId();
   const customerName = params.customerName.trim();
   const customerPhone = params.customerPhone.trim();
@@ -191,7 +207,7 @@ export async function recordSaleOffline(params: {
     payment_account_id: params.paymentAccountId,
     bank_name: params.bankName?.trim() || undefined,
     notes: saleNotes,
-    sold_by: params.userId,
+    sold_by: safeUserId,
     sold_by_name: staffName,
     created_at: timestamp,
     updated_at: timestamp,
@@ -248,7 +264,7 @@ export async function recordSaleOffline(params: {
       description: `Sync sale item ${item.product.name}`,
     });
 
-    if (!item.product.is_service) {
+    if (params.deductStock !== false && !item.product.is_service) {
       const currentStock = await getCachedOrMemoryStock(params.businessId, params.branchId, item.product.id);
       const nextStock = Math.max(0, roundAmount(currentStock - item.stock_quantity));
       await adjustCachedProductInventory(params.businessId, params.branchId, item.product.id, -item.stock_quantity);
@@ -263,7 +279,7 @@ export async function recordSaleOffline(params: {
         quantity: item.quantity,
         reference: sale.sale_number,
         notes: item.sale_unit !== item.product.unit ? createAltUnitNote(item.sale_unit) : undefined,
-        performed_by: params.userId,
+        performed_by: safeUserId,
         created_at: timestamp,
       };
       stockMovements.push(stockMovement);
@@ -359,19 +375,25 @@ export async function recordSaleOffline(params: {
   await Promise.all([
     upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'sales', [sale]),
     upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'sale_items', saleItems),
-    upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'stock_movements', stockMovements),
+    stockMovements.length > 0
+      ? upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'stock_movements', stockMovements)
+      : Promise.resolve(),
     debt ? upsertCachedCustomerDebts(params.businessId, params.branchId, [debt]) : Promise.resolve(),
     upsertCachedRevenueActivities(params.businessId, params.branchId, [activity]),
-    incrementPersistedDashboardSales(
-      params.businessId,
-      params.branchId,
-      roundAmount(params.amountPaid),
-      roundAmount(params.amountOwed),
-      saleProfit,
-    ),
+    isSameLocalCalendarDay(timestamp)
+      ? incrementPersistedDashboardSales(
+          params.businessId,
+          params.branchId,
+          roundAmount(params.amountPaid),
+          roundAmount(params.amountOwed),
+          saleProfit,
+        )
+      : Promise.resolve(),
   ]);
 
-  await enqueueMutations(mutations);
+  await enqueueMutations(mutations, {
+    syncDelayMs: params.immediateSync ? 0 : 120,
+  });
   return { sale, activity, debt };
 }
 
@@ -456,9 +478,10 @@ export async function updateSaleOffline(params: {
   let originalItems = cachedItems.filter((i) => i.sale_id === params.saleId);
   if (originalItems.length === 0) {
     try {
+      const { saleItemsTable } = await import('@/lib/dataAccess');
       const { data } = await supabase
-        .from('sale_items')
-        .select('*, product:products(*)')
+        .from(saleItemsTable())
+        .select('*')
         .eq('sale_id', params.saleId);
       if (data) originalItems = data as any;
     } catch (_) {}
@@ -573,10 +596,12 @@ export async function updateSaleOffline(params: {
     description: `Update sale ${updatedSale.sale_number}`,
   });
 
-  // 5. Replace sale_items
+  // 5. Replace sale_items via RPC so cashiers don't hit direct SELECT RLS on sale_items
   mutations.push({
-    operation: 'delete',
+    operation: 'rpc',
+    rpc: 'clear_sale_items_for_sale',
     table: 'sale_items',
+    payload: { p_sale_id: params.saleId },
     match: { sale_id: params.saleId },
     description: `Clear old items for sale ${params.saleId}`,
   });

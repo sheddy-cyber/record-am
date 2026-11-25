@@ -5,8 +5,11 @@ import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
 import { useDebtStore } from '@/store/debtStore';
+import { useBusinessStore } from '@/store/businessStore';
+import { useOfflineStore } from '@/store/offlineStore';
+import { flushOfflineQueue, retryAllSyncConflicts } from '@/lib/offlineStore';
 import { Badge, Button, Card, IconBox, ListRow, SectionHeader } from '@/components/ui';
-import { BrandMark, ScreenHeader, ScreenShell } from '@/components/layout';
+import { BusinessAvatar, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
 import { canViewFinancialData, hasPermission } from '@/lib/permissions';
@@ -29,9 +32,15 @@ function MoreScreen() {
   const initialize = useAuthStore((s) => s.initialize);
   const profileName = useAuthStore((s) => s.profile?.full_name);
   const businessName = useAuthStore((s) => s.currentBusiness?.name);
+  const businessLogoUrl = useAuthStore((s) => s.currentBusiness?.logo_url);
   const businessCurrency = useAuthStore((s) => s.currentBusiness?.currency);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
   const userRole = useAuthStore((s) => s.userRole);
+  const staffId = useAuthStore((s) => s.staffId);
+  const branches = useBusinessStore((s) => s.branches);
+  const pendingCount = useOfflineStore((s) => s.pendingCount);
+  const conflictCount = useOfflineStore((s) => s.conflictCount);
+  const isSyncing = useOfflineStore((s) => s.isSyncing);
   const debts = useDebtStore((s) => s.debts);
   const signOut = useAuthStore((s) => s.signOut);
   const canViewPurchases = hasPermission(userRole, 'purchases.view');
@@ -67,6 +76,14 @@ function MoreScreen() {
             : 'End of day register and sales reconciliation',
           onPress: () => router.push('/(app)/balance'),
           iconBg: '#15803D',
+          iconColor: '#FFFFFF',
+        },
+        {
+          icon: 'file-text' as keyof typeof Feather.glyphMap,
+          label: 'Import Sales (Excel / CSV)',
+          subtitle: 'Transfer sales history from spreadsheets',
+          onPress: () => router.push('/(app)/import-sales' as any),
+          iconBg: '#4F46E5',
           iconColor: '#FFFFFF',
         },
       ],
@@ -150,10 +167,18 @@ function MoreScreen() {
           iconBg: '#2563EB',
           iconColor: '#FFFFFF',
         },
+        ...(userRole === 'owner' ? [{
+          icon: 'map-pin' as any,
+          label: 'Branches & Locations',
+          subtitle: `${branches.length || 1} branch${branches.length === 1 ? '' : 'es'} · Active: ${branchName ?? 'Main Branch'}`,
+          onPress: () => router.push('/(app)/branches' as any),
+          iconBg: '#0EA5E9',
+          iconColor: '#FFFFFF',
+        }] : []),
         ...(hasPermission(userRole, 'business-settings.manage') ? [{
           icon: 'users' as any,
           label: 'Team & Staff',
-          subtitle: 'Manage your staff and roles',
+          subtitle: 'Manage staff IDs, roles & branch assignments',
           onPress: () => router.push('/(app)/team' as any),
           iconBg: '#7C3AED',
           iconColor: '#FFFFFF',
@@ -244,19 +269,54 @@ function MoreScreen() {
         }
       >
         <Card style={{ flexDirection: 'row', gap: 14, alignItems: 'center', padding: 16 }}>
-          <BrandMark size={52} badge badgeBg={COLORS.surface2} />
+          <BusinessAvatar name={businessName ?? 'Business'} logoUrl={businessLogoUrl} size={52} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 16, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
               {businessName}
             </Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
               <Badge label={userRole?.toUpperCase() ?? 'OWNER'} variant="accent" />
+              {staffId ? <Badge label={staffId} variant="info" /> : null}
               <Text style={{ fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
                 {branchName} · {businessCurrency}
               </Text>
             </View>
           </View>
         </Card>
+
+        {(pendingCount > 0 || conflictCount > 0) && (
+          <Card
+            style={{
+              backgroundColor: conflictCount > 0 ? '#FEF2F2' : '#FFFBEB',
+              borderColor: conflictCount > 0 ? '#FECACA' : '#FDE68A',
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
+              padding: 14,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: FONT.bold, fontSize: 13.5, color: conflictCount > 0 ? COLORS.danger : '#92400E' }}>
+                {isSyncing
+                  ? 'Syncing queued records...'
+                  : `${pendingCount + conflictCount} record${pendingCount + conflictCount === 1 ? '' : 's'} pending cloud sync`}
+              </Text>
+              <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.secondary, marginTop: 2 }}>
+                Tap Retry Sync to send all staff records to the business account immediately.
+              </Text>
+            </View>
+            <Button
+              title={isSyncing ? 'Syncing' : 'Retry Sync'}
+              size="sm"
+              loading={isSyncing}
+              onPress={async () => {
+                if (conflictCount > 0) await retryAllSyncConflicts();
+                await flushOfflineQueue();
+              }}
+            />
+          </Card>
+        )}
 
         {sections.filter((section) => section.items.length > 0).map((section) => (
           <View key={section.title}>

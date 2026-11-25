@@ -39,6 +39,8 @@ export type StockMovementType =
   | 'stock_out'
   | 'adjustment'
   | 'transfer'
+  | 'transfer_in'
+  | 'transfer_out'
   | 'damage'
   | 'wastage';
 
@@ -91,6 +93,7 @@ export interface BusinessMember {
   business_id: string;
   user_id: string;
   branch_id?: string;
+  staff_id?: string;
   role: UserRole;
   is_active: boolean;
   invited_at: string;

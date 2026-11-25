@@ -31,6 +31,26 @@ export function resetAllAppStores() {
 }
 
 const AUTH_CONTEXT_STORAGE_KEY = 'record-am:auth-context:v1';
+const SELECTED_BRANCH_KEY_PREFIX = 'record-am:active-branch:v1';
+
+const selectedBranchStorageKey = (userId: string, businessId: string) =>
+  `${SELECTED_BRANCH_KEY_PREFIX}:${userId}:${businessId}`;
+
+const readSelectedBranchId = async (userId: string, businessId: string): Promise<string | null> => {
+  try {
+    return await AsyncStorage.getItem(selectedBranchStorageKey(userId, businessId));
+  } catch {
+    return null;
+  }
+};
+
+const saveSelectedBranchId = async (userId: string, businessId: string, branchId: string) => {
+  try {
+    await AsyncStorage.setItem(selectedBranchStorageKey(userId, businessId), branchId);
+  } catch {
+    // Preference storage failure should never block navigation.
+  }
+};
 
 interface CachedAuthContext {
   user?: User | null;
@@ -38,6 +58,7 @@ interface CachedAuthContext {
   currentBusiness: Business | null;
   currentBranch: Branch | null;
   userRole: UserRole | null;
+  staffId?: string | null;
 }
 
 const readCachedAuthContext = async (): Promise<CachedAuthContext | null> => {
@@ -64,6 +85,7 @@ interface AuthState {
   currentBusiness: Business | null;
   currentBranch: Branch | null;
   userRole: UserRole | null;
+  staffId: string | null;
   isLoading: boolean;
   isInitialized: boolean;
 
@@ -72,17 +94,20 @@ interface AuthState {
   setCurrentBusiness: (business: Business | null) => void;
   setCurrentBranch: (branch: Branch | null) => void;
   setUserRole: (role: UserRole | null) => void;
+  setStaffId: (staffId: string | null) => void;
+  switchBranch: (branch: Branch) => Promise<void>;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   session: null,
   user: null,
   profile: null,
   currentBusiness: null,
   currentBranch: null,
   userRole: null,
+  staffId: null,
   isLoading: false,
   isInitialized: false,
 
@@ -97,6 +122,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         currentBusiness: null,
         currentBranch: null,
         userRole: null,
+        staffId: null,
       };
     }
 
@@ -114,14 +140,88 @@ export const useAuthStore = create<AuthState>((set) => ({
             currentBusiness: null,
             currentBranch: null,
             userRole: null,
+            staffId: null,
           }
         : {}),
     };
   }),
-  setProfile: (profile) => set({ profile }),
-  setCurrentBusiness: (business) => set({ currentBusiness: business }),
-  setCurrentBranch: (branch) => set({ currentBranch: branch }),
+  setProfile: (profile) => {
+    set({ profile });
+    const state = get();
+    if (state.user) {
+      void cacheAuthContext({
+        user: state.user,
+        profile,
+        currentBusiness: state.currentBusiness,
+        currentBranch: state.currentBranch,
+        userRole: state.userRole,
+        staffId: state.staffId,
+      });
+    }
+  },
+  setCurrentBusiness: (business) => {
+    set({ currentBusiness: business });
+    const state = get();
+    if (state.user) {
+      void cacheAuthContext({
+        user: state.user,
+        profile: state.profile,
+        currentBusiness: business,
+        currentBranch: state.currentBranch,
+        userRole: state.userRole,
+        staffId: state.staffId,
+      });
+    }
+  },
+  setCurrentBranch: (branch) => {
+    set({ currentBranch: branch });
+    const state = get();
+    if (state.user && state.currentBusiness && branch) {
+      void saveSelectedBranchId(state.user.id, state.currentBusiness.id, branch.id);
+    }
+    if (state.user) {
+      void cacheAuthContext({
+        user: state.user,
+        profile: state.profile,
+        currentBusiness: state.currentBusiness,
+        currentBranch: branch,
+        userRole: state.userRole,
+        staffId: state.staffId,
+      });
+    }
+  },
   setUserRole: (role) => set({ userRole: role }),
+  setStaffId: (staffId) => set({ staffId }),
+
+  switchBranch: async (branch) => {
+    const state = get();
+    if (!branch) return;
+
+    const changed = state.currentBranch?.id !== branch.id;
+    if (changed) {
+      try { useDashboardStore.getState().reset(); } catch (_) {}
+      try { useAnalyticsStore.getState().reset(); } catch (_) {}
+      try { useSaleStore.getState().resetBranchStats(); } catch (_) {}
+      try { useDebtStore.getState().reset(); } catch (_) {}
+      try { useDailyBalanceStore.getState().reset(); } catch (_) {}
+      try { usePurchaseStore.getState().reset(); } catch (_) {}
+    }
+
+    set({ currentBranch: branch });
+    if (state.user && state.currentBusiness) {
+      await saveSelectedBranchId(state.user.id, state.currentBusiness.id, branch.id);
+    }
+    if (state.user) {
+      await cacheAuthContext({
+        user: state.user,
+        profile: state.profile,
+        currentBusiness: state.currentBusiness,
+        currentBranch: branch,
+        userRole: state.userRole,
+        staffId: state.staffId,
+      });
+    }
+  },
 
   signOut: async () => {
     try { await flushOfflineQueue(); } catch (_) {}
@@ -132,7 +232,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     useTabStore.getState().setActiveTab('dashboard');
     set({
       session: null, user: null, profile: null,
-      currentBusiness: null, currentBranch: null, userRole: null,
+      currentBusiness: null, currentBranch: null, userRole: null, staffId: null,
     });
   },
 
@@ -161,6 +261,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           currentBusiness: null,
           currentBranch: null,
           userRole: null,
+          staffId: null,
         });
         if (error) console.warn('[Record Am] getSession error:', error.message);
         set({ isLoading: false, isInitialized: true });
@@ -180,6 +281,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             currentBusiness: cachedContext.currentBusiness,
             currentBranch: cachedContext.currentBranch,
             userRole: cachedContext.userRole,
+            staffId: cachedContext.staffId ?? null,
             isLoading: false,
             isInitialized: true,
           });
@@ -192,6 +294,7 @@ export const useAuthStore = create<AuthState>((set) => ({
           let nextBusiness = cachedContext?.currentBusiness || null;
           let nextBranch = cachedContext?.currentBranch || null;
           let nextRole = cachedContext?.userRole || null;
+          let nextStaffId = cachedContext?.staffId ?? null;
 
           try {
             const { data: profile } = await supabase
@@ -218,12 +321,48 @@ export const useAuthStore = create<AuthState>((set) => ({
 
             if (membership) {
               nextBusiness = membership.businesses as Business;
-              nextBranch = membership.branches as Branch;
               nextRole = membership.role as UserRole;
+              nextStaffId = (membership as any).staff_id ?? null;
+
+              const assignedBranch = (membership.branches as Branch | null) ?? null;
+              nextBranch = assignedBranch;
+
+              if (nextBusiness?.id) {
+                const { data: branchRows } = await supabase
+                  .from('branches')
+                  .select('*')
+                  .eq('business_id', nextBusiness.id)
+                  .order('is_main', { ascending: false })
+                  .order('created_at', { ascending: true });
+
+                const allBranches = (branchRows ?? []) as Branch[];
+                if (allBranches.length > 0) {
+                  useBusinessStore.setState({ branches: allBranches });
+
+                  if (nextRole === 'owner') {
+                    const preferredId =
+                      get().currentBranch?.id ||
+                      (await readSelectedBranchId(session.user.id, nextBusiness.id));
+                    const matched =
+                      (preferredId ? allBranches.find((b) => b.id === preferredId) : undefined) ||
+                      (assignedBranch ? allBranches.find((b) => b.id === assignedBranch.id) : undefined) ||
+                      allBranches.find((b) => b.is_main) ||
+                      allBranches[0];
+                    nextBranch = matched ?? assignedBranch;
+                  } else if (assignedBranch) {
+                    nextBranch =
+                      allBranches.find((b) => b.id === assignedBranch.id) ?? assignedBranch;
+                  } else {
+                    nextBranch = allBranches.find((b) => b.is_main) ?? allBranches[0];
+                  }
+                }
+              }
+
               set({
                 currentBusiness: nextBusiness,
                 currentBranch: nextBranch,
                 userRole: nextRole,
+                staffId: nextStaffId,
               });
             }
           } catch (err) {
@@ -236,6 +375,7 @@ export const useAuthStore = create<AuthState>((set) => ({
             currentBusiness: nextBusiness,
             currentBranch: nextBranch,
             userRole: nextRole,
+            staffId: nextStaffId,
           });
 
           if (!hasInitializedFromCache) {

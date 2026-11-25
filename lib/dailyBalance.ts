@@ -1,10 +1,12 @@
 import { endOfDay, format, startOfDay } from 'date-fns';
 import { supabase } from '@/lib/supabase';
+import { saleItemsTable } from '@/lib/dataAccess';
 import { getPaymentBreakdown, isDebtSettlementSale, readBankPaymentNote } from '@/lib/records';
 import { CustomerDebt, DailySummary, DebtRepayment, Expense, Sale, SaleItem } from '@/types';
 import {
   createLocalId,
   enqueueMutations,
+  getPendingSyncEntityIds,
   nowIso,
   readCachedRows,
   replaceCachedRows,
@@ -333,20 +335,68 @@ export async function getDailyBalanceSnapshot(
   ]);
 
   try {
+    const fetchAllSalesForDay = async () => {
+      const rows: any[] = [];
+      const pageSize = 1000;
+      let offset = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('sales')
+          .select('*, customer:customers(name)')
+          .eq('business_id', businessId)
+          .eq('branch_id', branchId)
+          .gte('created_at', dayStart)
+          .lte('created_at', dayEnd)
+          .order('created_at')
+          .range(offset, offset + pageSize - 1);
+
+        if (error) throw error;
+        const batch = data ?? [];
+        rows.push(...batch);
+        if (batch.length < pageSize) break;
+        offset += pageSize;
+      }
+
+      return rows;
+    };
+
+    const fetchAllRepaymentsForDay = async () => {
+      const rows: any[] = [];
+      const pageSize = 1000;
+      let offset = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('debt_repayments')
+          .select('*, debt:customer_debts!inner(customer_name, business_id, branch_id)')
+          .eq('debt.business_id', businessId)
+          .eq('debt.branch_id', branchId)
+          .gte('created_at', dayStart)
+          .lte('created_at', dayEnd)
+          .order('created_at')
+          .range(offset, offset + pageSize - 1);
+
+        if (error) throw error;
+        const batch = data ?? [];
+        rows.push(...batch);
+        if (batch.length < pageSize) break;
+        offset += pageSize;
+      }
+
+      return rows;
+    };
+
+    const summarySource = saleItemsTable() === 'sale_items' ? 'daily_summaries' : 'staff_daily_summaries';
+
     const [
-      salesResult,
+      serverSales,
       expensesResult,
-      repaymentsResult,
+      serverRepayments,
       summaryResult,
+      pendingIds,
     ] = await Promise.all([
-      supabase
-        .from('sales')
-        .select('*, customer:customers(name)')
-        .eq('business_id', businessId)
-        .eq('branch_id', branchId)
-        .gte('created_at', dayStart)
-        .lte('created_at', dayEnd)
-        .order('created_at'),
+      fetchAllSalesForDay(),
       supabase
         .from('expenses')
         .select('*')
@@ -354,22 +404,17 @@ export async function getDailyBalanceSnapshot(
         .eq('branch_id', branchId)
         .eq('expense_date', targetDate)
         .order('created_at'),
+      fetchAllRepaymentsForDay(),
       supabase
-        .from('debt_repayments')
-        .select('*, debt:customer_debts(customer_name, business_id, branch_id)')
-        .gte('created_at', dayStart)
-        .lte('created_at', dayEnd),
-      supabase
-        .from('daily_summaries')
+        .from(summarySource)
         .select('*')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .eq('summary_date', targetDate)
         .maybeSingle(),
+      getPendingSyncEntityIds(),
     ]);
 
-    if (salesResult.error) throw salesResult.error;
-    if (repaymentsResult.error) throw repaymentsResult.error;
     if (expensesResult.error && (expensesResult.error as any).code !== '42501') {
       console.warn('[dailyBalance] expenses query warning:', expensesResult.error.message);
     }
@@ -377,21 +422,17 @@ export async function getDailyBalanceSnapshot(
       console.warn('[dailyBalance] summary query warning:', summaryResult.error.message);
     }
 
-    const serverSales = (salesResult.data ?? []) as any[];
     const serverExpenses = ((expensesResult.data ?? []) as Expense[]);
-    const serverRepayments = (repaymentsResult.data ?? []) as any[];
     const existingSummary = (summaryResult.data as DailySummary | null) ??
       (cachedSummaries.find((s) => s.summary_date === targetDate) ?? null);
 
-    // Merge server sales with local cached sales
+    // Build local cache index for enrichment, and only keep unsynced offline rows
+    // that are actually pending in the sync queue (so deletions from other devices show up).
+    const cachedSaleMap = new Map<string, any>(cachedSales.map((s) => [s.id, s]));
     const salesMap = new Map<string, any>();
-    for (const cached of cachedSales) {
-      if (isOnTargetDate(cached.created_at, targetDate)) {
-        salesMap.set(cached.id, cached);
-      }
-    }
+
     for (const remote of serverSales) {
-      const local = salesMap.get(remote.id);
+      const local = cachedSaleMap.get(remote.id);
       salesMap.set(remote.id, {
         ...local,
         ...remote,
@@ -403,29 +444,35 @@ export async function getDailyBalanceSnapshot(
         customer: remote.customer || local?.customer,
       });
     }
+    for (const cached of cachedSales) {
+      if (!salesMap.has(cached.id) && pendingIds.saleIds.has(cached.id) && isOnTargetDate(cached.created_at, targetDate)) {
+        salesMap.set(cached.id, cached);
+      }
+    }
     const sales = Array.from(salesMap.values());
 
     // Merge expenses
+    const cachedExpenseMap = new Map<string, Expense>(cachedExpenses.map((e) => [e.id, e]));
     const expensesMap = new Map<string, Expense>();
+    for (const remote of serverExpenses) {
+      expensesMap.set(remote.id, { ...cachedExpenseMap.get(remote.id), ...remote });
+    }
     for (const cached of cachedExpenses) {
-      if (cached.expense_date === targetDate || isOnTargetDate(cached.created_at, targetDate)) {
+      if (
+        !expensesMap.has(cached.id) &&
+        pendingIds.expenseIds.has(cached.id) &&
+        (cached.expense_date === targetDate || isOnTargetDate(cached.created_at, targetDate))
+      ) {
         expensesMap.set(cached.id, cached);
       }
-    }
-    for (const remote of serverExpenses) {
-      expensesMap.set(remote.id, { ...expensesMap.get(remote.id), ...remote });
     }
     const expenses = Array.from(expensesMap.values());
 
     // Merge repayments
+    const cachedRepaymentMap = new Map<string, any>(cachedRepayments.map((r) => [r.id, r]));
     const repaymentsMap = new Map<string, any>();
-    for (const cached of cachedRepayments) {
-      if (isOnTargetDate(cached.created_at, targetDate)) {
-        repaymentsMap.set(cached.id, cached);
-      }
-    }
     for (const remote of serverRepayments) {
-      const local = repaymentsMap.get(remote.id);
+      const local = cachedRepaymentMap.get(remote.id);
       repaymentsMap.set(remote.id, {
         ...local,
         ...remote,
@@ -436,20 +483,32 @@ export async function getDailyBalanceSnapshot(
         debt: remote.debt || local?.debt,
       });
     }
+    for (const cached of cachedRepayments) {
+      if (!repaymentsMap.has(cached.id) && pendingIds.repaymentIds.has(cached.id) && isOnTargetDate(cached.created_at, targetDate)) {
+        repaymentsMap.set(cached.id, cached);
+      }
+    }
     const repayments = Array.from(repaymentsMap.values());
 
     const saleIds = sales.map((sale) => sale.id);
     let saleItems: any[] = [];
     if (saleIds.length > 0) {
-      const { data: items, error: itemsError } = await supabase
-        .from('sale_items')
-        .select('*')
-        .in('sale_id', saleIds);
+      const itemsSource = saleItemsTable();
+      const serverItems: any[] = [];
+      for (let i = 0; i < saleIds.length; i += 100) {
+        const chunk = saleIds.slice(i, i + 100);
+        const { data: items, error: itemsError } = await supabase
+          .from(itemsSource)
+          .select('*')
+          .in('sale_id', chunk);
+        if (!itemsError && items) {
+          serverItems.push(...items);
+        }
+      }
 
-      const serverItems = itemsError ? [] : (items ?? []);
       const itemMap = new Map<string, any>();
       for (const cached of cachedSaleItems) {
-        if (saleIds.includes(cached.sale_id)) {
+        if (pendingIds.saleIds.has(cached.sale_id) && saleIds.includes(cached.sale_id)) {
           itemMap.set(cached.id, cached);
         }
       }
@@ -565,17 +624,38 @@ export async function closeDailySummary({
     ...payload,
   } as DailySummary;
 
-  await Promise.all([
-    upsertCachedRows({ businessId, branchId }, 'daily_summaries', [closedSummary]),
-    enqueueMutations([
-      {
-        operation: 'upsert',
+  const mutation = saleItemsTable() === 'sale_items'
+    ? {
+        operation: 'upsert' as const,
         table: 'daily_summaries',
         payload,
         onConflict: 'business_id,branch_id,summary_date',
         description: `Sync daily close for ${summary.summary_date}`,
-      },
-    ]),
+      }
+    : {
+        operation: 'rpc' as const,
+        rpc: 'upsert_daily_summary_close',
+        table: 'daily_summaries',
+        payload: {
+          p_id: payload.id,
+          p_business_id: businessId,
+          p_branch_id: branchId,
+          p_summary_date: summary.summary_date,
+          p_total_sales: payload.total_sales,
+          p_total_expenses: payload.total_expenses,
+          p_total_purchases: payload.total_purchases,
+          p_total_discounts: payload.total_discounts,
+          p_cash_in_hand_expected: payload.cash_in_hand_expected,
+          p_cash_in_hand_actual: payload.cash_in_hand_actual,
+          p_discrepancy: payload.discrepancy,
+          p_notes: payload.notes ?? null,
+        },
+        description: `Sync daily close for ${summary.summary_date}`,
+      };
+
+  await Promise.all([
+    upsertCachedRows({ businessId, branchId }, 'daily_summaries', [closedSummary]),
+    enqueueMutations([mutation], { syncDelayMs: 0 }),
   ]);
 
   return closedSummary;

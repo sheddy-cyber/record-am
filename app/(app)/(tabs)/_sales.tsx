@@ -1,34 +1,48 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   BackHandler,
+  InteractionManager,
   LayoutAnimation,
+  Modal,
   Platform,
   RefreshControl,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   UIManager,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Feather } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { format, isToday, isYesterday } from 'date-fns';
+import { format, isToday, isYesterday, startOfMonth, startOfWeek } from 'date-fns';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useAnalyticsStore } from '@/store/analyticsStore';
 import { useDebtStore } from '@/store/debtStore';
 import { useCustomerStore } from '@/store/customerStore';
+import { useTabStore } from '@/store/tabStore';
+import { useOfflineStore } from '@/store/offlineStore';
 import { supabase } from '@/lib/supabase';
 import { saleItemsTable } from '@/lib/dataAccess';
-import { fetchRevenueActivities } from '@/lib/revenue';
+import { fetchRevenueActivitiesPage, parseLocalDateString } from '@/lib/revenue';
 import { cleanSaleNotes } from '@/lib/records';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
-import { decrementPersistedDashboardSales, readCachedRows, removeCachedRow } from '@/lib/offlineStore';
+import {
+  decrementPersistedDashboardSales,
+  flushOfflineQueue,
+  readCachedRows,
+  removeCachedRow,
+  retryAllSyncConflicts,
+} from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { EmptyState } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -52,6 +66,7 @@ function SalesScreen() {
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const branchId = useAuthStore((s) => s.currentBranch?.id);
   const businessName = useAuthStore((s) => s.currentBusiness?.name);
+  const businessLogoUrl = useAuthStore((s) => s.currentBusiness?.logo_url);
   const businessAddress = useAuthStore((s) => s.currentBusiness?.address);
   const businessPhone = useAuthStore((s) => s.currentBusiness?.phone);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
@@ -59,11 +74,43 @@ function SalesScreen() {
   const [activities, setActivities] = useState<RevenueActivity[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const pageRef = useRef(0);
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
+  const [customDate, setCustomDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [iosDraftDate, setIosDraftDate] = useState<Date>(() => new Date());
+  const [searchQuery, setSearchQuery] = useState('');
   const [previewSale, setPreviewSale] = useState<Sale | null>(null);
   const [generatingReceiptId, setGeneratingReceiptId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isMergingReceipts, setIsMergingReceipts] = useState(false);
+  const pendingCount = useOfflineStore((s) => s.pendingCount);
+  const conflictCount = useOfflineStore((s) => s.conflictCount);
+  const isSyncing = useOfflineStore((s) => s.isSyncing);
+
+  const dateRange = useMemo(() => {
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    if (dateFilter === 'today') return { fromDate: todayStr, toDate: todayStr };
+    if (dateFilter === 'week') {
+      return {
+        fromDate: format(startOfWeek(new Date(), { weekStartsOn: 1 }), 'yyyy-MM-dd'),
+        toDate: todayStr,
+      };
+    }
+    if (dateFilter === 'month') {
+      return {
+        fromDate: format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+        toDate: todayStr,
+      };
+    }
+    if (dateFilter === 'custom') {
+      return { fromDate: customDate, toDate: customDate };
+    }
+    return { fromDate: undefined, toDate: undefined };
+  }, [dateFilter, customDate]);
 
   const isSelectionMode = selectedIds.size > 0;
 
@@ -141,16 +188,58 @@ function SalesScreen() {
       return;
     }
 
+    if (isRefreshing) {
+      setRefreshing(true);
+    } else if (pageRef.current === 0) {
+      setLoading(true);
+    }
+
     try {
-      const data = await fetchRevenueActivities(businessId, branchId, 60);
-      setActivities(data);
+      const result = await fetchRevenueActivitiesPage({
+        businessId,
+        branchId,
+        page: 0,
+        pageSize: 50,
+        fromDate: dateRange.fromDate,
+        toDate: dateRange.toDate,
+      });
+      pageRef.current = 0;
+      setActivities(result.activities);
+      setHasMore(result.hasMore);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [businessId, branchId]);
+  }, [businessId, branchId, dateRange.fromDate, dateRange.toDate]);
+
+  const loadMoreActivities = useCallback(async () => {
+    if (!businessId || !branchId || !hasMore || loadingMore || loading) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = pageRef.current + 1;
+      const result = await fetchRevenueActivitiesPage({
+        businessId,
+        branchId,
+        page: nextPage,
+        pageSize: 50,
+        fromDate: dateRange.fromDate,
+        toDate: dateRange.toDate,
+      });
+      pageRef.current = nextPage;
+      setHasMore(result.hasMore);
+      setActivities((prev) => {
+        const seen = new Set(prev.map((a) => `${a.kind}-${a.id}`));
+        const appended = result.activities.filter((a) => !seen.has(`${a.kind}-${a.id}`));
+        return [...prev, ...appended];
+      });
+    } catch (err) {
+      console.error('[sales] loadMore error:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [businessId, branchId, hasMore, loadingMore, loading, dateRange.fromDate, dateRange.toDate]);
 
   useEffect(() => {
     loadActivities();
@@ -162,13 +251,39 @@ function SalesScreen() {
     }, [loadActivities])
   );
 
+  // Refresh immediately when switching to the Sales tab inside PagerView or returning to app foreground
+  useEffect(() => {
+    const unsubTab = useTabStore.subscribe(
+      (state) => state.activeTab,
+      (activeTab, prevActiveTab) => {
+        if (activeTab === 'sales' && prevActiveTab !== 'sales') {
+          InteractionManager.runAfterInteractions(() => {
+            void loadActivities();
+          });
+        }
+      },
+    );
+
+    const appStateSub = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void loadActivities();
+      }
+    });
+
+    return () => {
+      unsubTab();
+      appStateSub.remove();
+    };
+  }, [loadActivities]);
+
   useRealtimeRefresh({
     channelName: `sales-screen-${branchId ?? 'unknown'}`,
     enabled: Boolean(businessId && branchId),
     watch: [businessId, branchId],
     tables: [
       ...(branchId ? [{ table: 'sales', filter: `branch_id=eq.${branchId}` }] : []),
-      ...(businessId ? [{ table: 'debt_repayments', filter: `business_id=eq.${businessId}` }] : []),
+      ...(branchId ? [{ table: 'customer_debts', filter: `branch_id=eq.${branchId}` }] : []),
+      { table: 'debt_repayments' },
     ],
     onRefresh: () => loadActivities(),
   });
@@ -825,11 +940,24 @@ function SalesScreen() {
     }
   }, [businessId, branchId]);
 
+  const filteredActivities = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return activities;
+    return activities.filter((item) => {
+      if (item.customer_name?.toLowerCase().includes(q)) return true;
+      if (item.reference?.toLowerCase().includes(q)) return true;
+      if (item.sold_by_name?.toLowerCase().includes(q)) return true;
+      if (item.notes?.toLowerCase().includes(q)) return true;
+      if (item.items?.some((it) => it.product_name?.toLowerCase().includes(q))) return true;
+      return false;
+    });
+  }, [activities, searchQuery]);
+
   const groupedActivities = useMemo(() => {
-    if (!activities || activities.length === 0) return [];
+    if (!filteredActivities || filteredActivities.length === 0) return [];
 
     const map = new Map<string, RevenueActivity[]>();
-    for (const item of activities) {
+    for (const item of filteredActivities) {
       let key = 'Unknown';
       try {
         if (item.created_at) {
@@ -879,7 +1007,7 @@ function SalesScreen() {
         data: items,
       };
     });
-  }, [activities]);
+  }, [filteredActivities]);
 
   const renderActivityItem = useCallback(({ item }: { item: RevenueActivity }) => {
     const isExpanded = expandedId === item.id;
@@ -941,19 +1069,186 @@ function SalesScreen() {
         ) : (
           <ScreenHeader
             title="Sales"
-            subtitle={`${activities.length} activity record${activities.length === 1 ? '' : 's'}`}
+            subtitle={`${filteredActivities.length} record${filteredActivities.length === 1 ? '' : 's'}${hasMore ? '+' : ''}${branchName ? ` · ${branchName}` : ''}`}
             theme="dark"
             right={
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <HeaderAction
+                  icon="file-text"
+                  onPress={() => router.push('/(app)/import-sales' as any)}
+                />
+                <HeaderAction
                   icon="maximize"
                   onPress={() => router.push('/(app)/record-sale?scan=1')}
                 />
-                <HeaderAction icon="plus" label="Record Sale" onPress={openRecordSale} />
+                <HeaderAction icon="plus" label="Record" onPress={openRecordSale} />
               </View>
             }
           />
         )}
+
+        {/* Filter & Search Bar */}
+        <View
+          style={{
+            backgroundColor: COLORS.surface,
+            paddingHorizontal: SP.page,
+            paddingTop: 10,
+            paddingBottom: 6,
+            borderBottomWidth: StyleSheet.hairlineWidth,
+            borderBottomColor: COLORS.border,
+          }}
+        >
+          {(pendingCount > 0 || conflictCount > 0) && (
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={async () => {
+                if (conflictCount > 0) await retryAllSyncConflicts();
+                await flushOfflineQueue();
+                await loadActivities(true);
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                backgroundColor: conflictCount > 0 ? '#FEF2F2' : '#FFFBEB',
+                borderWidth: 1,
+                borderColor: conflictCount > 0 ? '#FECACA' : '#FDE68A',
+                borderRadius: RADIUS.md,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                marginBottom: 8,
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Feather
+                  name={isSyncing ? 'refresh-cw' : 'upload-cloud'}
+                  size={14}
+                  color={conflictCount > 0 ? COLORS.danger : '#D97706'}
+                />
+                <Text
+                  style={{
+                    fontFamily: FONT.semiBold,
+                    fontSize: 12,
+                    color: conflictCount > 0 ? COLORS.danger : '#92400E',
+                    flex: 1,
+                  }}
+                >
+                  {isSyncing
+                    ? 'Syncing sales to cloud...'
+                    : `${pendingCount + conflictCount} record${pendingCount + conflictCount === 1 ? '' : 's'} not synced yet`}
+                </Text>
+              </View>
+              <Text
+                style={{
+                  fontFamily: FONT.bold,
+                  fontSize: 12,
+                  color: conflictCount > 0 ? COLORS.danger : '#B45309',
+                }}
+              >
+                {conflictCount > 0 ? 'Retry' : 'Sync Now'}
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: COLORS.card,
+              borderRadius: RADIUS.md,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: COLORS.border,
+              paddingHorizontal: 10,
+              height: 38,
+              marginBottom: 8,
+            }}
+          >
+            <Feather name="search" size={14} color={COLORS.text.muted} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search receipt #, customer, item, staff..."
+              placeholderTextColor={COLORS.text.muted}
+              style={{
+                flex: 1,
+                marginLeft: 8,
+                fontFamily: FONT.regular,
+                fontSize: 13,
+                color: COLORS.text.primary,
+                paddingVertical: 0,
+              }}
+            />
+            {searchQuery.length > 0 ? (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Feather name="x" size={14} color={COLORS.text.muted} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: 6, paddingBottom: 2 }}
+          >
+            {[
+              { id: 'all' as const, label: 'All History' },
+              { id: 'today' as const, label: 'Today' },
+              { id: 'week' as const, label: 'This Week' },
+              { id: 'month' as const, label: 'This Month' },
+              {
+                id: 'custom' as const,
+                label:
+                  dateFilter === 'custom'
+                    ? format(parseLocalDateString(customDate), 'd MMM yyyy')
+                    : 'Pick Date',
+                icon: 'calendar' as const,
+              },
+            ].map((chip) => {
+              const active = dateFilter === chip.id;
+              return (
+                <TouchableOpacity
+                  key={chip.id}
+                  onPress={() => {
+                    if (chip.id === 'custom') {
+                      setIosDraftDate(parseLocalDateString(customDate));
+                      setShowDatePicker(true);
+                    } else {
+                      setDateFilter(chip.id);
+                    }
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    paddingHorizontal: 11,
+                    paddingVertical: 6,
+                    borderRadius: RADIUS.full,
+                    backgroundColor: active ? COLORS.ink : COLORS.card,
+                    borderWidth: StyleSheet.hairlineWidth,
+                    borderColor: active ? COLORS.ink : COLORS.border,
+                  }}
+                >
+                  {chip.icon ? (
+                    <Feather
+                      name={chip.icon}
+                      size={11}
+                      color={active ? '#FFFFFF' : COLORS.text.secondary}
+                    />
+                  ) : null}
+                  <Text
+                    style={{
+                      fontFamily: active ? FONT.semiBold : FONT.medium,
+                      fontSize: 12,
+                      color: active ? '#FFFFFF' : COLORS.text.secondary,
+                    }}
+                  >
+                    {chip.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
         <SectionList
           sections={groupedActivities}
@@ -966,13 +1261,71 @@ function SalesScreen() {
             paddingBottom: insets.bottom + (isSelectionMode ? 140 : 92),
             flexGrow: 1,
           }}
+          onEndReached={() => {
+            if (hasMore && !loadingMore && !loading) {
+              void loadMoreActivities();
+            }
+          }}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={
+            activities.length > 0 ? (
+              <View style={{ paddingHorizontal: SP.page, paddingTop: 14, paddingBottom: 18, alignItems: 'center' }}>
+                {loadingMore ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ActivityIndicator size="small" color={COLORS.accent} />
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 12.5, color: COLORS.text.muted }}>
+                      Loading older records...
+                    </Text>
+                  </View>
+                ) : hasMore ? (
+                  <TouchableOpacity
+                    onPress={() => void loadMoreActivities()}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: COLORS.card,
+                      borderWidth: 1,
+                      borderColor: COLORS.border,
+                    }}
+                  >
+                    <Feather name="clock" size={14} color={COLORS.accent} />
+                    <Text style={{ fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.accent }}>
+                      Load Older Records
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted }}>
+                    Showing all {activities.length} matching records
+                  </Text>
+                )}
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={{ paddingHorizontal: SP.page, paddingTop: 20 }}>
               <EmptyState
                 icon="shopping-cart"
-                title="No sales yet"
-                description="Record your first sale or debt collection to start tracking revenue and stock movement."
-                action={{ label: 'Record Sale', onPress: openRecordSale }}
+                title={dateFilter !== 'all' || searchQuery ? 'No matching sales found' : 'No sales yet'}
+                description={
+                  dateFilter !== 'all' || searchQuery
+                    ? 'Try clearing your search or selecting "All History" to view every sale.'
+                    : 'Record your first sale, import from Excel, or record a debt collection.'
+                }
+                action={
+                  dateFilter !== 'all' || searchQuery
+                    ? {
+                        label: 'Show All History',
+                        onPress: () => {
+                          setDateFilter('all');
+                          setSearchQuery('');
+                        },
+                      }
+                    : { label: 'Record Sale', onPress: openRecordSale }
+                }
               />
             </View>
           }
@@ -1101,10 +1454,82 @@ function SalesScreen() {
           businessId={businessId}
           branchId={branchId}
           businessName={businessName}
+          businessLogoUrl={businessLogoUrl}
           branchName={branchName}
           businessAddress={businessAddress}
           businessPhone={businessPhone}
         />
+
+        {showDatePicker && Platform.OS === 'android' && (
+          <DateTimePicker
+            value={parseLocalDateString(customDate)}
+            mode="date"
+            display="default"
+            maximumDate={new Date()}
+            onChange={(event, date) => {
+              setShowDatePicker(false);
+              if (event?.type === 'dismissed' || !date) return;
+              setCustomDate(format(date, 'yyyy-MM-dd'));
+              setDateFilter('custom');
+            }}
+          />
+        )}
+
+        {Platform.OS === 'ios' && (
+          <Modal
+            visible={showDatePicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowDatePicker(false)}
+          >
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+              <View
+                style={{
+                  backgroundColor: '#FFFFFF',
+                  borderTopLeftRadius: RADIUS.xl,
+                  borderTopRightRadius: RADIUS.xl,
+                  paddingHorizontal: 20,
+                  paddingTop: 14,
+                  paddingBottom: 28,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text.muted }}>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.text.primary }}>
+                    Filter Sales by Date
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const todayStr = format(new Date(), 'yyyy-MM-dd');
+                      const pickedStr = format(iosDraftDate, 'yyyy-MM-dd');
+                      setCustomDate(pickedStr > todayStr ? todayStr : pickedStr);
+                      setDateFilter('custom');
+                      setShowDatePicker(false);
+                    }}
+                  >
+                    <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.accent }}>
+                      Apply
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <DateTimePicker
+                  value={iosDraftDate}
+                  mode="date"
+                  display="spinner"
+                  maximumDate={new Date()}
+                  onChange={(_event, date) => {
+                    if (date) setIosDraftDate(date);
+                  }}
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
       </ScreenShell>
     </SwipeableTabScreen>
   );

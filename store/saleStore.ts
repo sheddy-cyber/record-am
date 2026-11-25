@@ -8,10 +8,12 @@ interface SaleState {
   soldProductQuantities: Record<string, number>;
   hasLoadedPinned: boolean;
   hasLoadedSold: boolean;
+  soldBranchKey: string | null;
 
   loadPinnedProductIds: (businessId: string) => Promise<void>;
   togglePinnedProduct: (businessId: string, productId: string) => Promise<void>;
-  loadSoldProductQuantities: (businessId: string, branchId: string) => Promise<void>;
+  loadSoldProductQuantities: (businessId: string, branchId: string, forceRefresh?: boolean) => Promise<void>;
+  resetBranchStats: () => void;
   reset: () => void;
 }
 
@@ -20,6 +22,7 @@ export const useSaleStore = create<SaleState>((set, get) => ({
   soldProductQuantities: {},
   hasLoadedPinned: false,
   hasLoadedSold: false,
+  soldBranchKey: null,
 
   loadPinnedProductIds: async (businessId: string) => {
     if (get().hasLoadedPinned) return;
@@ -49,8 +52,12 @@ export const useSaleStore = create<SaleState>((set, get) => ({
     } catch {}
   },
 
-  loadSoldProductQuantities: async (businessId: string, branchId: string) => {
-    if (get().hasLoadedSold) return;
+  loadSoldProductQuantities: async (businessId: string, branchId: string, forceRefresh = false) => {
+    const branchKey = `${businessId}:${branchId}`;
+    if (!forceRefresh && get().hasLoadedSold && get().soldBranchKey === branchKey) return;
+    if (get().soldBranchKey && get().soldBranchKey !== branchKey) {
+      set({ soldProductQuantities: {} });
+    }
     try {
       const { data, error } = await supabase
         .from(saleItemsTable())
@@ -74,11 +81,18 @@ export const useSaleStore = create<SaleState>((set, get) => ({
         {} as Record<string, number>
       );
 
-      set({ soldProductQuantities: totals, hasLoadedSold: true });
+      set({ soldProductQuantities: totals, hasLoadedSold: true, soldBranchKey: branchKey });
     } catch {
-      set({ soldProductQuantities: {}, hasLoadedSold: true });
+      set({ soldProductQuantities: {}, hasLoadedSold: true, soldBranchKey: branchKey });
     }
   },
+
+  resetBranchStats: () =>
+    set({
+      soldProductQuantities: {},
+      hasLoadedSold: false,
+      soldBranchKey: null,
+    }),
 
   reset: () =>
     set({
@@ -86,5 +100,6 @@ export const useSaleStore = create<SaleState>((set, get) => ({
       soldProductQuantities: {},
       hasLoadedPinned: false,
       hasLoadedSold: false,
+      soldBranchKey: null,
     }),
 }));

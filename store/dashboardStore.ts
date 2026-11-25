@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { DashboardStats, RevenueActivity, CustomerDebt } from '@/types';
 import {
   buildCachedDashboardData,
+  getPendingSyncEntityIds,
   readCachedProducts,
   upsertCachedCustomerDebts,
   upsertCachedExpenses,
@@ -309,35 +310,54 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
         return sum + Number(sale.amount_paid ?? 0);
       }, 0);
 
-      // Re-read latest cache to account for transactions recorded locally during the network fetch
-      const latestCached = await buildCachedDashboardData(businessId, branchId);
+      // Re-read latest cache & pending sync queue to account ONLY for genuinely
+      // unsynced offline mutations rather than resurrecting deleted records.
+      const [latestCached, pendingIds] = await Promise.all([
+        buildCachedDashboardData(businessId, branchId),
+        getPendingSyncEntityIds(),
+      ]);
+
+      const hasPendingSales = pendingIds.saleIds.size > 0 || pendingIds.repaymentIds.size > 0;
+      const hasPendingExpenses = pendingIds.expenseIds.size > 0;
+      const hasPendingDebts = pendingIds.debtIds.size > 0 || pendingIds.saleIds.size > 0;
 
       const serverSalesTotal = totalSales + totalRepayments;
       const cachedTodaySales = latestCached.stats?.today_sales ?? 0;
       const cachedTodayProfit = latestCached.stats?.today_profit ?? 0;
 
-      // Prefer server sales total unless local cache has unsynced offline sales (cachedTodaySales > serverSalesTotal)
-      const resolvedTodaySales = Math.max(serverSalesTotal, cachedTodaySales);
-      const resolvedTodayExpenses = Math.max(totalExpenses, latestCached.stats?.today_expenses ?? 0);
-      const resolvedTodayProfit = serverSalesTotal >= cachedTodaySales
-        ? Number(serverGrossProfit.toFixed(2))
-        : Number(cachedTodayProfit.toFixed(2));
+      // Trust the live server total unless local device has unsynced sales in the queue
+      const resolvedTodaySales =
+        hasPendingSales && cachedTodaySales > serverSalesTotal ? cachedTodaySales : serverSalesTotal;
+      const resolvedTodayExpenses =
+        hasPendingExpenses && (latestCached.stats?.today_expenses ?? 0) > totalExpenses
+          ? (latestCached.stats?.today_expenses ?? 0)
+          : totalExpenses;
+      const resolvedTodayProfit =
+        hasPendingSales && cachedTodaySales > serverSalesTotal
+          ? Number(cachedTodayProfit.toFixed(2))
+          : Number(serverGrossProfit.toFixed(2));
 
       const serverSalesCount = salesCount + repaymentsCount;
       const cachedTodaySalesCount = latestCached.stats?.today_sales_count ?? 0;
-      const resolvedTodaySalesCount = Math.max(serverSalesCount, cachedTodaySalesCount);
+      const resolvedTodaySalesCount =
+        hasPendingSales && cachedTodaySalesCount > serverSalesCount ? cachedTodaySalesCount : serverSalesCount;
 
-      // Merge debts so newly created local debts don't vanish before server sync
+      // Merge debts only for unsynced offline debts still waiting in the sync queue
       const serverDebts = (debtListRes.data as CustomerDebt[]) ?? [];
       const serverDebtIds = new Set(serverDebts.map((d) => d.id));
       const mergedRecentDebts = [
         ...serverDebts,
-        ...latestCached.recentDebts.filter((d) => !serverDebtIds.has(d.id) && d.status !== 'settled'),
+        ...latestCached.recentDebts.filter(
+          (d) => !serverDebtIds.has(d.id) && d.status !== 'settled' && pendingIds.debtIds.has(d.id),
+        ),
       ]
         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         .slice(0, 3);
 
-      const resolvedOutstandingDebts = Math.max(totalDebts, latestCached.stats?.outstanding_debts ?? 0);
+      const resolvedOutstandingDebts =
+        hasPendingDebts && (latestCached.stats?.outstanding_debts ?? 0) > totalDebts
+          ? (latestCached.stats?.outstanding_debts ?? 0)
+          : totalDebts;
 
       const resolvedStats: DashboardStats = {
         today_sales: resolvedTodaySales,

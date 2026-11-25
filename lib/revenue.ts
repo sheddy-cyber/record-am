@@ -1,3 +1,4 @@
+import { endOfDay, startOfDay } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import { isDebtSettlementSale } from '@/lib/records';
 import { PaymentStatus, RevenueActivity, Sale } from '@/types';
@@ -5,10 +6,46 @@ import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { attachProductSummaries, saleItemsTable } from '@/lib/dataAccess';
 import {
+  getPendingSyncEntityIds,
   readCachedProducts,
   readCachedRevenueActivities,
   upsertCachedRevenueActivities,
 } from '@/lib/offlineStore';
+
+export const parseLocalDateString = (dateStr: string): Date => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return new Date(dateStr);
+  return new Date(y, m - 1, d);
+};
+
+const isWithinLocalDateRange = (isoDate: string, fromDate?: string, toDate?: string): boolean => {
+  if (!fromDate && !toDate) return true;
+  const ts = new Date(isoDate).getTime();
+  if (Number.isNaN(ts)) return false;
+  if (fromDate) {
+    const startTs = startOfDay(parseLocalDateString(fromDate)).getTime();
+    if (ts < startTs) return false;
+  }
+  if (toDate) {
+    const endTs = endOfDay(parseLocalDateString(toDate)).getTime();
+    if (ts > endTs) return false;
+  }
+  return true;
+};
+
+export interface FetchRevenuePageParams {
+  businessId: string;
+  branchId: string;
+  page?: number;
+  pageSize?: number;
+  fromDate?: string;
+  toDate?: string;
+}
+
+export interface FetchRevenuePageResult {
+  activities: RevenueActivity[];
+  hasMore: boolean;
+}
 
 type SaleRow = Sale & {
   customer?: {
@@ -54,29 +91,41 @@ type DebtRepaymentRow = {
   debt?: DebtJoin | DebtJoin[] | null;
 };
 
-export async function fetchRevenueActivities(
-  businessId: string,
-  branchId: string,
-  limit = 60,
-): Promise<RevenueActivity[]> {
+export async function fetchRevenueActivitiesPage({
+  businessId,
+  branchId,
+  page = 0,
+  pageSize = 50,
+  fromDate,
+  toDate,
+}: FetchRevenuePageParams): Promise<FetchRevenuePageResult> {
+  const offset = page * pageSize;
+  const fetchLimit = pageSize + 1;
+  const rangeEnd = offset + fetchLimit - 1;
+  const startIso = fromDate ? startOfDay(parseLocalDateString(fromDate)).toISOString() : undefined;
+  const endIso = toDate ? endOfDay(parseLocalDateString(toDate)).toISOString() : undefined;
+
   try {
     const itemsSource = saleItemsTable();
     const includeCosts = itemsSource === 'sale_items';
-    const [salesResponse, repaymentsResponse, activeDebtsResponse] = await Promise.all([
-      supabase
-        .from('sales')
-        .select(
-          includeCosts
-            ? '*, customer:customers(name, phone), items:sale_items(product_id, quantity, unit_price, discount_amount, total_price, product:products(name))'
-            : '*, customer:customers(name, phone), items:staff_sale_items(product_id, quantity, unit_price, discount_amount, total_price)',
-        )
-        .eq('business_id', businessId)
-        .eq('branch_id', branchId)
-        .order('created_at', { ascending: false })
-        .limit(limit),
-      supabase
-        .from('debt_repayments')
-        .select(`
+
+    let salesQuery = supabase
+      .from('sales')
+      .select(
+        includeCosts
+          ? '*, customer:customers(name, phone), items:sale_items(product_id, quantity, unit_price, discount_amount, total_price, product:products(name))'
+          : '*, customer:customers(name, phone), items:staff_sale_items(product_id, quantity, unit_price, discount_amount, total_price)',
+      )
+      .eq('business_id', businessId)
+      .eq('branch_id', branchId)
+      .order('created_at', { ascending: false });
+
+    if (startIso) salesQuery = salesQuery.gte('created_at', startIso);
+    if (endIso) salesQuery = salesQuery.lte('created_at', endIso);
+
+    let repaymentsQuery = supabase
+      .from('debt_repayments')
+      .select(`
           id,
           amount,
           payment_method,
@@ -101,10 +150,16 @@ export async function fetchRevenueActivities(
             )
           )
         `)
-        .eq('debt.business_id', businessId)
-        .eq('debt.branch_id', branchId)
-        .order('created_at', { ascending: false })
-        .limit(limit),
+      .eq('debt.business_id', businessId)
+      .eq('debt.branch_id', branchId)
+      .order('created_at', { ascending: false });
+
+    if (startIso) repaymentsQuery = repaymentsQuery.gte('created_at', startIso);
+    if (endIso) repaymentsQuery = repaymentsQuery.lte('created_at', endIso);
+
+    const [salesResponse, repaymentsResponse, activeDebtsResponse, pendingIds] = await Promise.all([
+      salesQuery.range(offset, rangeEnd),
+      repaymentsQuery.range(offset, rangeEnd),
       supabase
         .from('customer_debts')
         .select('sale_id')
@@ -112,6 +167,7 @@ export async function fetchRevenueActivities(
         .eq('branch_id', branchId)
         .neq('status', 'settled')
         .not('sale_id', 'is', null),
+      page === 0 ? getPendingSyncEntityIds() : Promise.resolve(null),
     ]);
 
     if (salesResponse.error) {
@@ -122,8 +178,12 @@ export async function fetchRevenueActivities(
       throw repaymentsResponse.error;
     }
 
-    const rawSalesList = (salesResponse.data as any[]) ?? [];
-    const rawRepaymentsList = (repaymentsResponse.data as DebtRepaymentRow[]) ?? [];
+    const fetchedSales = (salesResponse.data as any[]) ?? [];
+    const fetchedRepayments = (repaymentsResponse.data as DebtRepaymentRow[]) ?? [];
+    const hasMore = fetchedSales.length > pageSize || fetchedRepayments.length > pageSize;
+
+    const rawSalesList = fetchedSales.slice(0, pageSize);
+    const rawRepaymentsList = fetchedRepayments.slice(0, pageSize);
 
     // ── Build Product Name Map (resolves products for staff accounts & unjoined items) ──
     const productNameMap = new Map<string, string>();
@@ -366,17 +426,25 @@ export async function fetchRevenueActivities(
     const serverActivities = [...saleActivities, ...repaymentActivities]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-    // Upsert server activities into cache so all activities are preserved
+    // Upsert server activities into cache so offline fallback stays rich
     await upsertCachedRevenueActivities(businessId, branchId, serverActivities);
 
-    const cachedActivities = await readCachedRevenueActivities(businessId, branchId, 500);
-    const serverActivityKeys = new Set(serverActivities.map((activity) => `${activity.kind}-${activity.id}`));
-    const allActivities = [
-      ...serverActivities,
-      ...cachedActivities
-        .filter((activity) => !serverActivityKeys.has(`${activity.kind}-${activity.id}`))
+    let mergedActivities = serverActivities;
+
+    // On page 0, merge any unsynced local sales/repayments waiting in the sync queue
+    if (page === 0 && pendingIds) {
+      const cachedActivities = await readCachedRevenueActivities(businessId, branchId, 0);
+      const serverActivityKeys = new Set(serverActivities.map((activity) => `${activity.kind}-${activity.id}`));
+      const unsyncedCached = cachedActivities
+        .filter((activity) => {
+          if (serverActivityKeys.has(`${activity.kind}-${activity.id}`)) return false;
+          if (!isWithinLocalDateRange(activity.created_at, fromDate, toDate)) return false;
+          if (activity.kind === 'sale') {
+            return pendingIds.saleIds.has(activity.sale_id || activity.id);
+          }
+          return pendingIds.repaymentIds.has(activity.id);
+        })
         .map((activity) => {
-          // Heal any previously cached items that had "Unknown Item" or missing names
           if (!activity.items?.length) return activity;
           const healedItems = activity.items.map((it: any) => {
             if ((!it.product_name || it.product_name === 'Unknown Item' || it.product_name === 'Unknown') && it.product_id) {
@@ -395,14 +463,42 @@ export async function fetchRevenueActivities(
             items: healedItems,
             items_summary: healedSummary ? (healedSummary.length > 40 ? healedSummary.substring(0, 40) + '...' : healedSummary) : activity.items_summary,
           };
-        }),
-    ]
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        });
 
-    return allActivities.slice(0, limit);
+      mergedActivities = [...unsyncedCached, ...serverActivities]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+
+    return {
+      activities: mergedActivities,
+      hasMore,
+    };
   } catch (error) {
-    const cached = await readCachedRevenueActivities(businessId, branchId, limit);
-    if (cached.length > 0) return cached;
+    const allCached = await readCachedRevenueActivities(businessId, branchId, 0);
+    const filteredCached = allCached.filter((activity) =>
+      isWithinLocalDateRange(activity.created_at, fromDate, toDate),
+    );
+    const slice = filteredCached.slice(offset, offset + pageSize);
+    if (slice.length > 0 || page > 0 || fromDate || toDate) {
+      return {
+        activities: slice,
+        hasMore: filteredCached.length > offset + pageSize,
+      };
+    }
     throw error;
   }
+}
+
+export async function fetchRevenueActivities(
+  businessId: string,
+  branchId: string,
+  limit = 60,
+): Promise<RevenueActivity[]> {
+  const result = await fetchRevenueActivitiesPage({
+    businessId,
+    branchId,
+    page: 0,
+    pageSize: limit,
+  });
+  return result.activities.slice(0, limit);
 }

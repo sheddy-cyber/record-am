@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useIsFocused } from '@react-navigation/native';
+import { AppState } from 'react-native';
 import { isSupabaseConfigured, supabase } from '@/lib/supabase';
 
 type RealtimeTableConfig = {
@@ -66,7 +66,14 @@ export function useRealtimeRefresh({
 
     channel.subscribe();
 
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        scheduleRefresh();
+      }
+    });
+
     return () => {
+      appStateSubscription.remove();
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;

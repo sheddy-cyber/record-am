@@ -17,13 +17,13 @@ export function useOfflineSync(enabled = true) {
     };
 
     if (isOnline) {
-      scheduleOfflineSync(300);
+      void flushOfflineQueue();
     }
 
     const interval = setInterval(sync, 15000);
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active' && isOnline) {
-        scheduleOfflineSync(300);
+        void flushOfflineQueue();
       }
     });
 

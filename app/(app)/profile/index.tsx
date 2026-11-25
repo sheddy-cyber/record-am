@@ -14,16 +14,19 @@ import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { supabase } from '@/lib/supabase';
-import { Button, Card } from '@/components/ui';
+import { pickAndUploadBusinessLogo, removeBusinessLogo } from '@/lib/businessLogo';
+import * as Clipboard from 'expo-clipboard';
+import { Badge, Button, Card } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
-import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
+import { BusinessAvatar, HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';
 import Toast from 'react-native-toast-message';
 import { dismissScreen } from '@/lib/navigation';
 
 export default function ProfileScreen() {
-  const { profile, user, setProfile, initialize, userRole } = useAuthStore();
+  const { profile, user, setProfile, initialize, userRole, staffId, currentBusiness, currentBranch } = useAuthStore();
   const [refreshing, setRefreshing] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const [fullName, setFullName] = useState(profile?.full_name ?? '');
   const [phone, setPhone] = useState(profile?.phone ?? '');
@@ -170,30 +173,120 @@ export default function ProfileScreen() {
         }
       >
           <Card>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 18 }}>
-              <View
-                style={{
-                  width: 56,
-                  height: 56,
-                  borderWidth: StyleSheet.hairlineWidth,
-                  borderRadius: RADIUS.full,
-                  borderColor: COLORS.border,
-                  backgroundColor: COLORS.navyLight,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Text style={{ fontSize: 22, fontFamily: FONT.bold, color: COLORS.navy }}>
-                  {(profile?.full_name ?? user?.email ?? 'U').charAt(0).toUpperCase()}
-                </Text>
-              </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+              <BusinessAvatar
+                name={currentBusiness?.name || profile?.full_name || user?.email || 'U'}
+                logoUrl={currentBusiness?.logo_url}
+                size={60}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={{ color: COLORS.text.primary, fontFamily: FONT.bold, fontSize: 16 }}>
                   {profile?.full_name ?? 'User'}
                 </Text>
                 <Text style={{ fontFamily: FONT.regular, color: COLORS.text.muted, fontSize: 13, marginTop: 2 }}>{user?.email}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                  {userRole ? <Badge label={userRole.toUpperCase()} variant="accent" /> : null}
+                  {staffId ? (
+                    <TouchableOpacity
+                      onPress={async () => {
+                        await Clipboard.setStringAsync(staffId);
+                        Toast.show({ type: 'success', text1: 'Staff ID copied', text2: staffId });
+                      }}
+                      activeOpacity={0.75}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: RADIUS.full,
+                        backgroundColor: '#EEF4FF',
+                      }}
+                    >
+                      <Text style={{ fontFamily: FONT.bold, fontSize: 11, color: COLORS.navy }}>
+                        ID: {staffId}
+                      </Text>
+                      <Feather name="copy" size={10} color={COLORS.navy} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
             </View>
+
+            {currentBusiness && isOwnerOrManager ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                  paddingTop: 12,
+                  paddingBottom: 14,
+                  marginBottom: 14,
+                  borderTopWidth: StyleSheet.hairlineWidth,
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  borderColor: COLORS.border,
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: FONT.semiBold, fontSize: 13, color: COLORS.text.primary }}>
+                    Business Logo (Profile Picture)
+                  </Text>
+                  <Text style={{ fontFamily: FONT.regular, fontSize: 11.5, color: COLORS.text.muted }}>
+                    Shown on dashboard, profile & receipts
+                  </Text>
+                </View>
+                <Button
+                  title={currentBusiness.logo_url ? 'Change' : 'Upload Logo'}
+                  variant="secondary"
+                  size="sm"
+                  loading={uploadingLogo}
+                  onPress={async () => {
+                    setUploadingLogo(true);
+                    try {
+                      const uploaded = await pickAndUploadBusinessLogo(currentBusiness.id);
+                      if (uploaded) {
+                        Toast.show({ type: 'success', text1: 'Business logo updated' });
+                      }
+                    } catch (err: any) {
+                      Alert.alert('Upload Failed', err?.message || 'Unable to upload business logo.');
+                    } finally {
+                      setUploadingLogo(false);
+                    }
+                  }}
+                />
+                {currentBusiness.logo_url ? (
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert('Remove Logo', 'Remove your business logo?', [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Remove',
+                          style: 'destructive',
+                          onPress: async () => {
+                            setUploadingLogo(true);
+                            try {
+                              await removeBusinessLogo(currentBusiness.id);
+                              Toast.show({ type: 'success', text1: 'Business logo removed' });
+                            } catch (err: any) {
+                              Alert.alert('Error', err?.message || 'Could not remove logo.');
+                            } finally {
+                              setUploadingLogo(false);
+                            }
+                          },
+                        },
+                      ]);
+                    }}
+                    style={{
+                      padding: 8,
+                      borderRadius: RADIUS.sm,
+                      backgroundColor: '#FEF2F2',
+                    }}
+                  >
+                    <Feather name="trash-2" size={15} color={COLORS.danger} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null}
 
             <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, marginBottom: 16 }}>
               Personal Information
@@ -301,6 +394,8 @@ export default function ProfileScreen() {
           <Card>
             <Text style={{ fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.muted, marginBottom: 12 }}>Account Info</Text>
             {[
+              ...(staffId ? [{ label: 'Staff ID', value: staffId }] : []),
+              ...(currentBranch?.name ? [{ label: 'Branch', value: currentBranch.name }] : []),
               { label: 'Email', value: user?.email ?? '-' },
               {
                 label: 'Member since',
