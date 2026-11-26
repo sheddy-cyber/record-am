@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
   },
   vr: { width: StyleSheet.hairlineWidth, backgroundColor: COLORS.border },
   figLabel: { fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.secondary },
-  figValue: { fontSize: 24, fontFamily: FONT.serif, color: COLORS.text.primary, marginTop: 4, fontVariant: ['tabular-nums'] },
+  figValue: { fontSize: 24, fontFamily: FONT.display, color: COLORS.text.primary, marginTop: 4, fontVariant: ['tabular-nums'] },
   figSub: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
   topLine: { fontSize: 13.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 10, paddingHorizontal: 4 },
   section: { fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3, marginTop: 28, marginBottom: 10 },

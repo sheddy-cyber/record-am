@@ -661,6 +661,9 @@ function IconImpl({
   const sw = strokeWidth ?? (size <= 14 ? 2.1 : size <= 18 ? 1.9 : 1.75);
   const svg = (
     <Svg
+      // Remount when the glyph changes: react-native-svg does not reliably clear
+      // a fill on native when the next glyph simply omits it.
+      key={name}
       width={size}
       height={size}
       viewBox="0 0 24 24"

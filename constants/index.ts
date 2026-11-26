@@ -11,29 +11,29 @@ export const APP_FOOTER_TEXT = `v${APP_VERSION} · PYTHRON Labs`;
 export const CURRENCY_SYMBOL = String.fromCharCode(0x20A6);
 
 // ─── Typefaces ──────────────────────────────────────────────────────────────
-// Public Sans carries the interface (it has a real ₦ glyph and tabular figures);
-// Newsreader is reserved for display moments: large titles and hero figures.
+// One family throughout: Geist. The bundled files add a naira sign (U+20A6),
+// which stock Geist lacks, so amounts never fall back to another font.
 // Families are registered in app/_layout.tsx. Use these instead of fontWeight.
 export const FONT = {
-  thin: 'PublicSans-Regular',
-  light: 'PublicSans-Regular',
-  regular: 'PublicSans-Regular',
-  medium: 'PublicSans-Medium',
-  semiBold: 'PublicSans-SemiBold',
-  bold: 'PublicSans-SemiBold',
-  black: 'PublicSans-Bold',
-  heavy: 'PublicSans-Bold',
-  serif: 'Newsreader-Medium',
-  serifRegular: 'Newsreader-Regular',
+  thin: 'Geist-Regular',
+  light: 'Geist-Regular',
+  regular: 'Geist-Regular',
+  medium: 'Geist-Medium',
+  semiBold: 'Geist-SemiBold',
+  bold: 'Geist-SemiBold',
+  black: 'Geist-Bold',
+  heavy: 'Geist-Bold',
+  /** Large titles and hero figures. */
+  display: 'Geist-SemiBold',
+  /** Quoted speech and notes set at display sizes. */
+  displayRegular: 'Geist-Regular',
 } as const;
 
 export const FONT_ASSETS = {
-  'PublicSans-Regular': require('../assets/fonts/PublicSans-Regular.ttf'),
-  'PublicSans-Medium': require('../assets/fonts/PublicSans-Medium.ttf'),
-  'PublicSans-SemiBold': require('../assets/fonts/PublicSans-SemiBold.ttf'),
-  'PublicSans-Bold': require('../assets/fonts/PublicSans-Bold.ttf'),
-  'Newsreader-Regular': require('../assets/fonts/Newsreader-Regular.ttf'),
-  'Newsreader-Medium': require('../assets/fonts/Newsreader-Medium.ttf'),
+  'Geist-Regular': require('../assets/fonts/Geist-Regular.ttf'),
+  'Geist-Medium': require('../assets/fonts/Geist-Medium.ttf'),
+  'Geist-SemiBold': require('../assets/fonts/Geist-SemiBold.ttf'),
+  'Geist-Bold': require('../assets/fonts/Geist-Bold.ttf'),
 } as const;
 
 // ─── Palette ────────────────────────────────────────────────────────────────
@@ -152,9 +152,9 @@ export const ACCENTS = {
 
 // ─── Typography Scale ───────────────────────────────────────────────────────
 export const TYPE = {
-  display: { fontSize: 40, fontFamily: FONT.serif, letterSpacing: -0.8, lineHeight: 46 },
-  largeTitle: { fontSize: 32, fontFamily: FONT.serif, letterSpacing: -0.6, lineHeight: 38 },
-  h1: { fontSize: 26, fontFamily: FONT.serif, letterSpacing: -0.4 },
+  display: { fontSize: 40, fontFamily: FONT.display, letterSpacing: -1.3, lineHeight: 46 },
+  largeTitle: { fontSize: 30, fontFamily: FONT.display, letterSpacing: -0.9, lineHeight: 36 },
+  h1: { fontSize: 25, fontFamily: FONT.display, letterSpacing: -0.7 },
   h2: { fontSize: 20, fontFamily: FONT.semiBold, letterSpacing: -0.3 },
   h3: { fontSize: 17, fontFamily: FONT.semiBold, letterSpacing: -0.2 },
   body: { fontSize: 15, fontFamily: FONT.regular, letterSpacing: -0.1, lineHeight: 21 },
@@ -164,7 +164,7 @@ export const TYPE = {
   footnote: { fontSize: 12, fontFamily: FONT.regular, letterSpacing: 0.05 },
   label: { fontSize: 13, fontFamily: FONT.medium, letterSpacing: 0 },
   overline: { fontSize: 11.5, fontFamily: FONT.medium, letterSpacing: 0.6, textTransform: 'uppercase' as const },
-  big: { fontSize: 34, fontFamily: FONT.serif, letterSpacing: -0.8 },
+  big: { fontSize: 34, fontFamily: FONT.display, letterSpacing: -1.1 },
   stat: { fontSize: 22, fontFamily: FONT.semiBold, letterSpacing: -0.5, fontVariant: ['tabular-nums'] as ['tabular-nums'] },
 } as const;
 

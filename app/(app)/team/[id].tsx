@@ -447,7 +447,7 @@ function InfoRow({ label, value, last }: { label: string; value: string; last?: 
 
 const styles = StyleSheet.create({
   identity: { flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 8 },
-  name: { fontSize: 26, lineHeight: 31, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -0.4 },
+  name: { fontSize: 26, lineHeight: 31, fontFamily: FONT.display, color: COLORS.text.primary, letterSpacing: -0.4 },
   meta: { fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 4 },
   section: { fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3, marginTop: 28, marginBottom: 10 },
   grid: {
@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
   },
   figure: { width: '50%', padding: 14 },
   figLabel: { fontSize: 13, fontFamily: FONT.medium, color: COLORS.text.secondary },
-  figValue: { fontSize: 21, fontFamily: FONT.serif, color: COLORS.text.primary, marginTop: 4, fontVariant: ['tabular-nums'] },
+  figValue: { fontSize: 21, fontFamily: FONT.display, color: COLORS.text.primary, marginTop: 4, fontVariant: ['tabular-nums'] },
   figSub: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
   group: {
     backgroundColor: COLORS.card,

@@ -104,7 +104,7 @@ export function BrandWordmark({
       <Text
         style={{
           fontSize: size,
-          fontFamily: FONT.serif,
+          fontFamily: FONT.display,
           color: invert ? COLORS.text.inverse : COLORS.text.primary,
           letterSpacing: -size * 0.025,
         }}
@@ -155,7 +155,7 @@ export function BusinessAvatar({ name, logoUrl, size = 40 }: { name: string; log
 
   return (
     <View style={frame}>
-      <Text style={{ fontSize: size * 0.4, fontFamily: FONT.serif, color: COLORS.accentDark }}>{initials || 'B'}</Text>
+      <Text style={{ fontSize: size * 0.4, fontFamily: FONT.display, color: COLORS.accentDark }}>{initials || 'B'}</Text>
     </View>
   );
 }

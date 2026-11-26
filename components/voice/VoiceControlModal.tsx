@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   quote: {
     fontSize: 22,
     lineHeight: 29,
-    fontFamily: FONT.serifRegular,
+    fontFamily: FONT.displayRegular,
     color: COLORS.text.primary,
     textAlign: 'center',
     paddingHorizontal: 8,
@@ -337,7 +337,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 4,
   },
-  heardText: { flex: 1, fontSize: 16, lineHeight: 22, fontFamily: FONT.serifRegular, color: COLORS.text.secondary },
+  heardText: { flex: 1, fontSize: 16, lineHeight: 22, fontFamily: FONT.displayRegular, color: COLORS.text.secondary },
   doneBadge: {
     width: 64,
     height: 64,

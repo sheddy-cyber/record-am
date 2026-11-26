@@ -529,7 +529,7 @@ function Figure({ value, label }: { value: string; label: string }) {
 
 const styles = StyleSheet.create({
   label: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary },
-  total: { fontSize: 40, lineHeight: 48, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -1, fontVariant: ['tabular-nums'] },
+  total: { fontSize: 40, lineHeight: 48, fontFamily: FONT.display, color: COLORS.text.primary, letterSpacing: -1, fontVariant: ['tabular-nums'] },
   meta: { fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 20 },
   action: {

@@ -366,7 +366,7 @@ const rowStyles = StyleSheet.create({
   last: { borderBottomLeftRadius: 18, borderBottomRightRadius: 18, borderBottomWidth: StyleSheet.hairlineWidth },
   inner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, paddingRight: 16 },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.border },
-  rank: { width: 22, fontSize: 15, fontFamily: FONT.serif, color: COLORS.text.muted, textAlign: 'center' },
+  rank: { width: 22, fontSize: 15, fontFamily: FONT.display, color: COLORS.text.muted, textAlign: 'center' },
   name: { fontSize: 15, fontFamily: FONT.medium, color: COLORS.text.primary, flexShrink: 1 },
   value: { fontSize: 15, fontFamily: FONT.semiBold, color: COLORS.text.primary, fontVariant: ['tabular-nums'] },
   track: { height: 4, borderRadius: 2, backgroundColor: COLORS.surface2, overflow: 'hidden' },

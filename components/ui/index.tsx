@@ -920,7 +920,7 @@ export const AmountDisplay: React.FC<{
     <Text
       style={{
         fontSize: sizes[size],
-        fontFamily: size === 'xl' ? FONT.serif : FONT.semiBold,
+        fontFamily: size === 'xl' ? FONT.display : FONT.semiBold,
         color,
         letterSpacing: -0.3,
         fontVariant: ['tabular-nums'],

@@ -142,7 +142,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 24, paddingTop: 48, paddingBottom: 24 },
   content: { flex: 1, paddingHorizontal: 24, paddingTop: 12 },
   titleContainer: { marginBottom: 32 },
-  title: { fontSize: 32, lineHeight: 38, fontFamily: FONT.serif, color: COLORS.text.primary, marginBottom: 10, letterSpacing: -0.6 },
+  title: { fontSize: 32, lineHeight: 38, fontFamily: FONT.display, color: COLORS.text.primary, marginBottom: 10, letterSpacing: -0.6 },
   subtitle: { fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.secondary, lineHeight: 22 },
   footer: { padding: 24, paddingBottom: 48 },
   invalidContent: { flex: 1, justifyContent: 'center', paddingHorizontal: 28, alignItems: 'center' },

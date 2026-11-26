@@ -92,7 +92,7 @@ export default function AuthCallbackScreen() {
 const styles = StyleSheet.create({
   content: { flex: 1, padding: 28, justifyContent: 'center', alignItems: 'center' },
   icon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.dangerLight, alignItems: 'center', justifyContent: 'center', marginTop: 48, marginBottom: 20 },
-  title: { color: COLORS.text.primary, fontFamily: FONT.serif, fontSize: 28, lineHeight: 34, textAlign: 'center', marginBottom: 10 },
+  title: { color: COLORS.text.primary, fontFamily: FONT.display, fontSize: 28, lineHeight: 34, textAlign: 'center', marginBottom: 10 },
   message: { color: COLORS.text.secondary, fontFamily: FONT.regular, fontSize: 15, lineHeight: 22, textAlign: 'center' },
   button: { width: '100%', marginTop: 30 },
   secondaryAction: { padding: 18, marginTop: 2 },

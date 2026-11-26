@@ -990,7 +990,7 @@ const summaryStyles = StyleSheet.create({
     marginBottom: 24,
   },
   label: { fontSize: 13.5, fontFamily: FONT.medium, color: COLORS.text.secondary },
-  value: { fontSize: 36, lineHeight: 42, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
+  value: { fontSize: 36, lineHeight: 42, fontFamily: FONT.display, color: COLORS.text.primary, letterSpacing: -0.8, fontVariant: ['tabular-nums'] },
   unit: { fontSize: 17, fontFamily: FONT.regular, color: COLORS.text.muted, letterSpacing: 0 },
   status: { fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted },
 });

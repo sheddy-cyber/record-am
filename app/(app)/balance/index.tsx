@@ -242,7 +242,7 @@ export default function DailyBalanceScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity style={{ alignItems: 'center', paddingHorizontal: 12 }} onPress={openDatePicker} activeOpacity={0.6}>
-              <Text style={{ color: COLORS.text.primary, fontFamily: FONT.serif, fontSize: 20, letterSpacing: -0.3 }}>
+              <Text style={{ color: COLORS.text.primary, fontFamily: FONT.display, fontSize: 20, letterSpacing: -0.3 }}>
                 {selectedDate === todayStr
                   ? 'Today'
                   : selectedDate === yesterdayStr

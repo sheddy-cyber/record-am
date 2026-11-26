@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, InteractionManager, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, BackHandler, Easing, InteractionManager, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import PagerView, { PagerHandle } from '@/components/navigation/Pager';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,6 +44,18 @@ const TabItem = React.memo(function TabItem({
 }) {
   const config = TABS[routeKey];
   const scale = useRef(new Animated.Value(1)).current;
+  // 0 = outline (inactive), 1 = filled (active). Both glyphs stay mounted and
+  // cross-fade, so a filled shape can never linger on an inactive tab.
+  const active = useRef(new Animated.Value(isActive ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(active, {
+      toValue: isActive ? 1 : 0,
+      duration: 160,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start();
+  }, [isActive, active]);
 
   const pressIn = () => {
     Animated.timing(scale, { toValue: 0.88, duration: 70, useNativeDriver: true }).start();
@@ -53,7 +65,6 @@ const TabItem = React.memo(function TabItem({
     Animated.spring(scale, { toValue: 1, speed: 30, bounciness: 8, useNativeDriver: true }).start();
   };
 
-  const color = isActive ? COLORS.text.primary : COLORS.text.muted;
   return (
     <Pressable
       onPressIn={pressIn}
@@ -64,8 +75,15 @@ const TabItem = React.memo(function TabItem({
       accessibilityLabel={config.label}
     >
       <Animated.View style={{ alignItems: 'center', transform: [{ scale }] }}>
-        <Icon name={isActive ? config.activeIcon : config.icon} size={24} color={color} backgroundColor={COLORS.card} />
-        <Text style={[styles.tabLabel, { color, fontFamily: isActive ? FONT.semiBold : FONT.medium }]} numberOfLines={1}>
+        <View style={styles.iconSlot}>
+          <Animated.View style={[styles.iconLayer, { opacity: active.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }) }]}>
+            <Icon name={config.icon} size={24} color={COLORS.text.muted} />
+          </Animated.View>
+          <Animated.View style={[styles.iconLayer, { opacity: active }]}>
+            <Icon name={config.activeIcon} size={24} color={COLORS.text.primary} backgroundColor={COLORS.card} />
+          </Animated.View>
+        </View>
+        <Text style={[styles.tabLabel, { color: isActive ? COLORS.text.primary : COLORS.text.muted }]} numberOfLines={1}>
           {config.label}
         </Text>
       </Animated.View>
@@ -267,8 +285,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 50,
   },
+  iconSlot: { width: 24, height: 24 },
+  iconLayer: { position: 'absolute', top: 0, left: 0 },
   tabLabel: {
     fontSize: 10.5,
+    fontFamily: FONT.medium,
     marginTop: 3,
     letterSpacing: 0.1,
   },

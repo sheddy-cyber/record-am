@@ -533,6 +533,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   successIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.success, alignItems: 'center', justifyContent: 'center' },
-  successTitle: { fontSize: 26, fontFamily: FONT.serif, color: COLORS.text.primary, textAlign: 'center' },
+  successTitle: { fontSize: 26, fontFamily: FONT.display, color: COLORS.text.primary, textAlign: 'center' },
   successText: { fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.secondary, textAlign: 'center' },
 });

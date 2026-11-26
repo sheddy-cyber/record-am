@@ -10,18 +10,19 @@ const methodLabel = (method: string) =>
   ({ cash: 'Cash', transfer: 'Bank transfer', pos: 'POS', mobile_money: 'Mobile money', mixed: 'Split payment', other: 'Other' } as Record<string, string>)[method] ??
   method.replace('_', ' ');
 
-// Shared look for every printed or exported document: Record Am's type,
+// Shared look for every printed or exported document: Geist (the device's
+// sans supplies the naira sign, which the web Geist lacks),
 // paper-white headers (no ink-heavy bands), sentence-case labels.
 const DOC_THEME = `
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  body { font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; -webkit-font-smoothing: antialiased; }
+  body { font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important; -webkit-font-smoothing: antialiased; }
   * { text-transform: none !important; }
   .header { background: #FFFFFF !important; border-bottom: 1px solid #E6E2D9 !important; border-radius: 0 !important; box-shadow: none !important; }
   .header, .header * { color: #1A1917 !important; }
   .header p, .header small, .header [class*="sub"], .header [class*="meta"], .header [class*="date"], .header [class*="period"], .header [class*="lbl"] { color: #6B675F !important; }
-  h1, .biz-name, .header .title { font-family: 'Newsreader', Georgia, 'Times New Roman', serif !important; font-weight: 500 !important; letter-spacing: -0.3px !important; }
+  h1, .biz-name, .header .title { font-family: 'Geist', -apple-system, 'Segoe UI', Roboto, sans-serif !important; font-weight: 600 !important; letter-spacing: -0.5px !important; }
   table { font-variant-numeric: tabular-nums; }
   th, thead td { background: #F5F3EE !important; color: #57534C !important; font-weight: 600 !important; border-color: #E6E2D9 !important; }
   .report-badge { background: #EDEAE3 !important; color: #1A1917 !important; border-color: #E6E2D9 !important; }

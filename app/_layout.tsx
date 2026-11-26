@@ -51,7 +51,7 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 }
 
 // ─── Global default font ────────────────────────────────────────────────────
-// Public Sans is the default face for every Text and TextInput.
+// Geist is the default face for every Text and TextInput.
 // Individual components use the FONT helper from constants for specific weights.
 const textDefaults = (Text as any);
 textDefaults.defaultProps = textDefaults.defaultProps || {};

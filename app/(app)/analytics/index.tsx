@@ -398,7 +398,7 @@ function Legend({ color, label, dashed }: { color: string; label: string; dashed
 
 const styles = StyleSheet.create({
   label: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.secondary },
-  hero: { fontSize: 44, lineHeight: 52, fontFamily: FONT.serif, color: COLORS.text.primary, letterSpacing: -1.1, fontVariant: ['tabular-nums'] },
+  hero: { fontSize: 44, lineHeight: 52, fontFamily: FONT.display, color: COLORS.text.primary, letterSpacing: -1.1, fontVariant: ['tabular-nums'] },
   heroMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
   metaText: { fontSize: 14, fontFamily: FONT.medium, color: COLORS.text.muted },
   section: { fontSize: 17, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.3, marginTop: 28, marginBottom: 10 },
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   rowDetail: { fontSize: 12.5, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 2 },
   rowValue: { fontSize: 15.5, fontFamily: FONT.semiBold, color: COLORS.text.primary, fontVariant: ['tabular-nums'] },
   rankRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 13, paddingHorizontal: 16 },
-  rank: { width: 18, fontSize: 15, fontFamily: FONT.serif, color: COLORS.text.muted, textAlign: 'center' },
+  rank: { width: 18, fontSize: 15, fontFamily: FONT.display, color: COLORS.text.muted, textAlign: 'center' },
   track: { height: 4, borderRadius: 2, backgroundColor: COLORS.surface2, overflow: 'hidden' },
   fill: { height: 4, borderRadius: 2, backgroundColor: COLORS.accent },
   empty: { fontSize: 14, fontFamily: FONT.regular, color: COLORS.text.muted, textAlign: 'center', paddingVertical: 22 },

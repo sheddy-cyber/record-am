@@ -1668,7 +1668,7 @@ const styles = {
   },
   totalAmount: {
     color: COLORS.text.primary,
-    fontFamily: FONT.serif,
+    fontFamily: FONT.display,
     fontSize: 26,
     fontVariant: ['tabular-nums'] as 'tabular-nums'[],
   },

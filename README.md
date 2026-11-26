@@ -247,8 +247,8 @@ All visual decisions live in `constants/index.ts` and the shared components; scr
 | `COLORS.card` `#FFFFFF` | Grouped lists and cards |
 | `COLORS.ink` `#1A1917` | Text and primary buttons |
 | `COLORS.accent` `#C4613F` | Brand clay: the one accent, used sparingly |
-| `FONT.*` | Public Sans for the interface (has a real ₦ glyph and tabular figures) |
-| `FONT.serif` | Newsreader, only for large titles and hero figures |
+| `FONT.*` | Geist, the only typeface. The bundled files add a ₦ glyph (stock Geist has none); see `assets/fonts/Geist-OFL.txt` |
+| `FONT.display` | Geist SemiBold for large titles and hero figures |
 
 - **Icons** are drawn for Record Am in `components/icons` (`<Icon name="…" />`), on a 24-unit grid with filled variants for the tab bar.
 - **Brand assets** are generated from one vector mark: `npm i --no-save @resvg/resvg-js sharp && node scripts/generate-brand-assets.js`.

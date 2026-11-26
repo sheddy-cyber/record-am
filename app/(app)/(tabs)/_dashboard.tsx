@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
   heroAmount: {
     fontSize: 46,
     lineHeight: 54,
-    fontFamily: FONT.serif,
+    fontFamily: FONT.display,
     color: COLORS.text.primary,
     letterSpacing: -1.2,
     marginTop: 2,

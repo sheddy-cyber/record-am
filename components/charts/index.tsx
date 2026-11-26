@@ -306,7 +306,7 @@ export const DonutChart: React.FC<DonutChartProps> = ({
         <Path key={i} d={slice.pathD} fill="none" stroke={slice.color} strokeWidth={thickness} strokeLinecap="butt" />
       ))}
       {centerLabel && (
-        <SvgText x={cx} y={cy + 2} fontSize={19} fontFamily={FONT.serif} fill={COLORS.text.primary} textAnchor="middle">
+        <SvgText x={cx} y={cy + 2} fontSize={19} fontFamily={FONT.display} fill={COLORS.text.primary} textAnchor="middle">
           {centerLabel}
         </SvgText>
       )}
