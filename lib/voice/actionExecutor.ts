@@ -26,6 +26,12 @@ import {
   recordSaleOffline,
 } from '@/lib/offlineRecords';
 import { useAuthStore } from '@/store/authStore';
+import {
+  linkFields,
+  planPurchaseForStock,
+  recordPurchaseForStock,
+  StockPurchaseItem,
+} from '@/lib/stockPurchaseLink';
 import { useBusinessStore } from '@/store/businessStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useDashboardStore } from '@/store/dashboardStore';
@@ -337,6 +343,23 @@ async function executeUpdateProductAction(
     };
   }
 
+  // A plain stock increase is also recorded as a purchase.
+  if (movement?.type === 'stock_in' && movement.quantity > 0) {
+    const link = await recordPurchaseForStock({
+      businessId: ctx.businessId,
+      branchId: ctx.branchId,
+      items: [
+        {
+          product,
+          quantity: movement.quantity,
+          unitCost: Number(productPatch.cost_price ?? product.cost_price ?? 0),
+        },
+      ],
+      notes: `Restock of ${product.name} by voice`,
+    });
+    movement = { ...movement, ...linkFields(link) };
+  }
+
   const { updateProductAndInventoryOffline } = await import('@/lib/offlineRecords');
   await updateProductAndInventoryOffline({
     businessId: ctx.businessId,
@@ -632,6 +655,9 @@ async function executeStockAction(
   },
 ): Promise<ExecutionResult> {
   const businessStore = useBusinessStore.getState();
+  // Everything said in one command is one purchase; each stock line links to it.
+  const link = await planPurchaseForStock();
+  const purchased: StockPurchaseItem[] = [];
 
   for (const item of action.items) {
     let product: Product | undefined = item.matchedProduct;
@@ -664,8 +690,10 @@ async function executeStockAction(
           unit_cost: item.costPrice,
           total_cost: item.costPrice ? item.costPrice * item.quantity : undefined,
           notes: action.notes || 'Initial stock via voice',
+          ...linkFields(link),
         },
       });
+      purchased.push({ product, quantity: item.quantity, unitCost: item.costPrice || 0 });
     } else {
       if (
         (item.costPrice !== undefined && item.costPrice !== product.cost_price) ||
@@ -692,9 +720,21 @@ async function executeStockAction(
           unit_cost: item.costPrice || product.cost_price,
           total_cost: (item.costPrice || product.cost_price) * item.quantity,
           notes: action.notes || 'Restocked via voice',
+          ...linkFields(link),
         },
       });
+      purchased.push({ product, quantity: item.quantity, unitCost: item.costPrice || product.cost_price });
     }
+  }
+
+  if (link && purchased.length > 0) {
+    await recordPurchaseForStock({
+      businessId: ctx.businessId,
+      branchId: ctx.branchId,
+      items: purchased,
+      notes: action.notes || 'Restocked by voice',
+      link,
+    });
   }
 
   await businessStore.fetchProducts(ctx.businessId);

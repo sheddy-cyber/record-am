@@ -175,6 +175,9 @@ export default function RecordPurchaseScreen() {
   const [lastPurchaseCosts, setLastPurchaseCosts] = useState<Record<string, number>>({});
 
   const hasSavedRef = useRef(false);
+  // Quantities the purchase had when opened for editing, so saving moves stock
+  // by the difference.
+  const originalItemsRef = useRef<{ product_id: string; quantity: number }[] | null>(null);
 
   const closeScreen = () => dismissScreen();
 
@@ -213,6 +216,10 @@ export default function RecordPurchaseScreen() {
   const selectedNewItemUnit = newItemUnitIsPreset ? newItemUnit : CUSTOM_UNIT_VALUE;
 
   const initializeFromPurchase = (purchase: Purchase) => {
+    originalItemsRef.current = (purchase.items ?? []).map((item) => ({
+      product_id: item.product_id,
+      quantity: Number(item.quantity ?? 0),
+    }));
     const linkedSupplier = purchase.supplier_id
       ? useSupplierStore.getState().suppliers.find((entry) => entry.id === purchase.supplier_id)
       : null;
@@ -628,10 +635,18 @@ export default function RecordPurchaseScreen() {
           discountAmount: totals.discountAmount,
           notes: notes.trim() || undefined,
           purchaseDate: purchaseDate.trim(),
+          // Stock follows the purchase, except when this screen was opened to
+          // write up stock that was already added, or to fix a mismatch.
+          stock: isSyncFlowActive || mismatchId ? ('skip' as const) : undefined,
         };
 
         const purchase = isEditing && purchaseId
-          ? await updatePurchase({ ...savePayload, purchaseId })
+          ? await updatePurchase({
+              ...savePayload,
+              purchaseId,
+              userId: user.id,
+              previousItems: originalItemsRef.current ?? undefined,
+            })
           : await recordPurchase({ ...savePayload, userId: user.id });
 
         if (!purchase) {
@@ -643,8 +658,8 @@ export default function RecordPurchaseScreen() {
 
         Toast.show({
           type: 'success',
-          text1: isEditing ? 'Purchase updated' : 'Goods recorded',
-          text2: `${purchase.purchase_number} - ${formatCurrency(totals.totalAmount)} from ${supplierName.trim()}${isEditing ? '' : ' queued for sync'}`,
+          text1: isEditing ? 'Purchase and stock updated' : 'Goods recorded and added to stock',
+          text2: `${purchase.purchase_number} - ${formatCurrency(totals.totalAmount)} from ${supplierName.trim()}`,
         });
 
         if (mismatchId) {
@@ -655,12 +670,6 @@ export default function RecordPurchaseScreen() {
         void useAnalyticsStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
         void useAnalyticsStore.getState().fetchAnalytics(currentBusiness.id, currentBranch.id);
         void useDashboardStore.getState().refreshFromCache(currentBusiness.id, currentBranch.id);
-
-        const { getAppSettings } = await import('@/lib/appSettings');
-        const settings = await getAppSettings();
-
-        const itemsToSync = (purchase.items ?? [])
-          .filter((item) => item.product && !item.product.is_service);
 
         if (isSyncFlowActive) {
           if (hasMismatch && originalProductId && currentBranch && currentBusiness) {
@@ -683,56 +692,6 @@ export default function RecordPurchaseScreen() {
             }
           }
           closeScreen();
-        } else if (settings.inventoryPurchaseSyncEnabled && !isEditing && itemsToSync.length > 0) {
-          Alert.alert(
-            'Update Stock?',
-            `Would you like to update the inventory stock quantity for the purchased item(s)?`,
-            [
-              {
-                text: 'No, Decline',
-                style: 'cancel',
-                onPress: async () => {
-                  if (currentBranch && currentBusiness) {
-                    for (const item of itemsToSync) {
-                      await addMismatch({
-                        type: 'purchase_to_stock_declined',
-                        productId: item.product_id,
-                        productName: item.product?.name || 'Unknown',
-                        branchId: currentBranch.id,
-                        businessId: currentBusiness.id,
-                        quantity: item.quantity,
-                        unitCost: item.unit_cost,
-                        purchaseId: purchase.id,
-                      });
-                    }
-                  }
-                  closeScreen();
-                },
-              },
-              {
-                text: 'Yes, Update Stock',
-                onPress: () => {
-                  const firstItem = itemsToSync[0];
-                  const remainingItems = itemsToSync.slice(1).map((item) => ({
-                    productId: item.product_id,
-                    quantity: item.quantity,
-                    unitCost: item.unit_cost,
-                  }));
-                  router.replace({
-                    pathname: '/(app)/update-stock',
-                    params: {
-                      productId: firstItem.product_id,
-                      purchasedQty: String(firstItem.quantity),
-                      purchasedUnitCost: String(firstItem.unit_cost),
-                      purchaseId: purchase.id,
-                      syncFlow: '1',
-                      pendingQueue: JSON.stringify(remainingItems),
-                    },
-                  });
-                },
-              },
-            ]
-          );
         } else {
           closeScreen();
         }

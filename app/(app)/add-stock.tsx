@@ -6,10 +6,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { getAppSettings } from '@/lib/appSettings';
-import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
-import { addMismatch } from '@/lib/mismatchService';
 import { recordInventorySnapshotOffline } from '@/lib/offlineRecords';
+import {
+  defaultPurchaseLink,
+  linkFields,
+  purchaseLinkProblem,
+  recordPurchaseForStock,
+} from '@/lib/stockPurchaseLink';
+import { PurchaseLinkFields } from '@/components/inventory/PurchaseLinkFields';
 import { Button, LoadingScreen } from '@/components/ui';
 import { KeyboardAwareScrollView } from '@/components/forms';
 import { ProductFormFields } from '@/components/inventory/ProductFormFields';
@@ -112,6 +116,7 @@ export default function AddStockScreen() {
   const [isService, setIsService] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [purchaseLink, setPurchaseLink] = useState(defaultPurchaseLink);
 
   // Sync route parameters if they change or screen is re-navigated
   useEffect(() => {
@@ -152,72 +157,7 @@ export default function AddStockScreen() {
     setReorderLevel('5');
     setBarcode('');
     setIsService(false);
-  };
-
-  const maybeOpenPurchaseSync = async (params: {
-    productId: string;
-    productName: string;
-    productUnit: string;
-    quantity: number;
-    unitCost: number;
-  }) => {
-    const settings = await getAppSettings();
-    if (!settings.inventoryPurchaseSyncEnabled || params.quantity <= 0) {
-      return false;
-    }
-
-    Alert.alert(
-      'Record Purchase?',
-      `Would you like to record a corresponding purchase for this stock addition of ${formatCount(params.quantity)} ${params.productUnit}?`,
-      [
-        {
-          text: 'No, Decline',
-          style: 'cancel',
-          onPress: async () => {
-            if (currentBranch && currentBusiness) {
-              await addMismatch({
-                type: 'stock_to_purchase_declined',
-                productId: params.productId,
-                productName: params.productName,
-                branchId: currentBranch.id,
-                businessId: currentBusiness.id,
-                quantity: params.quantity,
-                unitCost: params.unitCost,
-              });
-            }
-            closeScreen();
-          },
-        },
-        {
-          text: 'Yes, Record Purchase',
-          onPress: () => {
-            router.replace({
-              pathname: '/(app)/record-purchase',
-              params: {
-                syncFlow: '1',
-                originalProductId: params.productId,
-                originalStockQty: String(params.quantity),
-                originalUnitCost: String(params.unitCost),
-                prefill: buildPurchasePrefillParam({
-                  notes: 'Opened from inventory stock addition.',
-                  items: [
-                    {
-                      productId: params.productId,
-                      productName: params.productName,
-                      unit: params.productUnit,
-                      quantity: params.quantity,
-                      unitCost: params.unitCost,
-                    },
-                  ],
-                }),
-              },
-            });
-          },
-        },
-      ]
-    );
-
-    return true;
+    setPurchaseLink(defaultPurchaseLink());
   };
 
   const handleSaveProduct = async () => {
@@ -281,6 +221,12 @@ export default function AddStockScreen() {
     const parsedCostPrice = parseFloat(costPrice) || 0;
     const initialQuantity = isService ? 0 : parsedOpeningQuantity;
 
+    const linkProblem = initialQuantity > 0 ? purchaseLinkProblem(purchaseLink) : null;
+    if (linkProblem) {
+      Alert.alert('Purchase details', linkProblem);
+      return;
+    }
+
     const executeSave = async () => {
       setSaving(true);
       try {
@@ -300,6 +246,17 @@ export default function AddStockScreen() {
         if (!product) throw new Error('Failed to create product');
 
         if (currentBranch) {
+          // Opening stock is also recorded as a purchase, in the same save.
+          const link =
+            initialQuantity > 0
+              ? await recordPurchaseForStock({
+                  businessId: currentBusiness.id,
+                  branchId: currentBranch.id,
+                  items: [{ product, quantity: initialQuantity, unitCost: parsedCostPrice }],
+                  choice: purchaseLink,
+                  notes: `Opening stock for ${product.name}`,
+                })
+              : null;
           await recordInventorySnapshotOffline({
             businessId: currentBusiness.id,
             branchId: currentBranch.id,
@@ -315,6 +272,7 @@ export default function AddStockScreen() {
                       ? parsedCostPrice * initialQuantity
                       : undefined,
                     notes: 'Opening stock',
+                    ...linkFields(link),
                   }
                 : undefined,
           });
@@ -327,17 +285,7 @@ export default function AddStockScreen() {
         });
 
         resetProductForm();
-        const openedPurchaseSync = await maybeOpenPurchaseSync({
-          productId: product.id,
-          productName: product.name,
-          productUnit: product.unit,
-          quantity: initialQuantity,
-          unitCost: parsedCostPrice,
-        });
-
-        if (!openedPurchaseSync) {
-          closeScreen();
-        }
+        closeScreen();
       } catch (err: any) {
         Alert.alert('Error', err.message);
       } finally {
@@ -433,6 +381,13 @@ export default function AddStockScreen() {
             onBarcodeChange={setBarcode}
             onScanBarcodePress={() => setScannerOpen(true)}
           />
+          {!isService ? (
+            <PurchaseLinkFields
+              value={purchaseLink}
+              onChange={setPurchaseLink}
+              quantity={parseFloat(openingQuantity) || 0}
+            />
+          ) : null}
           <Button
             title={saving ? 'Saving...' : 'Add Product'}
             onPress={handleSaveProduct}

@@ -16,9 +16,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { getAppSettings } from '@/lib/appSettings';
-import { buildPurchasePrefillParam } from '@/lib/purchasePrefill';
 import { addMismatch, removeMismatch } from '@/lib/mismatchService';
+import {
+  defaultPurchaseLink,
+  linkFields,
+  purchaseLinkProblem,
+  recordPurchaseForStock,
+} from '@/lib/stockPurchaseLink';
+import { PurchaseLinkFields } from '@/components/inventory/PurchaseLinkFields';
 import { updateProductAndInventoryOffline } from '@/lib/offlineRecords';
 import { checkAndNotifyLowStock } from '@/lib/notifications';
 import { calculateWeightedAverageCost, calculateProfitMargin } from '@/lib/costing';
@@ -74,6 +79,9 @@ export default function UpdateStockScreen() {
   const isManualReconcile = Boolean(mismatchId);
   const isRestock = rawRestock === '1';
   const fromPurchase = stockAdjustment !== null || purchasedQty > 0;
+  // Opened for a purchase that already exists (older reconcile flow): don't
+  // record a second purchase for the same goods.
+  const forExistingPurchase = Boolean(purchaseId) || isSyncFlowActive || purchasedQty > 0 || isManualReconcile;
 
   const currentBusiness = useAuthStore((s) => s.currentBusiness);
   const currentBranch = useAuthStore((s) => s.currentBranch);
@@ -107,6 +115,7 @@ export default function UpdateStockScreen() {
   const [saving, setSaving] = useState(false);
   const [prefilledStockQty, setPrefilledStockQty] = useState<number | null>(null);
   const [selectedCostStrategy, setSelectedCostStrategy] = useState<'weighted' | 'new' | 'old' | null>(null);
+  const [purchaseLink, setPurchaseLink] = useState(defaultPurchaseLink);
 
   const hasSavedRef = useRef(false);
 
@@ -160,72 +169,6 @@ export default function UpdateStockScreen() {
     });
     return () => subscription.remove();
   }, [isSyncFlowActive, purchaseId, handleCancelOrBack]);
-
-  const maybeOpenPurchaseSync = async (params: {
-    productId: string;
-    productName: string;
-    productUnit: string;
-    quantity: number;
-    unitCost: number;
-  }) => {
-    const settings = await getAppSettings();
-    if (!settings.inventoryPurchaseSyncEnabled || params.quantity <= 0 || isSyncFlowActive) {
-      return false;
-    }
-
-    Alert.alert(
-      'Record Purchase?',
-      `Would you like to record a corresponding purchase for this stock addition of ${formatCount(params.quantity)} ${params.productUnit}?`,
-      [
-        {
-          text: 'No, Decline',
-          style: 'cancel',
-          onPress: async () => {
-            if (currentBranch && currentBusiness) {
-              await addMismatch({
-                type: 'stock_to_purchase_declined',
-                productId: params.productId,
-                productName: params.productName,
-                branchId: currentBranch.id,
-                businessId: currentBusiness.id,
-                quantity: params.quantity,
-                unitCost: params.unitCost,
-              });
-            }
-            closeScreen();
-          },
-        },
-        {
-          text: 'Yes, Record Purchase',
-          onPress: () => {
-            router.replace({
-              pathname: '/(app)/record-purchase',
-              params: {
-                syncFlow: '1',
-                originalProductId: params.productId,
-                originalStockQty: String(params.quantity),
-                originalUnitCost: String(params.unitCost),
-                prefill: buildPurchasePrefillParam({
-                  notes: 'Opened from inventory stock increase.',
-                  items: [
-                    {
-                      productId: params.productId,
-                      productName: params.productName,
-                      unit: params.productUnit,
-                      quantity: params.quantity,
-                      unitCost: params.unitCost,
-                    },
-                  ],
-                }),
-              },
-            });
-          },
-        },
-      ]
-    );
-
-    return true;
-  };
 
   const loadProducts = useCallback(async () => {
     if (!currentBusiness) {
@@ -550,6 +493,18 @@ export default function UpdateStockScreen() {
       return;
     }
 
+    const plannedIncrease = isService
+      ? 0
+      : isRestock
+        ? parsedStockQuantity
+        : roundAmount(parsedStockQuantity - currentStock);
+    const willLinkPurchase = !forExistingPurchase && plannedIncrease > 0;
+    const linkProblem = willLinkPurchase ? purchaseLinkProblem(purchaseLink) : null;
+    if (linkProblem) {
+      Alert.alert('Purchase details', linkProblem);
+      return;
+    }
+
     const executeSave = async (hasMismatch: boolean) => {
       setSaving(true);
       try {
@@ -588,6 +543,24 @@ export default function UpdateStockScreen() {
             ? manualNewCost
             : parsedCostPrice;
 
+        // Stock going up is also recorded as a purchase, in the same save.
+        const link =
+          currentBranch && !forExistingPurchase && !isService && quantityDelta > 0
+            ? await recordPurchaseForStock({
+                businessId: currentBusiness.id,
+                branchId: currentBranch.id,
+                items: [
+                  {
+                    product: { ...product, name: cleanProductName, unit: cleanProductUnit },
+                    quantity: quantityDelta,
+                    unitCost: actualIncomingUnitCost,
+                  },
+                ],
+                choice: purchaseLink,
+                notes: isRestock ? `Restock of ${cleanProductName}` : `Stock increase for ${cleanProductName}`,
+              })
+            : null;
+
         await updateProductAndInventoryOffline({
           businessId: currentBusiness.id,
           branchId: currentBranch?.id,
@@ -614,7 +587,8 @@ export default function UpdateStockScreen() {
                     movementType === 'stock_in' && actualIncomingUnitCost > 0
                       ? roundAmount(actualIncomingUnitCost * movementQuantity)
                       : undefined,
-                  notes: movementNote,
+                  notes: link ? `${movementNote} Purchase ${link.purchaseNumber}.` : movementNote,
+                  ...linkFields(link),
                 }
               : undefined,
         });
@@ -679,17 +653,7 @@ export default function UpdateStockScreen() {
             closeScreen();
           }
         } else {
-          const openedPurchaseSync = await maybeOpenPurchaseSync({
-            productId: product.id,
-            productName: cleanProductName,
-            productUnit: cleanProductUnit,
-            quantity: quantityDelta > 0 ? roundAmount(quantityDelta) : 0,
-            unitCost: actualIncomingUnitCost,
-          });
-
-          if (!openedPurchaseSync) {
-            closeScreen();
-          }
+          closeScreen();
         }
       } catch (err: any) {
         Alert.alert('Error', err.message ?? 'Please try again.');
@@ -907,6 +871,17 @@ export default function UpdateStockScreen() {
               setIsService(val);
             }}
           />
+          {!isService && !forExistingPurchase ? (
+            <PurchaseLinkFields
+              value={purchaseLink}
+              onChange={setPurchaseLink}
+              quantity={
+                isRestock
+                  ? parseFloat(stockQuantity) || 0
+                  : roundAmount((parseFloat(stockQuantity) || 0) - currentStock)
+              }
+            />
+          ) : null}
           <Button
             title={isRestock ? 'Add to stock' : 'Save changes'}
             onPress={handleSaveProduct}

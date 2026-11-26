@@ -445,6 +445,20 @@ const INSERT_ONLY_TABLES = new Set(['sale_items', 'stock_movements']);
 const executeMutation = async (mutation: OfflineMutation) => {
   if (mutation.operation === 'upsert' && mutation.table && INSERT_ONLY_TABLES.has(mutation.table)) {
     const { error } = await supabase.from(mutation.table).insert(mutation.payload as any);
+    // Databases without the stock/purchase link column (migration 20261127)
+    // still get the stock history entry, just without the link.
+    if (
+      error &&
+      mutation.table === 'stock_movements' &&
+      /purchase_id/i.test(error.message ?? '') &&
+      (error.code === 'PGRST204' || error.code === '42703' || /column/i.test(error.message ?? ''))
+    ) {
+      const { purchase_id, ...withoutLink } = (mutation.payload ?? {}) as Record<string, any>;
+      void purchase_id;
+      const { error: retryError } = await supabase.from(mutation.table).insert(withoutLink as any);
+      throwIfError(retryError);
+      return;
+    }
     throwIfError(error);
     return;
   }
@@ -633,6 +647,10 @@ const executeMutation = async (mutation: OfflineMutation) => {
     const { error } = await supabase.rpc(mutation.rpc, payload);
 
     if (error && isMissingRpcError(error)) {
+      // Older database: the staff restock still syncs, only the purchase record
+      // behind it is skipped.
+      if (mutation.rpc === 'record_staff_restock_purchase') return;
+
       if (mutation.rpc === 'clear_sale_items_for_sale' && payload.p_sale_id) {
         const { error: deleteErr } = await supabase
           .from('sale_items')

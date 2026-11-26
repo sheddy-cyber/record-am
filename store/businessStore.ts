@@ -8,6 +8,7 @@ import {
   enqueueMutations,
   nowIso,
   readCachedProducts,
+  readOfflineQueue,
   upsertCachedProducts,
 } from '@/lib/offlineStore';
 import { hasArrayChanged, reconcileList } from '@/lib/storeUtils';
@@ -59,6 +60,22 @@ const trackedProducts = async (businessId: string, _requestedCosts: boolean): Pr
     .getState()
     .products.filter((product) => product.is_active && !product.is_service && product.business_id === businessId);
 };
+
+/** product:branch pairs with a stock change still waiting in the offline queue. */
+async function pendingInventoryKeys(): Promise<Set<string>> {
+  const keys = new Set<string>();
+  try {
+    for (const mutation of await readOfflineQueue()) {
+      const rows = Array.isArray(mutation.payload) ? mutation.payload : mutation.payload ? [mutation.payload] : [];
+      if (mutation.operation === 'inventory_adjust' || mutation.table === 'inventory') {
+        for (const row of rows) {
+          if (row?.product_id && row?.branch_id) keys.add(`${row.product_id}:${row.branch_id}`);
+        }
+      }
+    }
+  } catch {}
+  return keys;
+}
 
 const productRequests = new Map<string, Promise<void>>();
 
@@ -161,7 +178,32 @@ async function loadProducts(businessId: string, includeCosts: boolean): Promise<
     const cachedProducts = (await readCachedProducts(businessId)) as Product[];
     const serverProductIds = new Set(serverProducts.map((product) => product.id));
     const localOnlyProducts = cachedProducts.filter((product) => !serverProductIds.has(product.id));
-    const allMerged = [...serverProducts, ...localOnlyProducts].sort(
+
+    // Stock changes still waiting to upload (a sale, a purchase, a restock):
+    // the server's count is older than the phone's, so keep the phone's.
+    const pendingStock = await pendingInventoryKeys();
+    const serverWithLocalStock =
+      pendingStock.size === 0
+        ? serverProducts
+        : serverProducts.map((product) => {
+            const local = cachedProducts.find((p) => p.id === product.id) ??
+              get().products.find((p) => p.id === product.id);
+            if (!local?.inventory?.some((row) => pendingStock.has(`${product.id}:${row.branch_id}`))) return product;
+            const localRows = new Map((local.inventory ?? []).map((row) => [row.branch_id, row]));
+            const merged = (product.inventory ?? []).map((row) =>
+              pendingStock.has(`${product.id}:${row.branch_id}`) && localRows.has(row.branch_id)
+                ? { ...row, quantity: localRows.get(row.branch_id)!.quantity }
+                : row,
+            );
+            for (const row of local.inventory ?? []) {
+              if (pendingStock.has(`${product.id}:${row.branch_id}`) && !merged.some((m) => m.branch_id === row.branch_id)) {
+                merged.push(row);
+              }
+            }
+            return { ...product, inventory: merged };
+          });
+
+    const allMerged = [...serverWithLocalStock, ...localOnlyProducts].sort(
       (a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
     );
     

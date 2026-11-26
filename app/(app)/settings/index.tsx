@@ -217,7 +217,7 @@ export default function SettingsScreen() {
       Toast.show({
         type: 'success',
         text1: 'Inventory settings saved',
-        text2: inventoryPurchaseSyncEnabled ? 'Purchase sync enabled' : 'Purchase sync disabled',
+        text2: inventoryPurchaseSyncEnabled ? 'Stock and purchases stay in step' : 'Stock and purchases are kept separate',
       });
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -520,8 +520,8 @@ export default function SettingsScreen() {
           <Card>
             <SectionHeader title="Inventory & Purchase Settings" />
             <Toggle
-              label="Inventory Purchase Sync"
-              description="When stock is added or increased from inventory, open a prefilled supplier purchase entry. Turn this off if you do not want inventory updates to feed purchase history."
+              label="Keep stock and purchases in step"
+              description="Adding stock also records it as a purchase, and recording, editing or deleting a purchase changes stock to match. Turn this off to keep them separate."
               value={inventoryPurchaseSyncEnabled}
               onChange={setInventoryPurchaseSyncEnabled}
             />

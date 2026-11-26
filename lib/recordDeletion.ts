@@ -275,6 +275,15 @@ export async function deleteSaleRecord(saleId: string) {
 }
 
 export async function deletePurchaseRecord(purchaseId: string) {
+  // One server transaction removes the purchase, its supplier debt and the
+  // stock it added (including older purchases linked only by number).
+  const { error: rpcError } = await supabase.rpc('delete_purchase_record', { p_purchase_id: purchaseId });
+  if (!rpcError) return;
+  const missing =
+    rpcError.code === 'PGRST202' || /could not find the function|does not exist/i.test(rpcError.message ?? '');
+  if (!missing) throw rpcError;
+
+  // Database not updated yet: the previous step-by-step removal.
   const { data: purchase, error } = await supabase
     .from('purchases')
     .select('id, branch_id, purchase_number')

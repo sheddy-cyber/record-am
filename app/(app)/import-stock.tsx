@@ -21,6 +21,15 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { recordInventorySnapshotOffline } from '@/lib/offlineRecords';
+import {
+  defaultPurchaseLink,
+  linkFields,
+  planPurchaseForStock,
+  purchaseLinkProblem,
+  recordPurchaseForStock,
+  StockPurchaseItem,
+} from '@/lib/stockPurchaseLink';
+import { PurchaseLinkFields } from '@/components/inventory/PurchaseLinkFields';
 import { Button, Card, EmptyState, SectionHeader, Badge } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
@@ -93,6 +102,7 @@ export default function ImportStockScreen() {
   const [parsing, setParsing] = useState(false);
   const [parsedRows, setParsedRows] = useState<ParsedStockRow[]>([]);
   const [updateExisting, setUpdateExisting] = useState(true);
+  const [purchaseLink, setPurchaseLink] = useState(defaultPurchaseLink);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
@@ -297,10 +307,21 @@ export default function ImportStockScreen() {
       return;
     }
 
+    const linkProblem = purchaseLinkProblem(purchaseLink);
+    if (linkProblem) {
+      Alert.alert('Purchase details', linkProblem);
+      return;
+    }
+
     setIsImporting(true);
     setImportProgress({ current: 0, total: validRows.length });
 
     try {
+      // The whole import is recorded as one purchase; every stock movement
+      // points at it.
+      const link = await planPurchaseForStock(purchaseLink);
+      const purchased: StockPurchaseItem[] = [];
+
       // 1. Prepare Categories cache
       const categoryMap = new Map<string, Category>();
       for (const cat of categories) {
@@ -335,19 +356,32 @@ export default function ImportStockScreen() {
         // If item exists and updateExisting is checked, update stock
         if (item.isExisting && item.existingProductId && updateExisting) {
           if (item.quantity > 0) {
+            const existing = useBusinessStore.getState().products.find((p) => p.id === item.existingProductId);
+            const currentStock = Number(
+              existing?.inventory?.find((row) => row.branch_id === currentBranch.id)?.quantity ?? 0,
+            );
+            // The quantity goes up by the spreadsheet amount (it used to replace the count).
             await recordInventorySnapshotOffline({
               businessId: currentBusiness.id,
               branchId: currentBranch.id,
               productId: item.existingProductId,
-              quantity: item.quantity,
+              quantity: currentStock + item.quantity,
               movement: {
                 type: 'stock_in',
                 quantity: item.quantity,
                 unit_cost: item.costPrice > 0 ? item.costPrice : undefined,
                 total_cost: item.costPrice > 0 ? item.costPrice * item.quantity : undefined,
                 notes: 'Imported from spreadsheet (restock)',
+                ...linkFields(link),
               },
             });
+            if (existing) {
+              purchased.push({
+                product: existing,
+                quantity: item.quantity,
+                unitCost: item.costPrice > 0 ? item.costPrice : Number(existing.cost_price ?? 0),
+              });
+            }
           }
           successCount++;
           continue;
@@ -379,11 +413,24 @@ export default function ImportStockScreen() {
               unit_cost: item.costPrice > 0 ? item.costPrice : undefined,
               total_cost: item.costPrice > 0 ? item.costPrice * item.quantity : undefined,
               notes: 'Imported opening stock from spreadsheet',
+              ...linkFields(link),
             },
           });
+          purchased.push({ product: newProduct, quantity: item.quantity, unitCost: item.costPrice });
         }
 
         successCount++;
+      }
+
+      if (link && purchased.length > 0) {
+        await recordPurchaseForStock({
+          businessId: currentBusiness.id,
+          branchId: currentBranch.id,
+          items: purchased,
+          choice: purchaseLink,
+          notes: `Imported from a spreadsheet (${purchased.length} ${purchased.length === 1 ? 'item' : 'items'})`,
+          link,
+        });
       }
 
       setImportSuccessCount(successCount);
@@ -465,6 +512,11 @@ export default function ImportStockScreen() {
                     description="If a name matches an existing product, its quantity goes up instead of creating a duplicate."
                     value={updateExisting}
                     onChange={setUpdateExisting}
+                  />
+                  <PurchaseLinkFields
+                    value={purchaseLink}
+                    onChange={setPurchaseLink}
+                    quantity={validRows.reduce((sum, row) => sum + (row.quantity > 0 ? row.quantity : 0), 0)}
                   />
                 </View>
 

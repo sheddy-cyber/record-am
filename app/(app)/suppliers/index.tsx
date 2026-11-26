@@ -7,7 +7,8 @@ import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
 import { SupplierWithStats, useSupplierStore } from '@/store/supplierStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { EmptyState, ListSkeleton, PermissionDenied, SmartChip } from '@/components/ui';
+import { EmptyState, ListSkeleton, PermissionDenied, SegmentedControl, SmartChip } from '@/components/ui';
+import { PurchaseHistoryList } from '@/components/purchases/PurchaseHistoryList';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { dismissScreen } from '@/lib/navigation';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
@@ -122,8 +123,10 @@ const SupplierRow = memo(function SupplierRow({
 
 export default function SuppliersScreen() {
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
+  const branchId = useAuthStore((s) => s.currentBranch?.id);
   const userRole = useAuthStore((s) => s.userRole);
   const suppliers = useSupplierStore((s) => s.suppliers);
+  const [tab, setTab] = useState<'suppliers' | 'purchases'>('suppliers');
   const loading = useSupplierStore((s) => s.isLoading && s.suppliers.length === 0);
   const fetchSuppliers = useSupplierStore((s) => s.fetchSuppliers);
   const [search, setSearch] = useState('');
@@ -214,17 +217,44 @@ export default function SuppliersScreen() {
     <ScreenShell backgroundColor={COLORS.surface}>
       <View style={{ flex: 1 }}>
         <ScreenHeader
-          title="Suppliers"
+          title={tab === 'suppliers' ? 'Suppliers' : 'Purchases'}
           large
           left={<HeaderAction icon="arrow-left" onPress={() => dismissScreen()} />}
-          subtitle={`${filtered.length} ${filtered.length === 1 ? 'supplier' : 'suppliers'}`}
-         
+          subtitle={
+            tab === 'suppliers'
+              ? `${filtered.length} ${filtered.length === 1 ? 'supplier' : 'suppliers'}`
+              : 'Everything bought into stock in this branch'
+          }
           right={
             canManageSupplierPurchases ? (
-              <HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/supplier-create')} />
+              tab === 'suppliers' ? (
+                <HeaderAction icon="plus" label="Add" onPress={() => router.push('/(app)/supplier-create')} />
+              ) : (
+                <HeaderAction icon="plus" label="Record" onPress={() => router.push('/(app)/record-purchase')} />
+              )
             ) : undefined
           }
         />
+
+        <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
+          <SegmentedControl
+            value={tab}
+            onChange={setTab}
+            options={[
+              { value: 'suppliers', label: 'Suppliers' },
+              { value: 'purchases', label: 'Purchases' },
+            ]}
+          />
+        </View>
+
+        {tab === 'purchases' ? (
+          businessId && branchId ? (
+            <View style={{ flex: 1, paddingTop: 12 }}>
+              <PurchaseHistoryList businessId={businessId} branchId={branchId} canEdit={canManageSupplierPurchases} />
+            </View>
+          ) : null
+        ) : (
+        <>
 
         <View
           style={{
@@ -369,6 +399,8 @@ export default function SuppliersScreen() {
             )
           }
         />
+        </>
+        )}
       </View>
     </ScreenShell>
   );

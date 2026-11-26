@@ -14,6 +14,13 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
 import { recordInventorySnapshotOffline } from '@/lib/offlineRecords';
+import {
+  defaultPurchaseLink,
+  linkFields,
+  purchaseLinkProblem,
+  recordPurchaseForStock,
+} from '@/lib/stockPurchaseLink';
+import { PurchaseLinkFields } from '@/components/inventory/PurchaseLinkFields';
 import { Card, SectionHeader, Badge } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { BarcodeScannerModal } from '@/components/scanner/BarcodeScannerModal';
@@ -69,6 +76,8 @@ export default function RapidAddStockScreen() {
   const [barcode, setBarcode] = useState('');
   const [reorderLevel, setReorderLevel] = useState('5');
   const [lockCategoryAndUnit, setLockCategoryAndUnit] = useState(true);
+  // Supplier and payment carry over from item to item in a session.
+  const [purchaseLink, setPurchaseLink] = useState(defaultPurchaseLink);
 
   // Modals & UI states
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -149,6 +158,12 @@ export default function RapidAddStockScreen() {
     const parsedQuantity = parseFloat(quantity.replace(/,/g, '')) || 0;
     const parsedReorder = parseFloat(reorderLevel.replace(/,/g, '')) || 5;
 
+    const linkProblem = parsedQuantity > 0 ? purchaseLinkProblem(purchaseLink) : null;
+    if (linkProblem) {
+      Alert.alert('Purchase details', linkProblem);
+      return;
+    }
+
     setSaving(true);
     try {
       const existingProduct = products.find(
@@ -173,7 +188,16 @@ export default function RapidAddStockScreen() {
         };
 
         if (parsedQuantity > 0) {
-          const currentStock = existingProduct.inventory?.[0]?.quantity ?? 0;
+          const currentStock = Number(
+            existingProduct.inventory?.find((row) => row.branch_id === currentBranch.id)?.quantity ?? 0,
+          );
+          const link = await recordPurchaseForStock({
+            businessId: currentBusiness.id,
+            branchId: currentBranch.id,
+            items: [{ product: savedProduct, quantity: parsedQuantity, unitCost: savedProduct.cost_price }],
+            choice: purchaseLink,
+            notes: `Restock of ${savedProduct.name}`,
+          });
           await recordInventorySnapshotOffline({
             businessId: currentBusiness.id,
             branchId: currentBranch.id,
@@ -185,6 +209,7 @@ export default function RapidAddStockScreen() {
               unit_cost: parsedCostPrice > 0 ? parsedCostPrice : undefined,
               total_cost: parsedCostPrice > 0 ? parsedCostPrice * parsedQuantity : undefined,
               notes: 'Rapid entry restock',
+              ...linkFields(link),
             },
           });
         }
@@ -206,8 +231,15 @@ export default function RapidAddStockScreen() {
           throw new Error('Could not save product.');
         }
 
-        // Record inventory snapshot
+        // Record inventory snapshot, with its purchase
         if (parsedQuantity > 0) {
+          const link = await recordPurchaseForStock({
+            businessId: currentBusiness.id,
+            branchId: currentBranch.id,
+            items: [{ product: savedProduct, quantity: parsedQuantity, unitCost: parsedCostPrice }],
+            choice: purchaseLink,
+            notes: `Opening stock for ${savedProduct.name}`,
+          });
           await recordInventorySnapshotOffline({
             businessId: currentBusiness.id,
             branchId: currentBranch.id,
@@ -219,6 +251,7 @@ export default function RapidAddStockScreen() {
               unit_cost: parsedCostPrice > 0 ? parsedCostPrice : undefined,
               total_cost: parsedCostPrice > 0 ? parsedCostPrice * parsedQuantity : undefined,
               notes: 'Rapid entry opening stock',
+              ...linkFields(link),
             },
           });
         }
@@ -535,6 +568,12 @@ export default function RapidAddStockScreen() {
               </View>
             </View>
           </View>
+
+          <PurchaseLinkFields
+            value={purchaseLink}
+            onChange={setPurchaseLink}
+            quantity={parseFloat(quantity.replace(/,/g, '')) || 0}
+          />
 
           {/* Keep Category/Unit toggle */}
           <TouchableOpacity

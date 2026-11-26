@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
-import { PaymentStatus, Product, Purchase, PurchaseItem, Supplier, SupplierDebt } from '@/types';
+import { PaymentStatus, Product, Purchase, PurchaseItem, StockMovement, Supplier, SupplierDebt } from '@/types';
 import { useBusinessStore } from '@/store/businessStore';
 import { calculateWeightedAverageCost } from '@/lib/costing';
+import { getAppSettings } from '@/lib/appSettings';
 import {
+  adjustCachedProductInventory,
   createLocalId,
   enqueueMutations,
   nowIso,
@@ -49,21 +51,63 @@ interface PurchaseMutationParams {
   businessId: string;
   branchId: string;
   supplierId?: string;
+  /** Leave empty for a purchase with no supplier (only when it is paid in full). */
   supplierName: string;
   items: PurchaseCartItem[];
   amountPaid: number;
   discountAmount?: number;
   notes?: string;
   purchaseDate: string;
+  /**
+   * 'apply' moves stock with the purchase (adds it, adjusts it on edit);
+   * 'skip' when the caller already changed stock (e.g. the stock screens).
+   * Defaults to the "keep stock and purchases in step" setting.
+   */
+  stock?: 'apply' | 'skip';
+  /** False when the caller already set the product cost price. */
+  updateCost?: boolean;
+  /** Quantities the purchase had before this edit, per product. */
+  previousItems?: { product_id: string; quantity: number }[];
 }
 
 interface CreatePurchaseParams extends PurchaseMutationParams {
   userId: string;
+  /** Pre-made id and number, so stock movements can be linked before saving. */
+  newPurchaseId?: string;
+  purchaseNumber?: string;
 }
 
 interface UpdatePurchaseParams extends PurchaseMutationParams {
   purchaseId: string;
+  userId?: string;
 }
+
+/** An id and number for a purchase that is about to be recorded. */
+export const newPurchaseLink = () => ({
+  purchaseId: createLocalId(),
+  purchaseNumber: `OFF-PUR-${Date.now().toString(36).toUpperCase()}${Math.random().toString(36).slice(2, 4).toUpperCase()}`,
+});
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const patchStockInMemory = (productId: string, branchId: string, delta: number) => {
+  const timestamp = nowIso();
+  useBusinessStore.setState((state) => ({
+    products: state.products.map((product) => {
+      if (product.id !== productId) return product;
+      const inventory = product.inventory ?? [];
+      const existing = inventory.find((row) => row.branch_id === branchId);
+      const nextInventory = existing
+        ? inventory.map((row) =>
+            row.branch_id === branchId
+              ? { ...row, quantity: Math.max(0, roundAmount(Number(row.quantity ?? 0) + delta)), last_updated: timestamp }
+              : row,
+          )
+        : [...inventory, { id: createLocalId(), product_id: productId, branch_id: branchId, quantity: Math.max(0, delta), last_updated: timestamp }];
+      return { ...product, inventory: nextInventory };
+    }),
+  }));
+};
 
 interface PurchaseState {
   purchases: Purchase[];
@@ -692,7 +736,9 @@ async function resolvePurchaseItemsOffline(
   return resolvedItems;
 }
 
-async function writePurchaseRecordOffline(params: PurchaseMutationParams & { userId?: string; purchaseId?: string }) {
+async function writePurchaseRecordOffline(
+  params: PurchaseMutationParams & { userId?: string; purchaseId?: string; newPurchaseId?: string; purchaseNumber?: string },
+) {
   const timestamp = nowIso();
   const mutations: Parameters<typeof enqueueMutations>[0] = [];
   const resolvedItems = await resolvePurchaseItemsOffline(
@@ -712,24 +758,31 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
     params.amountPaid,
   );
 
-  const purchaseId = params.purchaseId || createLocalId();
+  const purchaseId = params.purchaseId || params.newPurchaseId || createLocalId();
   let existingPurchase: Purchase | null = null;
   if (params.purchaseId) {
     existingPurchase = usePurchaseStore.getState().purchases.find((p) => p.id === params.purchaseId) ?? null;
   }
 
-  const supplierId = params.supplierId || existingPurchase?.supplier_id || createLocalId();
   const supplierName = params.supplierName.trim();
-  const purchaseNumber = existingPurchase?.purchase_number || `OFF-PUR-${Date.now().toString(36).toUpperCase()}`;
+  const hasSupplier = supplierName.length > 0;
+  if (!hasSupplier && totals.amountOwed > 0) {
+    throw new Error('Add the supplier you owe, or mark the purchase as paid in full.');
+  }
+  const supplierId = hasSupplier ? params.supplierId || existingPurchase?.supplier_id || createLocalId() : undefined;
+  const purchaseNumber =
+    existingPurchase?.purchase_number || params.purchaseNumber || newPurchaseLink().purchaseNumber;
 
-  const supplier: Supplier = {
-    id: supplierId,
-    business_id: params.businessId,
-    name: supplierName,
-    is_active: true,
-    created_at: existingPurchase?.supplier?.created_at || timestamp,
-    updated_at: timestamp,
-  };
+  const supplier: Supplier | null = hasSupplier
+    ? {
+        id: supplierId!,
+        business_id: params.businessId,
+        name: supplierName,
+        is_active: true,
+        created_at: existingPurchase?.supplier?.created_at || timestamp,
+        updated_at: timestamp,
+      }
+    : null;
 
   const purchaseItems: PurchaseItem[] = resolvedItems.map((item) => ({
     id: createLocalId(),
@@ -758,7 +811,7 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
     recorded_by: existingPurchase?.recorded_by || params.userId,
     created_at: existingPurchase?.created_at || timestamp,
     updated_at: timestamp,
-    supplier: { ...supplier },
+    supplier: supplier ? { ...supplier } : undefined,
     items: purchaseItems,
   };
 
@@ -780,14 +833,16 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
         }
       : null;
 
-  mutations.push(
-    {
+  if (supplier) {
+    mutations.push({
       operation: 'upsert',
       table: 'suppliers',
       payload: supplier,
       onConflict: 'id',
       description: `Sync supplier ${supplier.name}`,
-    },
+    });
+  }
+  mutations.push(
     {
       operation: 'upsert',
       table: 'purchases',
@@ -795,7 +850,7 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
         id: purchase.id,
         business_id: purchase.business_id,
         branch_id: purchase.branch_id,
-        supplier_id: purchase.supplier_id,
+        supplier_id: purchase.supplier_id ?? null,
         purchase_number: purchase.purchase_number,
         total_amount: purchase.total_amount,
         discount_amount: purchase.discount_amount,
@@ -840,7 +895,7 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
 
   // Sync cost price to products and backfill zero-cost sale items
   const productsToUpdate: Product[] = [];
-  for (const item of resolvedItems) {
+  for (const item of params.updateCost === false ? [] : resolvedItems) {
     if (item.unit_cost > 0 && item.product_id) {
       const currentProduct = useBusinessStore.getState().products.find((p) => p.id === item.product_id);
       const currentStock = Number(
@@ -918,6 +973,76 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
     }
   }
 
+  // Keep stock in step with the purchase: add the goods on a new purchase, and
+  // on an edit move stock by the difference for each product.
+  const applyStock =
+    params.stock === 'apply' ||
+    (params.stock === undefined && (await getAppSettings()).inventoryPurchaseSyncEnabled);
+  const previousItems = params.previousItems ?? existingPurchase?.items ?? (params.purchaseId ? null : []);
+  if (applyStock && previousItems) {
+    const before = new Map<string, number>();
+    for (const item of previousItems) {
+      before.set(item.product_id, roundAmount((before.get(item.product_id) ?? 0) + Number(item.quantity || 0)));
+    }
+    const after = new Map<string, { quantity: number; unitCost: number; product?: Product }>();
+    for (const item of resolvedItems) {
+      const entry = after.get(item.product_id) ?? { quantity: 0, unitCost: item.unit_cost, product: item.product };
+      entry.quantity = roundAmount(entry.quantity + item.quantity);
+      after.set(item.product_id, entry);
+    }
+
+    const movements: StockMovement[] = [];
+    const performedBy = params.userId && UUID_PATTERN.test(params.userId) ? params.userId : undefined;
+    for (const productId of new Set([...before.keys(), ...after.keys()])) {
+      const product =
+        after.get(productId)?.product ?? useBusinessStore.getState().products.find((p) => p.id === productId);
+      if (product?.is_service) continue;
+      const delta = roundAmount((after.get(productId)?.quantity ?? 0) - (before.get(productId) ?? 0));
+      if (delta === 0) continue;
+
+      const unitCost = after.get(productId)?.unitCost ?? Number(product?.cost_price ?? 0);
+      const quantity = Math.abs(delta);
+      await adjustCachedProductInventory(params.businessId, params.branchId, productId, delta);
+      patchStockInMemory(productId, params.branchId, delta);
+
+      const movement: StockMovement = {
+        id: createLocalId(),
+        business_id: params.businessId,
+        branch_id: params.branchId,
+        product_id: productId,
+        type: delta > 0 ? 'stock_in' : 'stock_out',
+        quantity,
+        unit_cost: unitCost > 0 ? unitCost : undefined,
+        total_cost: unitCost > 0 ? roundAmount(unitCost * quantity) : undefined,
+        reference: purchaseNumber,
+        purchase_id: purchaseId,
+        notes: params.purchaseId
+          ? `Purchase ${purchaseNumber} changed`
+          : `Purchase ${purchaseNumber}${hasSupplier ? ` from ${supplierName}` : ''}`,
+        performed_by: performedBy,
+        created_at: timestamp,
+      };
+      movements.push(movement);
+      mutations.push(
+        {
+          operation: 'inventory_adjust',
+          payload: { product_id: productId, branch_id: params.branchId, delta },
+          description: `Stock for purchase ${purchaseNumber}`,
+        },
+        {
+          operation: 'upsert',
+          table: 'stock_movements',
+          payload: movement,
+          onConflict: 'id',
+          description: `Stock history for purchase ${purchaseNumber}`,
+        },
+      );
+    }
+    if (movements.length > 0) {
+      await upsertCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'stock_movements', movements);
+    }
+  }
+
   try {
     const cachedSaleItems = await readCachedRows<any>({ businessId: params.businessId, branchId: params.branchId }, 'sale_items');
     let hasUpdatedCachedSales = false;
@@ -969,10 +1094,51 @@ async function writePurchaseRecordOffline(params: PurchaseMutationParams & { use
   const nextDebts = supplierDebt ? [...filteredDebts, supplierDebt] : filteredDebts;
   await replaceCachedRows({ businessId: params.businessId, branchId: params.branchId }, 'supplier_debts', nextDebts);
 
-  await upsertCachedRows({ businessId: params.businessId }, 'suppliers', [supplier]);
+  if (supplier) await upsertCachedRows({ businessId: params.businessId }, 'suppliers', [supplier]);
 
   await enqueueMutations(mutations);
   return purchase;
+}
+
+/**
+ * One page of the branch's purchase history, newest first. Page 0 also
+ * includes purchases recorded on this phone that have not synced yet.
+ */
+export async function fetchPurchasePage(params: {
+  businessId: string;
+  branchId: string;
+  page: number;
+  pageSize?: number;
+}): Promise<{ purchases: Purchase[]; hasMore: boolean }> {
+  const pageSize = params.pageSize ?? 30;
+  const from = params.page * pageSize;
+  try {
+    const { data, error } = await supabase
+      .from('purchases')
+      .select('*, supplier:suppliers(name, phone), items:purchase_items(*, product:products(name, unit))')
+      .eq('business_id', params.businessId)
+      .eq('branch_id', params.branchId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .range(from, from + pageSize);
+    throwIfError(error);
+    const rows = ((data as Purchase[]) ?? []);
+    let purchases = rows.slice(0, pageSize);
+    if (params.page === 0) {
+      const cached = await readCachedRows<Purchase>({ businessId: params.businessId, branchId: params.branchId }, 'purchases');
+      const serverIds = new Set(rows.map((p) => p.id));
+      const unsynced = cached.filter((p) => !serverIds.has(p.id) && p.id && (p.purchase_number ?? '').startsWith('OFF-'));
+      purchases = [...unsynced, ...purchases].sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+    }
+    return { purchases, hasMore: rows.length > pageSize };
+  } catch {
+    // Offline: what this phone has.
+    const cached = await readCachedRows<Purchase>({ businessId: params.businessId, branchId: params.branchId }, 'purchases');
+    const sorted = [...cached].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return { purchases: sorted.slice(from, from + pageSize), hasMore: sorted.length > from + pageSize };
+  }
 }
 
 export const usePurchaseStore = create<PurchaseState>((set, get) => ({

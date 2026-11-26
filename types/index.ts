@@ -151,6 +151,8 @@ export interface StockMovement {
   unit_cost?: number;
   total_cost?: number;
   reference?: string;
+  /** The purchase this stock change belongs to, if any. */
+  purchase_id?: string;
   notes?: string;
   performed_by?: string;
   created_at: string;
