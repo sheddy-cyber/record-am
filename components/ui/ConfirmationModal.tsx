@@ -5,10 +5,12 @@ import {
   Easing,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon, IconName } from '@/components/icons';
 import { COLORS, FONT, SP } from '@/constants';
 import { haptics } from '@/lib/haptics';
@@ -215,9 +217,18 @@ export function ConfirmationModal({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={handleCancel} testID={testID}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      statusBarTranslucent
+      navigationBarTranslucent
+      onRequestClose={handleCancel}
+      testID={testID}
+    >
       <Animated.View style={[styles.backdrop, { opacity: progress }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={() => dismissOnBackdropPress && handleCancel()} />
+        <SafeAreaView style={styles.safe} edges={['top', 'bottom', 'left', 'right']} pointerEvents="box-none">
         <Animated.View
           style={[
             styles.card,
@@ -229,6 +240,14 @@ export function ConfirmationModal({
             },
           ]}
         >
+          {/* Long messages scroll; the buttons below always stay in view. */}
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={{ alignItems: 'center' }}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+          >
           {showIcon ? (
             <View style={[styles.iconBadge, { backgroundColor: config.tint }]}>
               {customIcon ?? <Icon name={autoIcon} size={22} color={config.color} backgroundColor={config.tint} />}
@@ -246,6 +265,7 @@ export function ConfirmationModal({
           ) : null}
 
           {children ? <View style={{ marginTop: 14, alignSelf: 'stretch' }}>{children}</View> : null}
+          </ScrollView>
 
           <View style={[styles.buttons, stacked ? styles.column : styles.row]}>
             {list.map((btn) => {
@@ -280,6 +300,7 @@ export function ConfirmationModal({
             })}
           </View>
         </Animated.View>
+        </SafeAreaView>
       </Animated.View>
     </Modal>
   );
@@ -289,13 +310,19 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     backgroundColor: COLORS.scrim,
+  },
+  safe: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: SP.xl,
   },
+  body: { flexGrow: 0, flexShrink: 1, alignSelf: 'stretch' },
   card: {
     width: '100%',
     maxWidth: 380,
+    flexShrink: 1,
+    minHeight: 0,
     backgroundColor: COLORS.card,
     borderRadius: 26,
     borderCurve: 'continuous',
@@ -332,7 +359,7 @@ const styles = StyleSheet.create({
     color: COLORS.text.secondary,
     textAlign: 'center',
   },
-  buttons: { alignSelf: 'stretch', marginTop: 22, gap: 8 },
+  buttons: { alignSelf: 'stretch', marginTop: 22, gap: 8, flexShrink: 0 },
   row: { flexDirection: 'row' },
   column: { flexDirection: 'column' },
   button: {

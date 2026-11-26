@@ -9,7 +9,7 @@ import {
   replaceCachedRows,
   upsertCachedRows,
 } from '@/lib/offlineStore';
-import { hasArrayChanged } from '@/lib/storeUtils';
+import { hasArrayChanged, reconcileList } from '@/lib/storeUtils';
 
 interface PaymentAccountState {
   accounts: PaymentAccount[];
@@ -39,7 +39,7 @@ export const usePaymentAccountStore = create<PaymentAccountState>((set, get) => 
       const cached = await readCachedRows<PaymentAccount>({ businessId }, 'payment_accounts');
       const active = cached.filter((acc) => acc.is_active);
       if (hasArrayChanged(get().accounts, active)) {
-        set({ accounts: active });
+        set({ accounts: reconcileList(get().accounts, active) });
       }
     } catch (_) {}
   },
@@ -49,7 +49,7 @@ export const usePaymentAccountStore = create<PaymentAccountState>((set, get) => 
       const cached = await readCachedRows<PaymentAccount>({ businessId }, 'payment_accounts');
       const activeCached = cached.filter((acc) => acc.is_active);
       if (hasArrayChanged(get().accounts, activeCached)) {
-        set({ accounts: activeCached });
+        set({ accounts: reconcileList(get().accounts, activeCached) });
       }
     } catch (_) {}
 
@@ -86,7 +86,7 @@ export const usePaymentAccountStore = create<PaymentAccountState>((set, get) => 
 
       const activeNext = nextCache.filter((r) => r.is_active);
       if (hasArrayChanged(get().accounts, activeNext)) {
-        set({ accounts: activeNext });
+        set({ accounts: reconcileList(get().accounts, activeNext) });
       }
 
       await replaceCachedRows({ businessId }, 'payment_accounts', nextCache);
@@ -95,7 +95,7 @@ export const usePaymentAccountStore = create<PaymentAccountState>((set, get) => 
       const active = cached.filter((r) => r.is_active);
       if (active.length > 0) {
         if (hasArrayChanged(get().accounts, active)) {
-          set({ accounts: active, error: null });
+          set({ accounts: reconcileList(get().accounts, active), error: null });
         }
       } else {
         set({ error: err.message });

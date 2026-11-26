@@ -268,6 +268,29 @@ export default function AnalyticsProductsScreen() {
         title="Print product report"
         subtitle="An A4 summary of the list you are looking at"
         showCloseButton={!isPrinting && !isSharingPDF}
+        footer={
+          <View style={{ gap: 8 }}>
+            <Button
+              title="Print"
+              variant="primary"
+              size="md"
+              loading={isPrinting}
+              disabled={isSharingPDF}
+              icon="printer"
+              onPress={() => handlePrint('print')}
+            />
+
+            <Button
+              title="Share as PDF"
+              variant="secondary"
+              size="md"
+              loading={isSharingPDF}
+              disabled={isPrinting}
+              icon="share-2"
+              onPress={() => handlePrint('share')}
+            />
+          </View>
+        }
       >
         {/* Summary Details Card */}
         <View
@@ -314,29 +337,6 @@ export default function AnalyticsProductsScreen() {
               {CURRENCY_SYMBOL}{sortedAndFiltered.reduce((s, p) => s + p.total_profit, 0).toLocaleString('en-NG')}
             </Text>
           </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={{ gap: 8 }}>
-          <Button
-            title="Print"
-            variant="primary"
-            size="md"
-            loading={isPrinting}
-            disabled={isSharingPDF}
-            icon="printer"
-            onPress={() => handlePrint('print')}
-          />
-
-          <Button
-            title="Share as PDF"
-            variant="secondary"
-            size="md"
-            loading={isSharingPDF}
-            disabled={isPrinting}
-            icon="share-2"
-            onPress={() => handlePrint('share')}
-          />
         </View>
       </BottomSheetModal>
     </ScreenShell>

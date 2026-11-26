@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import { CustomerDebt } from '@/types';
 import { cacheCustomerDebts, readCachedCustomerDebts, removeCachedRow } from '@/lib/offlineStore';
 import { deleteCustomerDebtRecord } from '@/lib/recordDeletion';
-import { hasArrayChanged } from '@/lib/storeUtils';
+import { hasArrayChanged, reconcileList } from '@/lib/storeUtils';
 
 interface DebtState {
   debts: CustomerDebt[];
@@ -28,7 +28,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       const activeDebts = cachedDebts.filter(d => d.status !== 'settled');
       
       if (hasArrayChanged(get().debts, activeDebts)) {
-        set({ debts: activeDebts });
+        set({ debts: reconcileList(get().debts, activeDebts) });
       }
     } catch {}
   },
@@ -38,7 +38,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       const cachedDebts = await readCachedCustomerDebts(businessId, branchId);
       const activeCached = cachedDebts.filter(d => d.status !== 'settled');
       if (hasArrayChanged(get().debts, activeCached)) {
-        set({ debts: activeCached });
+        set({ debts: reconcileList(get().debts, activeCached) });
       }
     } catch {}
 
@@ -78,7 +78,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       const nextDebts = nextCache.filter(d => d.status !== 'settled');
 
       if (hasArrayChanged(get().debts, nextDebts)) {
-        set({ debts: nextDebts });
+        set({ debts: reconcileList(get().debts, nextDebts) });
       }
       
       await cacheCustomerDebts(businessId, branchId, nextCache);
@@ -87,7 +87,7 @@ export const useDebtStore = create<DebtState>((set, get) => ({
       const activeCached = cachedDebts.filter(d => d.status !== 'settled');
       if (activeCached.length > 0) {
         if (hasArrayChanged(get().debts, activeCached)) {
-          set({ debts: activeCached, error: null });
+          set({ debts: reconcileList(get().debts, activeCached), error: null });
         } else {
           set({ error: null });
         }

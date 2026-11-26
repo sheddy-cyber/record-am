@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import Toast from 'react-native-toast-message';
@@ -10,11 +10,13 @@ import { useBusinessStore } from '@/store/businessStore';
 import { Product, Purchase } from '@/types';
 import { deletePurchaseRecord } from '@/lib/recordDeletion';
 import { printCounterpartyStatement, shareCounterpartyStatementPDF } from '@/lib/reports';
-import { BottomSheetModal, Button, Card, EmptyState, PermissionDenied, SectionHeader, confirmModal } from '@/components/ui';
+import { BottomSheetModal, Button, Card, EmptyState, ListSkeleton, PermissionDenied, SectionHeader, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { canManagePurchases, hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
+
+const NO_PURCHASES: Purchase[] = [];
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
@@ -37,22 +39,27 @@ const getPurchaseItemsSummary = (purchase: Purchase, allProducts: Product[]) => 
 export default function SupplierDetailScreen() {
   const params = useLocalSearchParams<{ supplierId?: string | string[] }>();
   const supplierId = Array.isArray(params.supplierId) ? params.supplierId[0] : params.supplierId;
-  const { currentBusiness, currentBranch, userRole } = useAuthStore();
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const currentBranch = useAuthStore((s) => s.currentBranch);
+  const userRole = useAuthStore((s) => s.userRole);
   const canViewPurchases = hasPermission(userRole, 'purchases.view');
   const canEditPurchases = canManagePurchases(userRole);
-  const { products } = useBusinessStore();
+  const products = useBusinessStore((s) => s.products);
   const [refreshing, setRefreshing] = useState(false);
   const [manageSheetVisible, setManageSheetVisible] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isSharingPDF, setIsSharingPDF] = useState(false);
-  const {
-    suppliers,
-    selectedSupplier,
-    supplierPurchases,
-    fetchSupplierDetail,
-    deleteSupplier,
-    setSelectedSupplier,
-  } = useSupplierStore();
+  const suppliers = useSupplierStore((s) => s.suppliers);
+  const selectedSupplier = useSupplierStore((s) => s.selectedSupplier);
+  const fetchSupplierDetail = useSupplierStore((s) => s.fetchSupplierDetail);
+  const deleteSupplier = useSupplierStore((s) => s.deleteSupplier);
+  const setSelectedSupplier = useSupplierStore((s) => s.setSelectedSupplier);
+  // Records belong to whichever supplier was opened last; never show another
+  // supplier's records, even for the frame before this one's load starts.
+  const detailReady = useSupplierStore((s) => s.supplierDetailId === supplierId);
+  const storePurchases = useSupplierStore((s) => s.supplierPurchases);
+  const detailLoading = useSupplierStore((s) => s.supplierDetailId !== supplierId || s.isDetailLoading);
+  const supplierPurchases = detailReady ? storePurchases : NO_PURCHASES;
 
   const closeScreen = () => dismissScreen();
 
@@ -65,8 +72,6 @@ export default function SupplierDetailScreen() {
     setRefreshing(false);
   }, [canViewPurchases, currentBusiness, supplierId, fetchSupplierDetail]);
 
-  // Data is hydrated on app boot. No need to fetch on mount.
-
   const supplier = useMemo(() => {
     return suppliers.find((item) => item.id === supplierId)
       ?? (selectedSupplier?.id === supplierId ? selectedSupplier : null);
@@ -78,11 +83,14 @@ export default function SupplierDetailScreen() {
     }
   }, [setSelectedSupplier, supplier]);
 
-  useEffect(() => {
-    if (canViewPurchases && currentBusiness && supplierId) {
-      fetchSupplierDetail(supplierId, currentBusiness.id);
-    }
-  }, [canViewPurchases, currentBusiness, supplierId, fetchSupplierDetail]);
+  // Refresh on every visit (e.g. after recording goods), quietly.
+  useFocusEffect(
+    useCallback(() => {
+      if (canViewPurchases && currentBusiness?.id && supplierId) {
+        void fetchSupplierDetail(supplierId, currentBusiness.id).catch(() => {});
+      }
+    }, [canViewPurchases, currentBusiness?.id, supplierId, fetchSupplierDetail]),
+  );
 
   const handleDelete = async () => {
     if (!supplier) return;
@@ -226,7 +234,7 @@ export default function SupplierDetailScreen() {
     <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title={supplier.name}
-        subtitle={`${supplierPurchases.length} recent purchase${supplierPurchases.length === 1 ? '' : 's'}`}
+        subtitle={`${supplier.total_orders ?? 0} purchase${supplier.total_orders === 1 ? '' : 's'}`}
        
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         right={
@@ -322,10 +330,15 @@ export default function SupplierDetailScreen() {
 
         <View>
           <SectionHeader
-            title={`Recent goods (${supplierPurchases.length})`}
+            title={detailLoading ? 'Recent goods' : `Recent goods (${supplierPurchases.length})`}
             action={canEditPurchases ? { label: 'Record goods', onPress: openRecordGoods } : undefined}
           />
-          {supplierPurchases.length === 0 ? (
+          {detailLoading && (supplier.total_orders ?? 0) > 0 ? (
+            <ListSkeleton
+              rows={Math.min(supplier.total_orders ?? 1, 4)}
+              style={{ paddingHorizontal: 0, paddingTop: 0 }}
+            />
+          ) : supplierPurchases.length === 0 ? (
             <Card style={{ alignItems: 'center', paddingVertical: 22 }}>
               <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.surface2 }}>
                 <Icon name="package" size={18} color={COLORS.text.muted} />

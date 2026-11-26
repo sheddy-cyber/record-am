@@ -7,6 +7,7 @@ import { flushOfflineQueue } from '@/lib/offlineStore';
 import { cancelAllNotifications } from '@/lib/notifications';
 import { useNotificationStore } from '@/store/notificationStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { visibleBranches } from '@/lib/dataAccess';
 import { useCustomerStore } from '@/store/customerStore';
 import { useSupplierStore } from '@/store/supplierStore';
 import { usePurchaseStore } from '@/store/purchaseStore';
@@ -96,6 +97,8 @@ interface AuthState {
   setUserRole: (role: UserRole | null) => void;
   setStaffId: (staffId: string | null) => void;
   switchBranch: (branch: Branch) => Promise<void>;
+  /** Re-reads a staff member's role and branch, e.g. after the owner moves them. */
+  refreshAssignment: () => Promise<void>;
   signOut: () => Promise<void>;
   initialize: () => Promise<void>;
 }
@@ -196,6 +199,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   switchBranch: async (branch) => {
     const state = get();
     if (!branch) return;
+    // Staff stay in the branch they are assigned to; only the owner moves
+    // between branches (the owner reassigns staff from Team).
+    if (state.userRole && state.userRole !== 'owner' && branch.id !== state.currentBranch?.id) return;
 
     const changed = state.currentBranch?.id !== branch.id;
     if (changed) {
@@ -221,6 +227,45 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         staffId: state.staffId,
       });
     }
+  },
+
+  refreshAssignment: async () => {
+    const { user, currentBusiness, currentBranch, userRole } = get();
+    if (!user || !currentBusiness || !userRole || userRole === 'owner') return;
+    try {
+      const { data: membership, error } = await supabase
+        .from('business_members')
+        .select('role, branch_id, is_active, branches(*)')
+        .eq('user_id', user.id)
+        .eq('business_id', currentBusiness.id)
+        .maybeSingle();
+      if (error || !membership) return;
+
+      const role = membership.role as UserRole;
+      if (role !== userRole) set({ userRole: role });
+
+      const assigned = (membership.branches as unknown as Branch | null) ?? null;
+      if (role !== 'owner' && assigned && assigned.id !== currentBranch?.id) {
+        // Moved by the owner: reset branch data and work in the new branch.
+        try { useDashboardStore.getState().reset(); } catch (_) {}
+        try { useAnalyticsStore.getState().reset(); } catch (_) {}
+        try { useSaleStore.getState().resetBranchStats(); } catch (_) {}
+        try { useDebtStore.getState().reset(); } catch (_) {}
+        try { useDailyBalanceStore.getState().reset(); } catch (_) {}
+        try { usePurchaseStore.getState().reset(); } catch (_) {}
+        set({ currentBranch: assigned });
+        useBusinessStore.setState({ branches: [assigned] });
+        await saveSelectedBranchId(user.id, currentBusiness.id, assigned.id);
+        await cacheAuthContext({
+          user,
+          profile: get().profile,
+          currentBusiness,
+          currentBranch: assigned,
+          userRole: role,
+          staffId: get().staffId,
+        });
+      }
+    } catch (_) {}
   },
 
   signOut: async () => {
@@ -326,6 +371,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
               const assignedBranch = (membership.branches as Branch | null) ?? null;
               nextBranch = assignedBranch;
+              let fetchedBranches: Branch[] = [];
 
               if (nextBusiness?.id) {
                 const { data: branchRows } = await supabase
@@ -336,8 +382,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                   .order('created_at', { ascending: true });
 
                 const allBranches = (branchRows ?? []) as Branch[];
+                fetchedBranches = allBranches;
                 if (allBranches.length > 0) {
-                  useBusinessStore.setState({ branches: allBranches });
 
                   if (nextRole === 'owner') {
                     const preferredId =
@@ -364,6 +410,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
                 userRole: nextRole,
                 staffId: nextStaffId,
               });
+              // Staff only ever see the branch they work in (set after the
+              // role and branch above, which visibleBranches reads).
+              if (fetchedBranches.length > 0) {
+                useBusinessStore.setState({ branches: visibleBranches(fetchedBranches) });
+              }
             }
           } catch (err) {
             console.warn('[Record Am] Could not load business membership:', err);

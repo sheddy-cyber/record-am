@@ -53,13 +53,26 @@ function usePressAnimation(activeScale: number, activeOpacity: number) {
   return { pressIn, pressOut, animatedStyle };
 }
 
+/**
+ * Splits a pressable's style between the outer touch area (how it sits in its
+ * parent: flex, alignSelf, width) and the inner visual box (everything else).
+ * Sizing keys must not be applied to both: an inner `flex: 1` gives the box a
+ * zero flex basis, and on Android the parent then measures it as almost no
+ * height while the button's minHeight spills out below, which clipped button
+ * rows at the bottom of sheets and dialogs.
+ */
 function splitFlex(style: AnyStyle) {
   const flat = (StyleSheet.flatten(style as StyleProp<ViewStyle>) || {}) as ViewStyle;
+  const { flex, flexGrow, flexShrink, flexBasis, alignSelf, width, ...inner } = flat;
   const outer: ViewStyle = {};
-  if (flat.flex !== undefined) outer.flex = flat.flex;
-  if (flat.alignSelf !== undefined) outer.alignSelf = flat.alignSelf;
-  if (flat.width !== undefined) outer.width = flat.width;
-  return { flat, outer, hasFlex: flat.flex !== undefined };
+  if (flex !== undefined) outer.flex = flex;
+  if (flexGrow !== undefined) outer.flexGrow = flexGrow;
+  if (flexShrink !== undefined) outer.flexShrink = flexShrink;
+  if (flexBasis !== undefined) outer.flexBasis = flexBasis;
+  if (alignSelf !== undefined) outer.alignSelf = alignSelf;
+  if (width !== undefined) outer.width = width;
+  const hasFlex = flex !== undefined || flexGrow !== undefined || width !== undefined;
+  return { flat, inner, outer, hasFlex };
 }
 
 // ─── PressableScale ─────────────────────────────────────────────────────────
@@ -90,7 +103,7 @@ export const PressableScale: React.FC<PressableScaleProps> = ({
   accessibilityLabel,
 }) => {
   const { pressIn, pressOut, animatedStyle } = usePressAnimation(activeScale, activeOpacity);
-  const { outer, hasFlex } = splitFlex(style);
+  const { inner, outer, hasFlex } = splitFlex(style);
 
   return (
     <Pressable
@@ -106,7 +119,7 @@ export const PressableScale: React.FC<PressableScaleProps> = ({
       accessibilityLabel={accessibilityLabel}
       style={[outer, containerStyle as StyleProp<ViewStyle>]}
     >
-      <Animated.View style={[style as StyleProp<ViewStyle>, hasFlex && { width: '100%' }, animatedStyle]}>
+      <Animated.View style={[inner, hasFlex && { width: '100%' }, animatedStyle]}>
         {children}
       </Animated.View>
     </Pressable>
@@ -159,7 +172,7 @@ export const Button: React.FC<ButtonProps> = ({
   const radii = { sm: 11, md: 14, lg: 16 };
   const inactive = disabled || loading;
   const { pressIn, pressOut, animatedStyle } = usePressAnimation(0.97, 0.88);
-  const { outer, hasFlex } = splitFlex(style);
+  const { inner, outer, hasFlex } = splitFlex(style);
 
   return (
     <Pressable
@@ -190,7 +203,7 @@ export const Button: React.FC<ButtonProps> = ({
             borderColor: theme.border,
             opacity: disabled ? 0.4 : 1,
           },
-          style,
+          inner,
           hasFlex && { width: '100%' },
           animatedStyle,
         ]}
@@ -574,6 +587,43 @@ export const Skeleton: React.FC<{ width?: number | `${number}%`; height?: number
     />
   );
 };
+
+/**
+ * Placeholder rows shaped like a list row (avatar, two lines, trailing figure),
+ * shown only while a list has never loaded. Matching the real row height means
+ * nothing moves when the content arrives.
+ */
+export const ListSkeleton: React.FC<{ rows?: number; avatar?: boolean; style?: ViewStyle }> = ({
+  rows = 5,
+  avatar = true,
+  style,
+}) => (
+  <View style={[{ paddingHorizontal: SP.page, paddingTop: 8 }, style]}>
+    <View style={{ backgroundColor: COLORS.card, borderRadius: RADIUS.lg, overflow: 'hidden' }}>
+      {Array.from({ length: rows }, (_, i) => (
+        <View
+          key={i}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            paddingHorizontal: 14,
+            minHeight: 64,
+            borderTopWidth: i === 0 ? 0 : StyleSheet.hairlineWidth,
+            borderTopColor: COLORS.border,
+          }}
+        >
+          {avatar ? <Skeleton width={34} height={34} radius={17} /> : null}
+          <View style={{ flex: 1, gap: 8 }}>
+            <Skeleton width="58%" height={13} />
+            <Skeleton width="36%" height={11} />
+          </View>
+          <Skeleton width={56} height={14} />
+        </View>
+      ))}
+    </View>
+  </View>
+);
 
 // ─── Section Header ─────────────────────────────────────────────────────────
 

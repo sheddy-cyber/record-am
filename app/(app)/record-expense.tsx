@@ -1106,6 +1106,13 @@ export default function ExpensesScreen() {
         title="Filter expenses"
         subtitle="Choose what appears in the list and total."
         maxHeight="86%"
+        scroll={false}
+        footer={
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <Button title="Reset" variant="secondary" size="md" style={{ flex: 0.75 }} onPress={resetFilters} />
+            <Button title="Show expenses" variant="accent" icon="check" size="md" style={{ flex: 1.25 }} onPress={() => setFilterSheetVisible(false)} />
+          </View>
+        }
       >
         <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={{ paddingBottom: 14 }} showsVerticalScrollIndicator={false}>
           <Text style={{ marginBottom: 9, fontFamily: FONT.medium, fontSize: 12, color: COLORS.text.secondary }}>Time period</Text>
@@ -1143,10 +1150,6 @@ export default function ExpensesScreen() {
           </View>
         </ScrollView>
 
-        <View style={{ flexDirection: 'row', gap: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: COLORS.border }}>
-          <Button title="Reset" variant="secondary" size="md" style={{ flex: 0.75 }} onPress={resetFilters} />
-          <Button title="Show expenses" variant="accent" icon="check" size="md" style={{ flex: 1.25 }} onPress={() => setFilterSheetVisible(false)} />
-        </View>
       </BottomSheetModal>
     </ScreenShell>
   );

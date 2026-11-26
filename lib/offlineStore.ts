@@ -434,7 +434,21 @@ const readServerUpdatedAt = async (table: string, match?: Record<string, Primiti
   return (data as { updated_at?: string } | null)?.updated_at ?? null;
 };
 
+// Rows that are only ever created, never edited in place (every save gives
+// them a new id). They are sent as plain inserts: staff may add these rows but
+// not read them back (cost prices are hidden), and Postgres requires read
+// access for an upsert, so an upsert from a staff phone is always rejected.
+// A retry of a row that already reached the server fails as a duplicate,
+// which flushOfflineQueue counts as done.
+const INSERT_ONLY_TABLES = new Set(['sale_items', 'stock_movements']);
+
 const executeMutation = async (mutation: OfflineMutation) => {
+  if (mutation.operation === 'upsert' && mutation.table && INSERT_ONLY_TABLES.has(mutation.table)) {
+    const { error } = await supabase.from(mutation.table).insert(mutation.payload as any);
+    throwIfError(error);
+    return;
+  }
+
   if (mutation.operation === 'upsert') {
     const table = assertMutationTable(mutation);
     const { error } = await supabase
@@ -531,6 +545,17 @@ const executeMutation = async (mutation: OfflineMutation) => {
       delta: number;
     };
 
+    // One statement on the server, so sales on several phones at once all
+    // count instead of the last one overwriting the others.
+    const { error: rpcError } = await supabase.rpc('adjust_inventory_quantity', {
+      p_product_id: payload.product_id,
+      p_branch_id: payload.branch_id,
+      p_delta: payload.delta,
+    });
+    if (!rpcError) return;
+    if (!isMissingRpcError(rpcError)) throw rpcError;
+
+    // Database not updated yet: fall back to read, add, write.
     const { data, error } = await supabase
       .from('inventory')
       .select('quantity')

@@ -73,6 +73,8 @@ export interface Branch {
   address?: string;
   phone?: string;
   is_main: boolean;
+  /** False once the owner closes the branch. Missing on databases that predate closing. */
+  is_active?: boolean;
   created_at: string;
   updated_at: string;
 }

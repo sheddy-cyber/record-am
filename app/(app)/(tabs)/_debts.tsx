@@ -28,7 +28,7 @@ import { supabase } from '@/lib/supabase';
 import { deleteSaleRecord } from '@/lib/recordDeletion';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDebtReminderViaWhatsApp } from '@/lib/reports';
-import { Avatar, Button, EmptyState } from '@/components/ui';
+import { Avatar, Button, EmptyState, ListSkeleton } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP } from '@/constants';
@@ -107,6 +107,7 @@ function DebtsScreen() {
   const businessName = useAuthStore((s) => s.currentBusiness?.name);
   const customers = useCustomerStore((s) => s.customers);
   const debts = useDebtStore((s) => s.debts);
+  const debtsLoading = useDebtStore((s) => s.isLoading && s.debts.length === 0);
   const fetchDebts = useDebtStore((s) => s.fetchDebts);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -454,7 +455,9 @@ function DebtsScreen() {
             </View>
           }
           ListEmptyComponent={
-            debts.length === 0 ? (
+            debtsLoading ? (
+              <ListSkeleton rows={4} style={{ paddingHorizontal: 0 }} />
+            ) : debts.length === 0 ? (
               <EmptyState
                 icon="check-circle"
                 title="Zero Outstanding Debts"

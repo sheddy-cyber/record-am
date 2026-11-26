@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Alert, Modal, Pressable, RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { Alert, RefreshControl, ScrollView, Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
@@ -7,13 +7,16 @@ import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
 import { useCustomerStore } from '@/store/customerStore';
 import { useBusinessStore } from '@/store/businessStore';
-import { Product, Sale } from '@/types';
-import { BottomSheetModal, Button, Card, EmptyState, SectionHeader, SmartChip, confirmModal } from '@/components/ui';
+import { CustomerDebt, Product, Sale } from '@/types';
+import { BottomSheetModal, Button, Card, EmptyState, ListSkeleton, SectionHeader, SmartChip, confirmModal } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { printCounterpartyStatement, shareCounterpartyStatementPDF } from '@/lib/reports';
 import { dismissScreen } from '@/lib/navigation';
 import { isDebtForgiven } from '@/lib/records';
+
+const NO_SALES: Sale[] = [];
+const NO_DEBTS: CustomerDebt[] = [];
 
 const formatCurrency = (value: number) =>
   `${CURRENCY_SYMBOL}${value.toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
@@ -36,21 +39,26 @@ const getSaleItemsSummary = (sale: Sale, allProducts: Product[]) => {
 export default function CustomerDetailScreen() {
   const params = useLocalSearchParams<{ customerId?: string | string[] }>();
   const customerId = Array.isArray(params.customerId) ? params.customerId[0] : params.customerId;
-  const { currentBusiness, currentBranch } = useAuthStore();
-  const { products } = useBusinessStore();
+  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const currentBranch = useAuthStore((s) => s.currentBranch);
+  const products = useBusinessStore((s) => s.products);
   const [refreshing, setRefreshing] = useState(false);
   const [manageSheetVisible, setManageSheetVisible] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [isSharingPDF, setIsSharingPDF] = useState(false);
-  const {
-    customers,
-    selectedCustomer,
-    customerSales,
-    customerDebts,
-    fetchCustomerDetail,
-    deleteCustomer,
-    setSelectedCustomer,
-  } = useCustomerStore();
+  const customers = useCustomerStore((s) => s.customers);
+  const selectedCustomer = useCustomerStore((s) => s.selectedCustomer);
+  const fetchCustomerDetail = useCustomerStore((s) => s.fetchCustomerDetail);
+  const deleteCustomer = useCustomerStore((s) => s.deleteCustomer);
+  const setSelectedCustomer = useCustomerStore((s) => s.setSelectedCustomer);
+  // Records belong to whichever customer was opened last; never show another
+  // customer's records, even for the frame before this one's load starts.
+  const detailReady = useCustomerStore((s) => s.customerDetailId === customerId);
+  const storeSales = useCustomerStore((s) => s.customerSales);
+  const storeDebts = useCustomerStore((s) => s.customerDebts);
+  const detailLoading = useCustomerStore((s) => s.customerDetailId !== customerId || s.isDetailLoading);
+  const customerSales = detailReady ? storeSales : NO_SALES;
+  const customerDebts = detailReady ? storeDebts : NO_DEBTS;
 
   const closeScreen = () => dismissScreen();
 
@@ -76,16 +84,10 @@ export default function CustomerDetailScreen() {
     }
   }, [customer, setSelectedCustomer]);
 
-  useEffect(() => {
-    if (currentBusiness && customerId) {
-      fetchCustomerDetail(customerId, currentBusiness.id);
-    }
-  }, [currentBusiness, customerId, fetchCustomerDetail]);
-
   useFocusEffect(
     useCallback(() => {
       if (currentBusiness?.id && customerId) {
-        void fetchCustomerDetail(customerId, currentBusiness.id);
+        void fetchCustomerDetail(customerId, currentBusiness.id).catch(() => {});
       }
     }, [currentBusiness?.id, customerId, fetchCustomerDetail]),
   );
@@ -212,7 +214,7 @@ export default function CustomerDetailScreen() {
     <ScreenShell backgroundColor={COLORS.surface}>
       <ScreenHeader
         title={customer.name}
-        subtitle={`${customerSales.length} recent sale${customerSales.length === 1 ? '' : 's'}`}
+        subtitle={`${customer.total_transactions ?? 0} sale${customer.total_transactions === 1 ? '' : 's'}`}
        
         left={<HeaderAction icon="arrow-left" onPress={closeScreen} />}
         right={
@@ -311,7 +313,12 @@ export default function CustomerDetailScreen() {
           </Card>
         ) : null}
 
-        {activeDebts.length > 0 ? (
+        {detailLoading && (customer.outstanding_debt ?? 0) > 0 ? (
+          <View>
+            <SectionHeader title="Outstanding balance" />
+            <ListSkeleton rows={1} style={{ paddingHorizontal: 0, paddingTop: 0 }} />
+          </View>
+        ) : activeDebts.length > 0 ? (
           <View>
             <SectionHeader title={`Outstanding balance (${activeDebts.length})`} />
             <Card style={{ padding: 0, overflow: 'hidden' }}>
@@ -337,8 +344,16 @@ export default function CustomerDetailScreen() {
         ) : null}
 
         <View>
-          <SectionHeader title={`Recent sales (${customerSales.length})`} action={{ label: 'Record sale', onPress: openRecordSale }} />
-          {customerSales.length === 0 ? (
+          <SectionHeader
+            title={detailLoading ? 'Recent sales' : `Recent sales (${customerSales.length})`}
+            action={{ label: 'Record sale', onPress: openRecordSale }}
+          />
+          {detailLoading && (customer.total_transactions ?? 0) > 0 ? (
+            <ListSkeleton
+              rows={Math.min(customer.total_transactions ?? 1, 4)}
+              style={{ paddingHorizontal: 0, paddingTop: 0 }}
+            />
+          ) : customerSales.length === 0 ? (
             <Card style={{ alignItems: 'center', paddingVertical: 22 }}>
               <View style={{ width: 40, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: COLORS.surface2 }}>
                 <Icon name="shopping-bag" size={18} color={COLORS.text.muted} />

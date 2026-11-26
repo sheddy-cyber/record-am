@@ -167,6 +167,7 @@ export function CategoryPicker({
         title="Select Category"
         subtitle="Organize items for browsing and inventory filtering"
         maxHeight="82%"
+        scroll={false}
       >
         {/* Quick Create Input */}
         <View style={styles.createBox}>

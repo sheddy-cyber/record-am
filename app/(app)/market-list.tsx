@@ -522,6 +522,7 @@ export default function MarketListScreen() {
         title="Add to Market List"
         subtitle="Note down item requested by a customer"
         maxHeight="86%"
+        scroll={false}
       >
         <ScrollView
           showsVerticalScrollIndicator={false}

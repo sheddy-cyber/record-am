@@ -1,16 +1,16 @@
-import React, { useCallback, useEffect, useDeferredValue, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
+import React, { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
+import { RefreshControl, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect } from 'expo-router';
 import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
-import { useCustomerStore } from '@/store/customerStore';
+import { CustomerWithStats, useCustomerStore } from '@/store/customerStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { EmptyState, SmartChip } from '@/components/ui';
+import { EmptyState, ListSkeleton, SmartChip } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { dismissScreen } from '@/lib/navigation';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 
 const formatCurrency = (value: number | undefined | null) =>
   `${CURRENCY_SYMBOL}${(value || 0).toLocaleString('en-NG', { minimumFractionDigits: 0 })}`;
@@ -22,50 +22,150 @@ const formatSummaryCurrency = (value: number) => {
   return formatCurrency(amount);
 };
 
+const CustomerRow = memo(function CustomerRow({
+  item,
+  onOpen,
+}: {
+  item: CustomerWithStats;
+  onOpen: (item: CustomerWithStats) => void;
+}) {
+  const initials = (item.name || 'C').charAt(0).toUpperCase();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={() => onOpen(item)}
+      style={{
+        backgroundColor: COLORS.card,
+        borderRadius: RADIUS.lg,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: COLORS.border,
+        padding: 15,
+        marginBottom: 8,
+        gap: 10,
+      }}
+    >
+      {/* ── Top Bar: Avatar, Customer Name & Total Spend ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+          <View
+            style={{
+              width: 38,
+              height: 38,
+              backgroundColor: COLORS.navyLight,
+              borderRadius: RADIUS.full,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.ink }}>
+              {initials}
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {item.phone ? (
+              <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
+                {item.phone}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={{ fontSize: 15.5, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }}>
+            {formatCurrency(item.total_spent)}
+          </Text>
+          <Text style={{ fontSize: 10.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+            total spent
+          </Text>
+        </View>
+      </View>
+
+      {/* ── Bottom Bar: Smart Micro-Chips & Drill-Down Affordance ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, marginRight: 8 }}>
+          <SmartChip
+            label={`${item.total_transactions} ${item.total_transactions === 1 ? 'order' : 'orders'}`}
+            icon="shopping-bag"
+            variant="neutral"
+            size="xs"
+          />
+
+          {item.last_purchase ? (
+            <SmartChip
+              label={`Last: ${format(new Date(item.last_purchase), 'MMM d')}`}
+              variant="neutral"
+              size="xs"
+            />
+          ) : null}
+
+          {item.outstanding_debt > 0 ? (
+            <SmartChip
+              label={`Owes ${formatCurrency(item.outstanding_debt)}`}
+              dot
+              variant="danger"
+              size="xs"
+            />
+          ) : null}
+        </View>
+
+        <Icon name="chevron-right" size={15} color={COLORS.text.muted} />
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 export default function CustomersScreen() {
-  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const customers = useCustomerStore((s) => s.customers);
+  const loading = useCustomerStore((s) => s.isLoading && s.customers.length === 0);
   const fetchCustomers = useCustomerStore((s) => s.fetchCustomers);
-  const setSelectedCustomer = useCustomerStore((s) => s.setSelectedCustomer);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [refreshing, setRefreshing] = useState(false);
   const [customerView, setCustomerView] = useState<'all' | 'owing'>('all');
 
-  const onRefresh = useCallback(async () => {
-    if (!currentBusiness?.id) return;
+  // Background refreshes (focus, realtime) are silent; the spinner is only for a pull.
+  const refresh = useCallback(() => {
+    if (businessId) void fetchCustomers(businessId).catch(() => {});
+  }, [businessId, fetchCustomers]);
+
+  const onPull = useCallback(async () => {
+    if (!businessId) return;
     setRefreshing(true);
     try {
-      await fetchCustomers(currentBusiness.id);
+      await fetchCustomers(businessId);
     } catch (_) {}
     setRefreshing(false);
-  }, [currentBusiness?.id, fetchCustomers]);
+  }, [businessId, fetchCustomers]);
 
-  useEffect(() => {
-    if (currentBusiness?.id) {
-      void fetchCustomers(currentBusiness.id);
-    }
-  }, [currentBusiness?.id, fetchCustomers]);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (currentBusiness?.id) {
-        void fetchCustomers(currentBusiness.id);
-      }
-    }, [currentBusiness?.id, fetchCustomers]),
-  );
+  useFocusEffect(refresh);
 
   useRealtimeRefresh({
-    channelName: `customers-screen-${currentBusiness?.id ?? 'unknown'}`,
-    enabled: Boolean(currentBusiness?.id),
-    watch: [currentBusiness?.id],
+    channelName: `customers-screen-${businessId ?? 'unknown'}`,
+    enabled: Boolean(businessId),
+    watch: [businessId],
     tables: [
-      { table: 'customers', filter: `business_id=eq.${currentBusiness?.id}` },
-      { table: 'customer_debts', filter: `business_id=eq.${currentBusiness?.id}` },
-      { table: 'sales', filter: `business_id=eq.${currentBusiness?.id}` },
+      { table: 'customers', filter: `business_id=eq.${businessId}` },
+      { table: 'customer_debts', filter: `business_id=eq.${businessId}` },
+      { table: 'sales', filter: `business_id=eq.${businessId}` },
     ],
-    onRefresh: onRefresh,
+    onRefresh: refresh,
   });
+
+  const openCustomer = useCallback(
+    (item: CustomerWithStats) => {
+      const store = useCustomerStore.getState();
+      store.setSelectedCustomer(item);
+      // Start loading their records while the screen slides in.
+      if (businessId) void store.fetchCustomerDetail(item.id, businessId).catch(() => {});
+      router.push({ pathname: '/(app)/customer-detail', params: { customerId: item.id } });
+    },
+    [businessId],
+  );
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -219,133 +319,32 @@ export default function CustomersScreen() {
           </View>
         </View>
 
-        {filtered.length === 0 ? (
-          <ScrollView
-            contentContainerStyle={{ flexGrow: 1 }}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={COLORS.accent}
-                colors={[COLORS.accent]}
-              />
-            }
-          >
-            <EmptyState
-              icon="users"
-              title={customers.length === 0 ? 'No customers yet' : 'No matching customers'}
-              description={customers.length === 0 ? 'Add your first customer to start tracking purchases and debts.' : 'Try another search or return to all customers.'}
-              action={customers.length === 0 ? { label: 'Add Customer', onPress: () => router.push('/(app)/customer-create') } : { label: 'Clear Filters', onPress: clearFilters }}
+        <FlashList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onPull}
+              tintColor={COLORS.accent}
+              colors={[COLORS.accent]}
             />
-          </ScrollView>
-        ) : (
-          <FlashList
-            data={filtered}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 }}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={COLORS.accent}
-                colors={[COLORS.accent]}
+          }
+          renderItem={({ item }) => <CustomerRow item={item} onOpen={openCustomer} />}
+          ListEmptyComponent={
+            loading ? (
+              <ListSkeleton rows={6} style={{ paddingHorizontal: 0, paddingTop: 4 }} />
+            ) : (
+              <EmptyState
+                icon="users"
+                title={customers.length === 0 ? 'No customers yet' : 'No matching customers'}
+                description={customers.length === 0 ? 'Add your first customer to start tracking purchases and debts.' : 'Try another search or return to all customers.'}
+                action={customers.length === 0 ? { label: 'Add Customer', onPress: () => router.push('/(app)/customer-create') } : { label: 'Clear Filters', onPress: clearFilters }}
               />
-            }
-            
-            renderItem={({ item }) => {
-              const initials = (item.name || 'C').charAt(0).toUpperCase();
-
-              return (
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setSelectedCustomer(item);
-                    router.push({ pathname: '/(app)/customer-detail', params: { customerId: item.id } });
-                  }}
-                  style={{
-                    backgroundColor: COLORS.card,
-                    borderRadius: RADIUS.lg,
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: COLORS.border,
-                    padding: 15,
-                    marginBottom: 8,
-                    gap: 10,
-                  }}
-                >
-                  {/* ── Top Bar: Avatar, Customer Name & Total Spend ── */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                      <View
-                        style={{
-                          width: 38,
-                          height: 38,
-                          backgroundColor: COLORS.navyLight,
-                          borderRadius: RADIUS.full,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.ink }}>
-                          {initials}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        {item.phone ? (
-                          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
-                            {item.phone}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 15.5, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }}>
-                        {formatCurrency(item.total_spent)}
-                      </Text>
-                      <Text style={{ fontSize: 10.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                        total spent
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* ── Bottom Bar: Smart Micro-Chips & Drill-Down Affordance ── */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, marginRight: 8 }}>
-                      <SmartChip
-                        label={`${item.total_transactions} ${item.total_transactions === 1 ? 'order' : 'orders'}`}
-                        icon="shopping-bag"
-                        variant="neutral"
-                        size="xs"
-                      />
-
-                      {item.last_purchase ? (
-                        <SmartChip
-                          label={`Last: ${format(new Date(item.last_purchase), 'MMM d')}`}
-                          variant="neutral"
-                          size="xs"
-                        />
-                      ) : null}
-
-                      {item.outstanding_debt > 0 ? (
-                        <SmartChip
-                          label={`Owes ${formatCurrency(item.outstanding_debt)}`}
-                          dot
-                          variant="danger"
-                          size="xs"
-                        />
-                      ) : null}
-                    </View>
-
-                    <Icon name="chevron-right" size={15} color={COLORS.text.muted} />
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
-          />
-        )}
+            )
+          }
+        />
       </View>
     </ScreenShell>
   );

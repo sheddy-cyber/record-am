@@ -8,7 +8,7 @@ import {
   readCachedRows,
   upsertCachedRows,
 } from '@/lib/offlineStore';
-import { hasArrayChanged } from '@/lib/storeUtils';
+import { fetchAllPages, hasArrayChanged, reconcileList } from '@/lib/storeUtils';
 
 export interface SupplierWithStats extends Supplier {
   total_purchased: number;
@@ -22,6 +22,10 @@ interface SupplierState {
   selectedSupplier: SupplierWithStats | null;
   supplierPurchases: Purchase[];
   supplierDebts: SupplierDebt[];
+  /** The supplier that supplierPurchases and supplierDebts belong to. */
+  supplierDetailId: string | null;
+  /** True only while a supplier is opened for the first time and nothing is known yet. */
+  isDetailLoading: boolean;
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
@@ -36,11 +40,179 @@ interface SupplierState {
   reset: () => void;
 }
 
+const supplierRequests = new Map<string, Promise<void>>();
+const detailRequests = new Map<string, Promise<void>>();
+/** Last purchases and debts seen per supplier, so reopening a supplier is instant. */
+const supplierDetailCache = new Map<string, { purchases: Purchase[]; debts: SupplierDebt[] }>();
+
+type PurchaseStat = { supplier_id: string; total_amount: number; created_at: string };
+type DebtStat = { supplier_id: string; balance: number };
+
+async function loadSuppliers(businessId: string): Promise<void> {
+  const get = useSupplierStore.getState;
+  const set = useSupplierStore.setState;
+
+  if (get().suppliers.length === 0) {
+    try {
+      const cached = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
+      if (cached.length > 0 && get().suppliers.length === 0) set({ suppliers: cached });
+    } catch {}
+  }
+  if (get().suppliers.length === 0) set({ isLoading: true });
+  if (get().error) set({ error: null });
+
+  try {
+    // Three queries for the whole business instead of two per supplier.
+    const [supplierResult, purchases, debts] = await Promise.all([
+      supabase
+        .from('suppliers')
+        .select('*')
+        .eq('business_id', businessId)
+        .eq('is_active', true)
+        .order('name'),
+      fetchAllPages<PurchaseStat>((from, to) =>
+        supabase
+          .from('purchases')
+          .select('supplier_id, total_amount, created_at')
+          .eq('business_id', businessId)
+          .not('supplier_id', 'is', null)
+          .order('id')
+          .range(from, to),
+      ),
+      fetchAllPages<DebtStat>((from, to) =>
+        supabase
+          .from('supplier_debts')
+          .select('supplier_id, balance')
+          .eq('business_id', businessId)
+          .not('supplier_id', 'is', null)
+          .neq('status', 'settled')
+          .order('id')
+          .range(from, to),
+      ),
+    ]);
+    if (supplierResult.error) throw supplierResult.error;
+
+    const bought = new Map<string, { total: number; count: number; last?: string; lastTime: number }>();
+    for (const purchase of purchases) {
+      const entry = bought.get(purchase.supplier_id) ?? { total: 0, count: 0, lastTime: -Infinity };
+      entry.total += Number(purchase.total_amount) || 0;
+      entry.count += 1;
+      const time = Date.parse(purchase.created_at);
+      if (time > entry.lastTime) {
+        entry.lastTime = time;
+        entry.last = purchase.created_at;
+      }
+      bought.set(purchase.supplier_id, entry);
+    }
+    const owed = new Map<string, number>();
+    for (const debt of debts) {
+      owed.set(debt.supplier_id, (owed.get(debt.supplier_id) ?? 0) + (Number(debt.balance) || 0));
+    }
+
+    const suppliersWithStats: SupplierWithStats[] = (supplierResult.data ?? []).map((s) => {
+      const stats = bought.get(s.id);
+      return {
+        ...s,
+        total_purchased: stats?.total ?? 0,
+        total_orders: stats?.count ?? 0,
+        outstanding_debt: owed.get(s.id) ?? 0,
+        last_order: stats?.last,
+      };
+    });
+
+    if (hasArrayChanged(get().suppliers, suppliersWithStats)) {
+      set({ suppliers: reconcileList(get().suppliers, suppliersWithStats) });
+    }
+    await upsertCachedRows({ businessId }, 'suppliers', suppliersWithStats);
+  } catch (err: any) {
+    const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers').catch(
+      () => [] as SupplierWithStats[],
+    );
+    if (cachedSuppliers.length > 0) {
+      if (hasArrayChanged(get().suppliers, cachedSuppliers)) {
+        set({ suppliers: reconcileList(get().suppliers, cachedSuppliers) });
+      }
+    } else {
+      set({ error: err?.message ?? 'Unable to load suppliers.' });
+    }
+  } finally {
+    if (get().isLoading) set({ isLoading: false });
+  }
+}
+
+/** Shows a supplier's records if that supplier is still open, keeping unchanged rows. */
+function showSupplierDetail(supplierId: string, purchases: Purchase[], debts: SupplierDebt[]) {
+  const state = useSupplierStore.getState();
+  if (state.supplierDetailId !== supplierId) {
+    supplierDetailCache.set(supplierId, { purchases, debts });
+    return;
+  }
+  const nextPurchases = reconcileList(state.supplierPurchases, purchases);
+  const nextDebts = reconcileList(state.supplierDebts, debts);
+  supplierDetailCache.set(supplierId, { purchases: nextPurchases, debts: nextDebts });
+  if (nextPurchases !== state.supplierPurchases || nextDebts !== state.supplierDebts || state.isDetailLoading) {
+    useSupplierStore.setState({ supplierPurchases: nextPurchases, supplierDebts: nextDebts, isDetailLoading: false });
+  }
+}
+
+async function loadSupplierDetail(supplierId: string, businessId: string): Promise<void> {
+  try {
+    const [purchaseResult, debtResult] = await Promise.all([
+      supabase
+        .from('purchases')
+        .select('*, items:purchase_items(*, product:products(name, unit))')
+        .eq('supplier_id', supplierId)
+        .eq('business_id', businessId)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('supplier_debts')
+        .select('*')
+        .eq('supplier_id', supplierId)
+        .order('created_at', { ascending: false }),
+    ]);
+    if (purchaseResult.error) throw purchaseResult.error;
+    if (debtResult.error) throw debtResult.error;
+    showSupplierDetail(
+      supplierId,
+      (purchaseResult.data as Purchase[]) ?? [],
+      (debtResult.data as SupplierDebt[]) ?? [],
+    );
+  } catch (err: any) {
+    // Offline or failed: use what this device already has.
+    try {
+      const [cachedPurchases, cachedDebts, cachedItems] = await Promise.all([
+        readCachedRows<Purchase>({ businessId }, 'purchases'),
+        readCachedRows<SupplierDebt>({ businessId }, 'supplier_debts'),
+        readCachedRows<PurchaseItem>({ businessId }, 'purchase_items').catch(() => [] as PurchaseItem[]),
+      ]);
+      const newDebts = cachedDebts.filter((d) => d.supplier_id === supplierId);
+      const newPurchases = cachedPurchases
+        .filter((p) => p.supplier_id === supplierId)
+        .slice(0, 20)
+        .map((p) => ({
+          ...p,
+          items: p.items && p.items.length > 0 ? p.items : cachedItems.filter((i) => i.purchase_id === p.id),
+        }));
+      showSupplierDetail(supplierId, newPurchases, newDebts);
+    } catch {
+      useSupplierStore.setState({ error: err?.message ?? 'Unable to load this supplier.' });
+    }
+  } finally {
+    const state = useSupplierStore.getState();
+    if (state.supplierDetailId === supplierId && state.isDetailLoading) {
+      useSupplierStore.setState({ isDetailLoading: false });
+    }
+  }
+}
+
 export const useSupplierStore = create<SupplierState>((set, get) => ({
   suppliers: [],
   selectedSupplier: null,
   supplierPurchases: [],
   supplierDebts: [],
+  supplierDetailId: null,
+  isDetailLoading: false,
   isLoading: false,
   isSaving: false,
   error: null,
@@ -50,133 +222,36 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
       const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
       if (cachedSuppliers.length > 0) {
         if (hasArrayChanged(get().suppliers, cachedSuppliers)) {
-          set({ suppliers: cachedSuppliers });
+          set({ suppliers: reconcileList(get().suppliers, cachedSuppliers) });
         }
       }
     } catch {}
   },
 
-  fetchSuppliers: async (businessId) => {
-    try {
-      const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
-      if (cachedSuppliers.length > 0) {
-        if (hasArrayChanged(get().suppliers, cachedSuppliers)) {
-          set({ suppliers: cachedSuppliers });
-        }
-      }
-    } catch {}
-
-    const currentSuppliers = get().suppliers;
-    if (currentSuppliers.length === 0) set({ isLoading: true });
-    set({ error: null });
-
-    try {
-      const { data: suppliers, error } = await supabase
-        .from('suppliers')
-        .select('*')
-        .eq('business_id', businessId)
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) throw error;
-
-      const suppliersWithStats: SupplierWithStats[] = await Promise.all(
-        (suppliers ?? []).map(async (s) => {
-          const { data: purchases } = await supabase
-            .from('purchases')
-            .select('total_amount, created_at')
-            .eq('supplier_id', s.id)
-            .order('created_at', { ascending: false });
-
-          const { data: debts } = await supabase
-            .from('supplier_debts')
-            .select('balance')
-            .eq('supplier_id', s.id)
-            .neq('status', 'settled');
-
-          return {
-            ...s,
-            total_purchased: purchases?.reduce((sum, p) => sum + p.total_amount, 0) ?? 0,
-            total_orders: purchases?.length ?? 0,
-            outstanding_debt: debts?.reduce((sum, d) => sum + d.balance, 0) ?? 0,
-            last_order: purchases?.[0]?.created_at,
-          };
-        })
-      );
-
-      if (hasArrayChanged(get().suppliers, suppliersWithStats)) {
-        set({ suppliers: suppliersWithStats });
-      }
-      await upsertCachedRows({ businessId }, 'suppliers', suppliersWithStats);
-    } catch (err: any) {
-      const cachedSuppliers = await readCachedRows<SupplierWithStats>({ businessId }, 'suppliers');
-      if (cachedSuppliers.length > 0) {
-        if (hasArrayChanged(get().suppliers, cachedSuppliers)) {
-          set({ suppliers: cachedSuppliers, error: null });
-        } else {
-          set({ error: null });
-        }
-      } else {
-        set({ error: err.message });
-      }
-    } finally {
-      set({ isLoading: false });
-    }
+  fetchSuppliers: (businessId) => {
+    const existing = supplierRequests.get(businessId);
+    if (existing) return existing;
+    const request = loadSuppliers(businessId).finally(() => supplierRequests.delete(businessId));
+    supplierRequests.set(businessId, request);
+    return request;
   },
 
-  fetchSupplierDetail: async (supplierId, businessId) => {
-    set({ isLoading: true });
-    try {
-      const { data: purchases } = await supabase
-        .from('purchases')
-        .select('*, items:purchase_items(*, product:products(name, unit))')
-        .eq('supplier_id', supplierId)
-        .eq('business_id', businessId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      const { data: debts } = await supabase
-        .from('supplier_debts')
-        .select('*')
-        .eq('supplier_id', supplierId)
-        .order('created_at', { ascending: false });
-
-      const newPurchases = (purchases as Purchase[]) ?? [];
-      const newDebts = (debts as SupplierDebt[]) ?? [];
-
-      if (
-        hasArrayChanged(get().supplierPurchases, newPurchases) ||
-        hasArrayChanged(get().supplierDebts, newDebts)
-      ) {
-        set({ supplierPurchases: newPurchases, supplierDebts: newDebts });
-      }
-    } catch (err: any) {
-      // Try loading from cache if server fails
-      try {
-        const [cachedPurchases, cachedDebts, cachedItems] = await Promise.all([
-          readCachedRows<Purchase>({ businessId }, 'purchases'),
-          readCachedRows<SupplierDebt>({ businessId }, 'supplier_debts'),
-          readCachedRows<PurchaseItem>({ businessId }, 'purchase_items').catch(() => [] as PurchaseItem[]),
-        ]);
-        const newDebts = cachedDebts.filter((d) => d.supplier_id === supplierId);
-        const filteredPurchases = cachedPurchases.filter((p) => p.supplier_id === supplierId).slice(0, 20);
-        const newPurchases = filteredPurchases.map((p) => ({
-          ...p,
-          items: p.items && p.items.length > 0 ? p.items : cachedItems.filter((i) => i.purchase_id === p.id),
-        }));
-
-        if (
-          hasArrayChanged(get().supplierPurchases, newPurchases) ||
-          hasArrayChanged(get().supplierDebts, newDebts)
-        ) {
-          set({ supplierPurchases: newPurchases, supplierDebts: newDebts });
-        }
-      } catch {
-        set({ error: err.message });
-      }
-    } finally {
-      set({ isLoading: false });
+  fetchSupplierDetail: (supplierId, businessId) => {
+    if (get().supplierDetailId !== supplierId) {
+      const remembered = supplierDetailCache.get(supplierId);
+      set({
+        supplierDetailId: supplierId,
+        supplierPurchases: remembered?.purchases ?? [],
+        supplierDebts: remembered?.debts ?? [],
+        isDetailLoading: !remembered,
+      });
     }
+    const key = `${businessId}:${supplierId}`;
+    const existing = detailRequests.get(key);
+    if (existing) return existing;
+    const request = loadSupplierDetail(supplierId, businessId).finally(() => detailRequests.delete(key));
+    detailRequests.set(key, request);
+    return request;
   },
 
   createSupplier: async (data) => {
@@ -305,14 +380,18 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
 
   setSelectedSupplier: (supplier) => set({ selectedSupplier: supplier }),
 
-  reset: () =>
+  reset: () => {
+    supplierDetailCache.clear();
     set({
       suppliers: [],
       selectedSupplier: null,
       supplierPurchases: [],
       supplierDebts: [],
+      supplierDetailId: null,
+      isDetailLoading: false,
       isLoading: false,
       isSaving: false,
       error: null,
-    }),
+    });
+  },
 }));

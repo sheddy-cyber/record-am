@@ -11,6 +11,7 @@ import { COLORS } from '@/constants';
 import { useDebtStore } from '@/store/debtStore';
 import { useSaleStore } from '@/store/saleStore';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useNotificationStore } from '@/store/notificationStore';
 import { canViewFinancialData, hasPermission } from '@/lib/permissions';
 import { readCachedRows, replaceCachedRows } from '@/lib/offlineStore';
 
@@ -20,6 +21,7 @@ function Bootloader({ children }: { children: React.ReactNode }) {
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const branchId = useAuthStore((s) => s.currentBranch?.id);
   const userRole = useAuthStore((s) => s.userRole);
+  const userId = useAuthStore((s) => s.user?.id);
   const [isBooted, setIsBooted] = useState(false);
   const hasShownAppRef = useRef(false);
   const canViewCosts = canViewFinancialData(userRole);
@@ -68,6 +70,10 @@ function Bootloader({ children }: { children: React.ReactNode }) {
               }
             })(),
         branchId && useDebtStore.getState().hydrateCache(businessId, branchId),
+        // Home's figures and recent activity for this branch, so the first
+        // frame (and the first frame after a branch switch) is complete.
+        branchId ? useDashboardStore.getState().refreshFromCache(businessId, branchId) : Promise.resolve(),
+        userId ? useNotificationStore.getState().loadNotifications(userId) : Promise.resolve(),
         useSaleStore.getState().loadPinnedProductIds(businessId),
         useDashboardStore.getState().loadRevenueVisibility(businessId),
       ]);
@@ -95,7 +101,7 @@ function Bootloader({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [canViewCosts, canViewPurchases, businessId, branchId]);
+  }, [canViewCosts, canViewPurchases, businessId, branchId, userId]);
 
   if (!isBooted) {
     // Show nothing or a splash screen equivalent while cache reads (should be imperceptible)

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -91,11 +91,22 @@ export default function AnalyticsScreen() {
 
   const canViewAnalytics = hasPermission(userRole, 'analytics.view');
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     if (canViewAnalytics && currentBusiness && currentBranch) {
-      fetchAnalytics(currentBusiness.id, currentBranch.id);
+      await fetchAnalytics(currentBusiness.id, currentBranch.id);
     }
   }, [canViewAnalytics, currentBusiness, currentBranch, fetchAnalytics]);
+
+  // The pull-to-refresh spinner reflects only a pull, never background refreshes.
+  const [pulling, setPulling] = useState(false);
+  const onPull = useCallback(async () => {
+    setPulling(true);
+    try {
+      await load();
+    } finally {
+      setPulling(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     load();
@@ -185,7 +196,7 @@ export default function AnalyticsScreen() {
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ paddingHorizontal: SP.page, paddingTop: 8, paddingBottom: 48 }}
-        refreshControl={<RefreshControl refreshing={isLoading && Boolean(summary)} onRefresh={load} tintColor={COLORS.text.muted} />}
+        refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={COLORS.text.muted} />}
         showsVerticalScrollIndicator={false}
       >
         {isLoading && !summary ? (

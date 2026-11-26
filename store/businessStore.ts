@@ -10,7 +10,9 @@ import {
   readCachedProducts,
   upsertCachedProducts,
 } from '@/lib/offlineStore';
-import { hasArrayChanged } from '@/lib/storeUtils';
+import { hasArrayChanged, reconcileList } from '@/lib/storeUtils';
+import { includeProductCosts, visibleBranches } from '@/lib/dataAccess';
+import { BranchHasRecordsError } from '@/lib/branches';
 
 const BRANCH_CACHE_KEY_PREFIX = 'record-am:branches:v1';
 
@@ -44,32 +46,148 @@ const stripProductForWrite = (product: Product) => {
 const maskProductCosts = (products: Product[]): Product[] =>
   products.map((product) => ({ ...product, cost_price: 0 }));
 
-const fetchTrackedProducts = async (businessId: string, includeCosts = true) => {
+/**
+ * Physical, active products for stock alerts. Refreshes the shared product list
+ * (deduplicated with any request already in flight) rather than running a
+ * second, differently shaped query that would overwrite the product cache.
+ */
+const trackedProducts = async (businessId: string, _requestedCosts: boolean): Promise<Product[]> => {
+  // Always refresh with the signed-in user's own cost visibility: callers that
+  // only want counts must never swap an owner's list for the cost-masked one.
+  await useBusinessStore.getState().fetchProducts(businessId, includeProductCosts());
+  return useBusinessStore
+    .getState()
+    .products.filter((product) => product.is_active && !product.is_service && product.business_id === businessId);
+};
+
+const productRequests = new Map<string, Promise<void>>();
+
+async function loadProducts(businessId: string, includeCosts: boolean): Promise<void> {
+  const get = useBusinessStore.getState;
+  const set = useBusinessStore.setState;
+  if (get().products.length === 0) {
+    try {
+      const cached = includeCosts
+        ? await readCachedProducts(businessId)
+        : maskProductCosts(await readCachedProducts(businessId));
+      if (cached.length > 0 && get().products.length === 0) set({ products: cached });
+    } catch {}
+  }
+
+  const currentProducts = get().products;
+  if (currentProducts.length === 0) set({ isLoading: true });
+
   try {
-    const productSource = includeCosts ? 'products' : 'staff_products';
-    const { data, error } = await supabase
-      .from(productSource)
-      .select(`
-        *,
-        inventory(quantity, branch_id)
-      `)
+    const productQuery = includeCosts
+      ? supabase
+          .from('products')
+          .select(`
+            *,
+            category:categories(*),
+            inventory(*)
+          `)
+          .eq('is_active', true)
+      : supabase.from('staff_products').select('*').eq('is_active', true);
+    const { data, error } = await productQuery
       .eq('business_id', businessId)
-      .eq('is_service', false)
-      .eq('is_active', true);
+      .order('name');
 
     if (error) throw error;
+    let serverProducts = (data ?? []) as Product[];
 
-    const allProducts = (includeCosts ? (data ?? []) : maskProductCosts((data ?? []) as Product[])) as Product[];
-    const activeProducts = allProducts.filter(p => p.is_active);
+    if (!includeCosts && serverProducts.length > 0) {
+      const [{ data: inventory, error: inventoryError }, { data: categories, error: categoriesError }] = await Promise.all([
+        supabase.from('inventory').select('*').in('product_id', serverProducts.map((product) => product.id)),
+        supabase.from('categories').select('*').eq('business_id', businessId),
+      ]);
+      if (inventoryError) throw inventoryError;
+      if (categoriesError) throw categoriesError;
+
+      const inventoryByProduct = new Map<string, Product['inventory']>();
+      for (const item of inventory ?? []) {
+        const productInventory = inventoryByProduct.get(item.product_id) ?? [];
+        productInventory.push(item);
+        inventoryByProduct.set(item.product_id, productInventory);
+      }
+      const categoryById = new Map((categories ?? []).map((category) => [category.id, category]));
+      serverProducts = serverProducts.map((product) => ({
+        ...product,
+        cost_price: 0,
+        inventory: inventoryByProduct.get(product.id) ?? [],
+        category: product.category_id ? categoryById.get(product.category_id) : undefined,
+      }));
+    }
+
+    // Auto-heal: If any physical products have missing/zero cost_price, check if purchase_items has their unit_cost
+    const zeroCostProductIds = includeCosts ? serverProducts
+      .filter((p) => !p.is_service && (!p.cost_price || Number(p.cost_price) === 0))
+      .map((p) => p.id) : [];
+
+    if (zeroCostProductIds.length > 0) {
+      try {
+        const { data: latestPurchasedItems } = await supabase
+          .from('purchase_items')
+          .select('product_id, unit_cost, created_at')
+          .in('product_id', zeroCostProductIds)
+          .gt('unit_cost', 0)
+          .order('created_at', { ascending: false });
+
+        if (latestPurchasedItems && latestPurchasedItems.length > 0) {
+          const costByProduct = new Map<string, number>();
+          for (const pi of latestPurchasedItems) {
+            if (!costByProduct.has(pi.product_id)) {
+              costByProduct.set(pi.product_id, Number(pi.unit_cost));
+            }
+          }
+
+          for (const [prodId, unitCost] of costByProduct.entries()) {
+            const p = serverProducts.find((prod) => prod.id === prodId);
+            if (p) {
+              p.cost_price = unitCost;
+              void supabase.from('products').update({ cost_price: unitCost }).eq('id', prodId);
+              void supabase
+                .from('sale_items')
+                .update({ cost_price: unitCost })
+                .eq('product_id', prodId)
+                .or('cost_price.is.null,cost_price.eq.0');
+            }
+          }
+        }
+      } catch (healErr) {
+        console.warn('[fetchProducts] auto-heal cost price error:', healErr);
+      }
+    }
+
+    const cachedProducts = (await readCachedProducts(businessId)) as Product[];
+    const serverProductIds = new Set(serverProducts.map((product) => product.id));
+    const localOnlyProducts = cachedProducts.filter((product) => !serverProductIds.has(product.id));
+    const allMerged = [...serverProducts, ...localOnlyProducts].sort(
+      (a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id),
+    );
+    
+    const activeProducts = (includeCosts ? allMerged : maskProductCosts(allMerged)).filter(p => p.is_active);
+    
+    if (hasArrayChanged(get().products, activeProducts)) {
+      set({ products: reconcileList(get().products, activeProducts) });
+    }
     await cacheProducts(businessId, activeProducts);
-    return activeProducts;
-  } catch {
+  } catch (err: any) {
     const cachedProducts = includeCosts
       ? await readCachedProducts(businessId)
       : maskProductCosts(await readCachedProducts(businessId));
-    return cachedProducts.filter((product) => product.is_active && !product.is_service);
+    if (cachedProducts.length > 0) {
+      if (hasArrayChanged(get().products, cachedProducts)) {
+        set({ products: reconcileList(get().products, cachedProducts), error: null });
+      } else {
+        set({ error: null });
+      }
+    } else {
+      set({ error: err.message });
+    }
+  } finally {
+    if (get().isLoading) set({ isLoading: false });
   }
-};
+}
 
 interface BusinessState {
   businesses: Business[];
@@ -91,6 +209,8 @@ interface BusinessState {
     data: { name?: string; address?: string; phone?: string },
   ) => Promise<Branch>;
   deleteBranch: (businessId: string, branchId: string) => Promise<void>;
+  /** Close (hide, keep history) or reopen a branch. */
+  setBranchOpen: (businessId: string, branchId: string, open: boolean) => Promise<void>;
   setMainBranch: (businessId: string, branchId: string) => Promise<void>;
   transferBranchStock: (params: {
     businessId: string;
@@ -167,7 +287,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         .order('created_at', { ascending: true });
 
       if (error) throw error;
-      const list = (data ?? []) as Branch[];
+      const list = visibleBranches((data ?? []) as Branch[]);
       set({ branches: list });
       await writeCachedBranches(businessId, list);
       return list;
@@ -241,14 +361,45 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
       throw new Error('You cannot delete the Main Branch. Set another branch as Main first.');
     }
 
+    const name = target?.name ?? 'This branch';
+
+    // Never delete a branch that has history. The database refuses too (once
+    // the 20261126 migration is applied), but checking here protects sales on
+    // databases that still delete them along with the branch.
+    const tables = ['sales', 'customer_debts', 'expenses', 'purchases', 'daily_summaries'];
+    const counts = await Promise.all(
+      tables.map((table) =>
+        supabase.from(table).select('id', { count: 'exact', head: true }).eq('branch_id', branchId),
+      ),
+    );
+    const failed = counts.find((r) => r.error && !/does not exist/i.test(r.error.message ?? ''));
+    if (failed?.error) throw failed.error;
+    if (counts.some((r) => (r.count ?? 0) > 0)) throw new BranchHasRecordsError(name);
+
     const { error } = await supabase
       .from('branches')
       .delete()
       .eq('id', branchId)
       .eq('business_id', businessId);
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === '23503') throw new BranchHasRecordsError(name);
+      throw error;
+    }
     const next = get().branches.filter((b) => b.id !== branchId);
+    set({ branches: next });
+    await writeCachedBranches(businessId, next);
+  },
+
+  setBranchOpen: async (businessId, branchId, open) => {
+    const { error } = await supabase.rpc('set_branch_open', { p_branch_id: branchId, p_open: open });
+    if (error) {
+      if (error.code === 'PGRST202' || /could not find the function/i.test(error.message ?? '')) {
+        throw new Error('Closing branches needs the latest database update (migration 20261126120000).');
+      }
+      throw error;
+    }
+    const next = get().branches.map((b) => (b.id === branchId ? { ...b, is_active: open } : b));
     set({ branches: next });
     await writeCachedBranches(businessId, next);
   },
@@ -337,7 +488,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
         : maskProductCosts(await readCachedProducts(businessId));
       if (cachedProducts.length > 0) {
         if (hasArrayChanged(get().products, cachedProducts)) {
-          set({ products: cachedProducts });
+          set({ products: reconcileList(get().products, cachedProducts) });
         }
       }
       if (!includeCosts) {
@@ -346,131 +497,15 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
     } catch {}
   },
 
-  fetchProducts: async (businessId, includeCosts = true) => {
-    try {
-      const cachedProducts = includeCosts
-        ? await readCachedProducts(businessId)
-        : maskProductCosts(await readCachedProducts(businessId));
-      if (cachedProducts.length > 0) {
-        if (hasArrayChanged(get().products, cachedProducts)) {
-          set({ products: cachedProducts });
-        }
-      }
-    } catch {}
-
-    const currentProducts = get().products;
-    if (currentProducts.length === 0) set({ isLoading: true });
-
-    try {
-      const productQuery = includeCosts
-        ? supabase
-            .from('products')
-            .select(`
-              *,
-              category:categories(*),
-              inventory(*)
-            `)
-            .eq('is_active', true)
-        : supabase.from('staff_products').select('*').eq('is_active', true);
-      const { data, error } = await productQuery
-        .eq('business_id', businessId)
-        .order('name');
-
-      if (error) throw error;
-      let serverProducts = (data ?? []) as Product[];
-
-      if (!includeCosts && serverProducts.length > 0) {
-        const [{ data: inventory, error: inventoryError }, { data: categories, error: categoriesError }] = await Promise.all([
-          supabase.from('inventory').select('*').in('product_id', serverProducts.map((product) => product.id)),
-          supabase.from('categories').select('*').eq('business_id', businessId),
-        ]);
-        if (inventoryError) throw inventoryError;
-        if (categoriesError) throw categoriesError;
-
-        const inventoryByProduct = new Map<string, Product['inventory']>();
-        for (const item of inventory ?? []) {
-          const productInventory = inventoryByProduct.get(item.product_id) ?? [];
-          productInventory.push(item);
-          inventoryByProduct.set(item.product_id, productInventory);
-        }
-        const categoryById = new Map((categories ?? []).map((category) => [category.id, category]));
-        serverProducts = serverProducts.map((product) => ({
-          ...product,
-          cost_price: 0,
-          inventory: inventoryByProduct.get(product.id) ?? [],
-          category: product.category_id ? categoryById.get(product.category_id) : undefined,
-        }));
-      }
-
-      // Auto-heal: If any physical products have missing/zero cost_price, check if purchase_items has their unit_cost
-      const zeroCostProductIds = includeCosts ? serverProducts
-        .filter((p) => !p.is_service && (!p.cost_price || Number(p.cost_price) === 0))
-        .map((p) => p.id) : [];
-
-      if (zeroCostProductIds.length > 0) {
-        try {
-          const { data: latestPurchasedItems } = await supabase
-            .from('purchase_items')
-            .select('product_id, unit_cost, created_at')
-            .in('product_id', zeroCostProductIds)
-            .gt('unit_cost', 0)
-            .order('created_at', { ascending: false });
-
-          if (latestPurchasedItems && latestPurchasedItems.length > 0) {
-            const costByProduct = new Map<string, number>();
-            for (const pi of latestPurchasedItems) {
-              if (!costByProduct.has(pi.product_id)) {
-                costByProduct.set(pi.product_id, Number(pi.unit_cost));
-              }
-            }
-
-            for (const [prodId, unitCost] of costByProduct.entries()) {
-              const p = serverProducts.find((prod) => prod.id === prodId);
-              if (p) {
-                p.cost_price = unitCost;
-                void supabase.from('products').update({ cost_price: unitCost }).eq('id', prodId);
-                void supabase
-                  .from('sale_items')
-                  .update({ cost_price: unitCost })
-                  .eq('product_id', prodId)
-                  .or('cost_price.is.null,cost_price.eq.0');
-              }
-            }
-          }
-        } catch (healErr) {
-          console.warn('[fetchProducts] auto-heal cost price error:', healErr);
-        }
-      }
-
-      const cachedProducts = includeCosts
-        ? await readCachedProducts(businessId)
-        : maskProductCosts(await readCachedProducts(businessId));
-      const serverProductIds = new Set(serverProducts.map((product) => product.id));
-      const localOnlyProducts = cachedProducts.filter((product) => !serverProductIds.has(product.id));
-      const allMerged = [...serverProducts, ...localOnlyProducts].sort((a, b) => a.name.localeCompare(b.name));
-      
-      const activeProducts = (includeCosts ? allMerged : maskProductCosts(allMerged)).filter(p => p.is_active);
-      
-      if (hasArrayChanged(get().products, activeProducts)) {
-        set({ products: activeProducts });
-      }
-      await cacheProducts(businessId, activeProducts);
-    } catch (err: any) {
-      const cachedProducts = includeCosts
-        ? await readCachedProducts(businessId)
-        : maskProductCosts(await readCachedProducts(businessId));
-      if (cachedProducts.length > 0) {
-        if (hasArrayChanged(get().products, cachedProducts)) {
-          set({ products: cachedProducts, error: null });
-        } else {
-          set({ error: null });
-        }
-      } else {
-        set({ error: err.message });
-      }
-    } finally {
-      set({ isLoading: false });
-    }
+  fetchProducts: (businessId, includeCosts = true) => {
+    // Home, Stock, the boot sequence and realtime events often ask at the same
+    // moment; they share one request instead of racing each other.
+    const key = `${businessId}:${includeCosts ? 1 : 0}`;
+    const existing = productRequests.get(key);
+    if (existing) return existing;
+    const request = loadProducts(businessId, includeCosts).finally(() => productRequests.delete(key));
+    productRequests.set(key, request);
+    return request;
   },
 
   createBusiness: async (data, userId) => {
@@ -818,7 +853,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   getLowStockProducts: async (businessId, branchId, includeCosts = false) => {
     try {
-      const products = await fetchTrackedProducts(businessId, includeCosts);
+      const products = await trackedProducts(businessId, includeCosts);
 
       return products.filter((product) => {
         const stock = getBranchStock(product, branchId);
@@ -831,7 +866,7 @@ export const useBusinessStore = create<BusinessState>((set, get) => ({
 
   getStockAlerts: async (businessId, branchId, includeCosts = false) => {
     try {
-      const products = await fetchTrackedProducts(businessId, includeCosts);
+      const products = await trackedProducts(businessId, includeCosts);
       const lowStockProducts: Product[] = [];
       const outOfStockProducts: Product[] = [];
 

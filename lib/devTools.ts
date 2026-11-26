@@ -17,6 +17,7 @@ if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined') {
     sales: require('@/store/saleStore').useSaleStore,
     debts: require('@/store/debtStore').useDebtStore,
     customers: require('@/store/customerStore').useCustomerStore,
+    suppliers: require('@/store/supplierStore').useSupplierStore,
     voice: require('@/store/voiceStore').useVoiceStore,
     tabs: require('@/store/tabStore').useTabStore,
     analytics: require('@/store/analyticsStore').useAnalyticsStore,
@@ -52,7 +53,7 @@ if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined') {
       mk('p8', 'Hypo Bleach 500ml', 'bottle', 650, 850, 19, 12, 6, 'Household'),
     ];
     const activities = [
-      { id: 'a1', kind: 'sale', customer_name: 'Chidi Eze', reference: 'S-1041', items_summary: '2× Peak Milk, 1× Milo Refill', total_amount: 8500, amount_paid: 8500, amount_owed: 0, payment_status: 'paid', payment_method: 'transfer', created_at: iso(12) },
+      { id: 'a1', kind: 'sale', sale_id: 'sale-demo-1', customer_name: 'Chidi Eze', reference: 'S-1041', items_summary: '2× Peak Milk, 1× Milo Refill', total_amount: 8500, amount_paid: 8500, amount_owed: 0, payment_status: 'paid', payment_method: 'transfer', created_at: iso(12) },
       { id: 'a2', kind: 'sale', customer_name: 'Walk-in', reference: 'S-1040', items_summary: '6× Coca-Cola 50cl', total_amount: 2400, amount_paid: 2400, amount_owed: 0, payment_status: 'paid', payment_method: 'cash', created_at: iso(40) },
       { id: 'a3', kind: 'debt_repayment', customer_name: 'Mama Ngozi', reference: 'R-220', items_summary: '', total_amount: 15000, amount_paid: 15000, amount_owed: 0, payment_status: 'paid', payment_method: 'cash', created_at: iso(75) },
       { id: 'a4', kind: 'sale', customer_name: 'Tunde Bakare', reference: 'S-1039', items_summary: '1× Indomie Chicken (carton)', total_amount: 11500, amount_paid: 6000, amount_owed: 5500, payment_status: 'partial', payment_method: 'cash', created_at: iso(130) },
@@ -74,6 +75,14 @@ if (__DEV__ && Platform.OS === 'web' && typeof window !== 'undefined') {
     R.business.setState({ branches: d.branches, products: d.products });
     R.dashboard.setState({ stats: d.stats, recentActivities: d.activities, recentDebts: d.debts, isLoading: false, error: null });
     R.debts.setState({ debts: d.debts });
+    // Device cache too, so screens that paint from it (Sales) have data offline.
+    void require('@/lib/offlineStore').upsertCachedRevenueActivities('biz-demo', 'br-1', d.activities);
+    // A cached sale behind the first activity, so its receipt can be previewed offline.
+    const names = ['Peak Milk 400g', 'Milo Refill 500g', 'Indomie Chicken', 'Coca-Cola 50cl', 'Kings Oil 1L', 'Dangote Sugar 500g', 'Golden Penny Semovita', 'Hypo Bleach 500ml'];
+    const saleItems = names.map((name, i) => ({ id: `sale-demo-1-i${i}`, sale_id: 'sale-demo-1', product_id: `p${i + 1}`, quantity: i + 1, unit_price: 1000 + i * 250, total_price: (i + 1) * (1000 + i * 250), cost_price: 0, product: { id: `p${i + 1}`, name, unit: 'pack' } }));
+    const off = require('@/lib/offlineStore');
+    void off.upsertCachedRows({ businessId: 'biz-demo', branchId: 'br-1' }, 'sales', [{ id: 'sale-demo-1', business_id: 'biz-demo', branch_id: 'br-1', sale_number: 'S-1041', customer_name: 'Chidi Eze', total_amount: saleItems.reduce((t, i) => t + i.total_price, 0), amount_paid: 8500, amount_owed: 0, discount_amount: 0, payment_status: 'paid', payment_method: 'transfer', created_at: d.activities[0].created_at, updated_at: d.activities[0].created_at }]);
+    void off.upsertCachedRows({ businessId: 'biz-demo', branchId: 'br-1' }, 'sale_items', saleItems);
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const revenue = [96000, 121500, 88000, 143000, 167500, 212000, 184500];
     const top = [

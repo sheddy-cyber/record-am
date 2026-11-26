@@ -4,6 +4,7 @@ import { useLocalSearchParams } from 'expo-router';
 import { Icon, IconName } from '@/components/icons';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { isBranchOpen } from '@/lib/branches';
 import { Avatar, Button, PermissionDenied, Pill } from '@/components/ui';
 import { hasPermission } from '@/lib/permissions';
 import { dismissScreen } from '@/lib/navigation';
@@ -316,7 +317,7 @@ export default function EditTeamMemberScreen() {
           <>
             <Text style={styles.section}>Works at</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-              {branches.map((branch) => (
+              {branches.filter((branch) => isBranchOpen(branch) || branch.id === assignedBranchId).map((branch) => (
                 <Pill
                   key={branch.id}
                   label={branch.name}

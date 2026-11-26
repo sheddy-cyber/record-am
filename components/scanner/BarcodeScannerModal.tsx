@@ -10,7 +10,9 @@ import {
   Platform,
   Dimensions,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { Icon } from '@/components/icons';
 import { COLORS, FONT, RADIUS, SP } from '@/constants';
@@ -108,9 +110,11 @@ export function BarcodeScannerModal({
       visible={visible}
       animationType="slide"
       presentationStyle="fullScreen"
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
-      <View style={styles.container}>
+      <KeyboardAvoidingView style={styles.container} behavior="padding">
         {/* Permission Check */}
         {!permission?.granted ? (
           <View style={styles.permissionContainer}>
@@ -159,7 +163,7 @@ export function BarcodeScannerModal({
             />
 
             {/* Dark Mask Overlay around Scan Area */}
-            <View style={styles.overlayTop}>
+            <SafeAreaView style={styles.overlayTop} edges={['top', 'left', 'right']}>
               <View style={styles.headerRow}>
                 <TouchableOpacity
                   style={styles.iconCircleButton}
@@ -209,7 +213,7 @@ export function BarcodeScannerModal({
                   </Text>
                 </View>
               ) : null}
-            </View>
+            </SafeAreaView>
 
             <View style={styles.overlayMiddle}>
               <View style={styles.overlaySide} />
@@ -233,7 +237,7 @@ export function BarcodeScannerModal({
               <View style={styles.overlaySide} />
             </View>
 
-            <View style={styles.overlayBottom}>
+            <SafeAreaView style={styles.overlayBottom} edges={['bottom', 'left', 'right']}>
               {keepOpenOnScan ? (
                 <TouchableOpacity
                   style={styles.doneScanButton}
@@ -282,10 +286,10 @@ export function BarcodeScannerModal({
                   <Text style={styles.manualPromptText}>Can't scan? Type code manually</Text>
                 </TouchableOpacity>
               )}
-            </View>
+            </SafeAreaView>
           </View>
         )}
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -297,6 +301,7 @@ const styles = StyleSheet.create({
   },
   permissionContainer: {
     flex: 1,
+    paddingVertical: 24,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: SP.page,
@@ -353,7 +358,7 @@ const styles = StyleSheet.create({
   overlayTop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingTop: Platform.OS === 'ios' ? 54 : 36,
+    paddingTop: 12,
     paddingHorizontal: 20,
     alignItems: 'center',
   },

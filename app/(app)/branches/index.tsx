@@ -17,6 +17,7 @@ import { haptics } from '@/lib/haptics';
 import { dismissScreen } from '@/lib/navigation';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { BranchHasRecordsError, isBranchOpen } from '@/lib/branches';
 import { Branch, Product } from '@/types';
 
 const money = (v: number) => `${CURRENCY_SYMBOL}${Math.round(v).toLocaleString('en-NG')}`;
@@ -31,7 +32,7 @@ export default function BranchesScreen() {
   const isOwner = useAuthStore((s) => s.userRole === 'owner');
   const branches = useBusinessStore((s) => s.branches);
   const products = useBusinessStore((s) => s.products);
-  const { fetchBranches, fetchProducts, createBranch, updateBranch, deleteBranch, setMainBranch, transferBranchStock } =
+  const { fetchBranches, fetchProducts, createBranch, updateBranch, deleteBranch, setBranchOpen, setMainBranch, transferBranchStock } =
     useBusinessStore.getState();
 
   const [stats, setStats] = useState<Record<string, BranchTodayStats> | null>(() =>
@@ -59,10 +60,13 @@ export default function BranchesScreen() {
   const [note, setNote] = useState('');
   const [moving, setMoving] = useState(false);
 
-  const ordered = useMemo(
+  const sorted = useMemo(
     () => [...branches].sort((a, b) => Number(b.is_main) - Number(a.is_main) || a.name.localeCompare(b.name)),
     [branches],
   );
+  // Closed branches keep their history but drop out of day-to-day lists.
+  const ordered = useMemo(() => sorted.filter(isBranchOpen), [sorted]);
+  const closed = useMemo(() => sorted.filter((b) => !isBranchOpen(b)), [sorted]);
 
   const unitsByBranch = useMemo(() => {
     const out: Record<string, number> = {};
@@ -178,16 +182,57 @@ export default function BranchesScreen() {
           }
         },
       });
+      buttons.push({ text: 'Close branch', onPress: () => confirmClose(branch) });
       buttons.push({ text: 'Delete branch', style: 'destructive', onPress: () => confirmDelete(branch) });
     }
     buttons.push({ text: 'Cancel', style: 'cancel' });
     Alert.alert(branch.name, branch.address || undefined, buttons as any);
   };
 
+  const leaveIfCurrent = async (branchId: string) => {
+    if (currentBranchId !== branchId) return;
+    const fallback = ordered.find((b) => b.id !== branchId && b.is_main) || ordered.find((b) => b.id !== branchId);
+    if (fallback) await useAuthStore.getState().switchBranch(fallback);
+  };
+
+  const closeBranch = async (branch: Branch) => {
+    if (!businessId) return;
+    try {
+      await setBranchOpen(businessId, branch.id, false);
+      await leaveIfCurrent(branch.id);
+      Toast.show({ type: 'success', text1: `${branch.name} closed`, text2: 'Its sales and records are kept.' });
+      void load(true);
+    } catch (err: any) {
+      Alert.alert('Could not close branch', err?.message || 'Please try again.');
+    }
+  };
+
+  const confirmClose = (branch: Branch) => {
+    Alert.alert(
+      `Close ${branch.name}?`,
+      'It disappears from the branch switcher and staff lists, and staff working there move to the main branch. All of its sales and records are kept, and you can reopen it at any time.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Close branch', onPress: () => void closeBranch(branch) },
+      ],
+    );
+  };
+
+  const reopenBranch = async (branch: Branch) => {
+    if (!businessId) return;
+    try {
+      await setBranchOpen(businessId, branch.id, true);
+      Toast.show({ type: 'success', text1: `${branch.name} reopened` });
+      void load(true);
+    } catch (err: any) {
+      Alert.alert('Could not reopen branch', err?.message || 'Please try again.');
+    }
+  };
+
   const confirmDelete = (branch: Branch) => {
     Alert.alert(
       `Delete ${branch.name}?`,
-      'This permanently removes the branch and the records kept only for it. Stock still in this branch will be lost, so move it first.',
+      'Only a branch with no sales or other records can be deleted. Stock still in this branch will be lost, so move it first.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -197,13 +242,17 @@ export default function BranchesScreen() {
             if (!businessId) return;
             try {
               await deleteBranch(businessId, branch.id);
-              if (currentBranchId === branch.id) {
-                const fallback = branches.find((b) => b.id !== branch.id && b.is_main) || branches.find((b) => b.id !== branch.id);
-                if (fallback) await useAuthStore.getState().switchBranch(fallback);
-              }
+              await leaveIfCurrent(branch.id);
               Toast.show({ type: 'success', text1: 'Branch deleted' });
               void load(true);
             } catch (err: any) {
+              if (err instanceof BranchHasRecordsError) {
+                Alert.alert(`${branch.name} has records`, err.message, [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Close branch', onPress: () => void closeBranch(branch) },
+                ]);
+                return;
+              }
               Alert.alert('Could not delete branch', err?.message || 'Please try again.');
             }
           },
@@ -214,11 +263,11 @@ export default function BranchesScreen() {
 
   // ── Transfer ───────────────────────────────────────────────────────────────
   const openTransfer = () => {
-    if (branches.length < 2) {
-      Alert.alert('Add another branch first', 'Stock can only move between two branches.');
+    if (ordered.length < 2) {
+      Alert.alert('Add another branch first', 'Stock can only move between two open branches.');
       return;
     }
-    const from = currentBranchId || ordered[0].id;
+    const from = ordered.some((b) => b.id === currentBranchId) ? currentBranchId! : ordered[0].id;
     setFromId(from);
     setToId(ordered.find((b) => b.id !== from)?.id ?? '');
     setProductId('');
@@ -309,7 +358,7 @@ export default function BranchesScreen() {
             <ActivityIndicator style={{ alignSelf: 'flex-start', marginVertical: 18 }} color={COLORS.text.muted} />
           )}
           <Text style={styles.meta}>
-            {totals.sales} {totals.sales === 1 ? 'sale' : 'sales'} · {branches.length} {branches.length === 1 ? 'branch' : 'branches'} ·{' '}
+            {totals.sales} {totals.sales === 1 ? 'sale' : 'sales'} · {ordered.length} {ordered.length === 1 ? 'branch' : 'branches'} ·{' '}
             {count(totals.units)} units in stock
           </Text>
         </View>
@@ -381,8 +430,58 @@ export default function BranchesScreen() {
             );
           })}
         </View>
+        {closed.length > 0 ? (
+          <>
+            <Text style={styles.section}>Closed branches</Text>
+            <View style={{ gap: 10 }}>
+              {closed.map((branch) => {
+                const here = branch.id === currentBranchId;
+                return (
+                  <View key={branch.id} style={[styles.card, here && styles.cardHere]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <View style={styles.badge}>
+                        <Icon name="store" size={18} color={COLORS.text.muted} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.name, { color: COLORS.text.secondary }]} numberOfLines={1}>
+                          {branch.name}
+                        </Text>
+                        <Text style={styles.address} numberOfLines={2}>
+                          {here ? 'You are viewing its records. ' : ''}Closed. Its sales and records are kept.
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                      {here ? null : (
+                        <Pressable
+                          onPress={() => switchTo(branch)}
+                          disabled={Boolean(switchingId)}
+                          style={({ pressed }) => [styles.switch, { flex: 1 }, pressed && { opacity: 0.7 }]}
+                        >
+                          {switchingId === branch.id ? (
+                            <ActivityIndicator size="small" color={COLORS.text.primary} />
+                          ) : (
+                            <Text style={styles.switchText}>View records</Text>
+                          )}
+                        </Pressable>
+                      )}
+                      <Pressable
+                        onPress={() => void reopenBranch(branch)}
+                        style={({ pressed }) => [styles.switch, { flex: 1 }, pressed && { opacity: 0.7 }]}
+                      >
+                        <Text style={styles.switchText}>Reopen</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
+
         <Text style={styles.footnote}>
-          Each branch keeps its own stock, sales, expenses and debts. Products and customers are shared across the business.
+          Each branch keeps its own stock, sales, expenses and debts. Products and customers are shared across the business. A
+          branch with sales can be closed but not deleted, so its history is never lost.
         </Text>
       </ScrollView>
 
@@ -392,6 +491,7 @@ export default function BranchesScreen() {
         onClose={() => !saving && setFormOpen(false)}
         title={editing ? 'Edit branch' : 'New branch'}
         subtitle={editing ? undefined : 'Stock, sales and debts are tracked separately for each branch.'}
+        scroll={false}
       >
         <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }}>
           <InputField label="Name" value={name} onChangeText={setName} placeholder="e.g. Yaba" autoCapitalize="words" autoFocus={!editing} />
@@ -405,7 +505,7 @@ export default function BranchesScreen() {
       </BottomSheetModal>
 
       {/* ── Move stock sheet ─────────────────────────────────────────── */}
-      <BottomSheetModal visible={transferOpen} onClose={() => !moving && setTransferOpen(false)} title="Move stock" maxHeight="92%">
+      <BottomSheetModal visible={transferOpen} onClose={() => !moving && setTransferOpen(false)} title="Move stock" maxHeight="92%" scroll={false}>
         <ScrollView keyboardShouldPersistTaps="handled" style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false}>
           <Text style={styles.fieldLabel}>From</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>

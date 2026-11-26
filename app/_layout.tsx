@@ -155,6 +155,16 @@ export default function RootLayout() {
 
   useOfflineSync(Boolean(user));
 
+  // Staff follow the branch the owner assigns them to: check again whenever
+  // the app comes back to the foreground.
+  useEffect(() => {
+    if (!user) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void useAuthStore.getState().refreshAssignment();
+    });
+    return () => sub.remove();
+  }, [user]);
+
   // The Android navigation bar sits under the (light) tab bar on the home
   // screen and under paper-coloured pages everywhere else.
   useEffect(() => {

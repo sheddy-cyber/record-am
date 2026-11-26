@@ -502,3 +502,26 @@ export async function fetchRevenueActivities(
   });
   return result.activities.slice(0, limit);
 }
+
+/**
+ * The most recent activities already on the device for a date range, newest
+ * first (the same order the server returns). Lets the Sales list paint before
+ * the network answers.
+ */
+export async function readCachedRevenuePage(
+  businessId: string,
+  branchId: string,
+  fromDate?: string,
+  toDate?: string,
+  limit = 50,
+): Promise<RevenueActivity[]> {
+  try {
+    const all = await readCachedRevenueActivities(businessId, branchId, 0);
+    return all
+      .filter((activity) => isWithinLocalDateRange(activity.created_at, fromDate, toDate))
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, limit);
+  } catch {
+    return [];
+  }
+}

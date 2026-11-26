@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { reconcileValue } from '@/lib/storeUtils';
 import { format } from 'date-fns';
 import { BalanceEntry, closeDailySummary, DigitalInflowsSummary, getDailyBalanceSnapshot, reopenDailySummary } from '@/lib/dailyBalance';
 import { DailySummary } from '@/types';
@@ -42,11 +43,13 @@ export const useDailyBalanceStore = create<DailyBalanceState>((set, get) => ({
 
     try {
       const snapshot = await getDailyBalanceSnapshot(businessId, branchId, targetDate);
-      set({
-        summary: snapshot.summary,
-        entries: snapshot.entries,
-        digitalInflows: snapshot.digitalInflows,
-      });
+      const state = get();
+      const summary = reconcileValue(state.summary, snapshot.summary);
+      const entries = reconcileValue(state.entries, snapshot.entries);
+      const digitalInflows = reconcileValue(state.digitalInflows, snapshot.digitalInflows);
+      if (summary !== state.summary || entries !== state.entries || digitalInflows !== state.digitalInflows) {
+        set({ summary, entries, digitalInflows });
+      }
     } catch (err: any) {
       console.error('[dailyBalance]', err);
       set({ error: err.message });

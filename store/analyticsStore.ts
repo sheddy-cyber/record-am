@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { reconcileValue } from '@/lib/storeUtils';
 import { supabase } from '@/lib/supabase';
 import { isDebtSettlementSale } from '@/lib/records';
 import {
@@ -294,6 +295,21 @@ async function buildCachedAnalytics(
   };
 }
 
+/** Applies a partial update, keeping every value that is deeply unchanged. */
+function setStable(patch: Partial<AnalyticsState>): void {
+  const state = useAnalyticsStore.getState() as any;
+  const next: Record<string, unknown> = {};
+  let changed = false;
+  for (const key of Object.keys(patch)) {
+    const value = reconcileValue(state[key], (patch as any)[key]);
+    if (value !== state[key]) {
+      next[key] = value;
+      changed = true;
+    }
+  }
+  if (changed) useAnalyticsStore.setState(next as Partial<AnalyticsState>);
+}
+
 export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   summary: null,
   salesTrend: [],
@@ -310,7 +326,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     const { dateRange } = get();
     try {
       const cached = await buildCachedAnalytics(businessId, branchId, dateRange);
-      set({
+      setStable({
         summary: cached.summary,
         salesTrend: cached.salesTrend,
         allProducts: cached.allProducts,
@@ -323,13 +339,14 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
   },
 
   fetchAnalytics: async (businessId, branchId) => {
-    set({ isLoading: true, error: null });
+    if (get().error) set({ error: null });
+    if (!get().summary) set({ isLoading: true });
     const { dateRange } = get();
-    
+
     // 1. Instantly load from cache for "super fast" feeling
     try {
       const cached = await buildCachedAnalytics(businessId, branchId, dateRange);
-      set({
+      setStable({
         summary: cached.summary,
         salesTrend: cached.salesTrend,
         allProducts: cached.allProducts,
@@ -349,51 +366,51 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
     const prevToISO = prevTo.toISOString();
 
     try {
-      // ── Current period sales ──────────────────────────────
-      const { data: currentSales } = await supabase
+      const [
+        { data: currentSales },
+        { data: prevSales },
+        { data: currentRepayments },
+        { data: prevRepayments },
+        { data: currentExpenses },
+        { data: saleItems },
+        { data: futureMovements },
+      ] = await Promise.all([
+        supabase
         .from('sales')
         .select('id, amount_paid, created_at, notes, discount_amount, subtotal')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('created_at', fromISO)
-        .lte('created_at', toISO);
-
-      // ── Previous period sales (for growth calc) ──────────
-      const { data: prevSales } = await supabase
+        .lte('created_at', toISO),
+        supabase
         .from('sales')
         .select('amount_paid, notes')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('created_at', prevFromISO)
-        .lte('created_at', prevToISO);
-
-      const { data: currentRepayments } = await supabase
+        .lte('created_at', prevToISO),
+        supabase
         .from('debt_repayments')
         .select('id, debt_id, amount, payment_method, notes, created_at, debt:customer_debts!inner(id, business_id, branch_id)')
         .eq('debt.business_id', businessId)
         .eq('debt.branch_id', branchId)
         .gte('created_at', fromISO)
-        .lte('created_at', toISO);
-
-      const { data: prevRepayments } = await supabase
+        .lte('created_at', toISO),
+        supabase
         .from('debt_repayments')
         .select('amount, debt:customer_debts!inner(business_id, branch_id)')
         .eq('debt.business_id', businessId)
         .eq('debt.branch_id', branchId)
         .gte('created_at', prevFromISO)
-        .lte('created_at', prevToISO);
-
-      // ── Current period expenses ───────────────────────────
-      const { data: currentExpenses } = await supabase
+        .lte('created_at', prevToISO),
+        supabase
         .from('expenses')
         .select('*')
         .eq('business_id', businessId)
         .eq('branch_id', branchId)
         .gte('expense_date', format(from, 'yyyy-MM-dd'))
-        .lte('expense_date', format(to, 'yyyy-MM-dd'));
-
-      // ── Sale items for profit & top products ─────────────
-      const { data: saleItems } = await supabase
+        .lte('expense_date', format(to, 'yyyy-MM-dd')),
+        supabase
         .from('sale_items')
         .select(`
           id,
@@ -410,7 +427,14 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         .eq('sale.business_id', businessId)
         .eq('sale.branch_id', branchId)
         .gte('sale.created_at', fromISO)
-        .lte('sale.created_at', toISO);
+        .lte('sale.created_at', toISO),
+        supabase
+        .from('stock_movements')
+        .select('product_id, quantity, type, created_at')
+        .eq('business_id', businessId)
+        .eq('branch_id', branchId)
+        .gt('created_at', toISO),
+      ]);
 
       const saleActivities = (currentSales ?? [])
         .filter((sale) => !isDebtSettlementSale(sale.notes))
@@ -446,19 +470,12 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         debt_id: repayment.debt_id,
       }));
 
-      await Promise.all([
+      void Promise.all([
         upsertCachedExpenses(businessId, branchId, (currentExpenses as any[]) ?? []),
         upsertCachedRows({ businessId, branchId }, 'sale_items', (saleItems as any[]) ?? []),
         upsertCachedRevenueActivities(businessId, branchId, [...saleActivities, ...repaymentActivities]),
-      ]);
+      ]).catch(() => {});
 
-      // ── Historical Stock Value ───────────────────────────
-      const { data: futureMovements } = await supabase
-        .from('stock_movements')
-        .select('product_id, quantity, type, created_at')
-        .eq('business_id', businessId)
-        .eq('branch_id', branchId)
-        .gt('created_at', toISO);
 
       const { useBusinessStore } = await import('@/store/businessStore');
       const products = useBusinessStore.getState().products;
@@ -524,7 +541,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       const profitGrowth = prevProfit === 0 ? 0 : ((netProfit - prevProfit) / prevProfit) * 100;
       const totalTransactions = revenueSales.length + (currentRepayments?.length ?? 0);
 
-      set({
+      setStable({
         summary: {
           total_revenue: totalRevenue,
           gross_profit: grossProfit,
@@ -591,7 +608,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
           ...data,
         }));
 
-      set({ salesTrend });
+      setStable({ salesTrend });
 
       // ── Top & bottom products ─────────────────────────────
       const productMap = new Map<string, TopProduct>();
@@ -625,7 +642,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
       });
 
       const allProducts = Array.from(productMap.values());
-      set({
+      setStable({
         allProducts,
         topProducts: [...allProducts]
           .filter((p) => p.total_qty > 0 || p.total_revenue > 0)
@@ -648,12 +665,12 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         }))
         .sort((a, b) => b.total - a.total);
 
-      set({ expenseBreakdown });
+      setStable({ expenseBreakdown });
     } catch (err: any) {
       console.error('[analytics]', err);
       try {
         const cached = await buildCachedAnalytics(businessId, branchId, dateRange);
-        set({
+        setStable({
           summary: cached.summary,
           salesTrend: cached.salesTrend,
           allProducts: cached.allProducts,
@@ -666,7 +683,7 @@ export const useAnalyticsStore = create<AnalyticsState>((set, get) => ({
         set({ error: err.message });
       }
     } finally {
-      set({ isLoading: false });
+      if (get().isLoading) set({ isLoading: false });
     }
   },
 

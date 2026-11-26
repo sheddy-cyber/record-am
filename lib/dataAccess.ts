@@ -5,6 +5,17 @@ import { Product, SaleItem } from '@/types';
 
 export const includeProductCosts = () => canViewFinancialData(useAuthStore.getState().userRole);
 
+/**
+ * Branches the signed-in user may see. Owners see every branch; everyone else
+ * only the branch they work in (the database enforces the same rule).
+ */
+export const visibleBranches = <T extends { id: string; is_main?: boolean }>(branches: T[]): T[] => {
+  const { userRole, currentBranch } = useAuthStore.getState();
+  if (!userRole || userRole === 'owner') return branches;
+  const own = branches.filter((b) => b.id === currentBranch?.id);
+  return own.length > 0 ? own : branches.filter((b) => b.is_main);
+};
+
 export const productsTable = () => (includeProductCosts() ? 'products' : 'staff_products');
 
 export const saleItemsTable = () => (includeProductCosts() ? 'sale_items' : 'staff_sale_items');

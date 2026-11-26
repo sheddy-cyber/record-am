@@ -8,7 +8,7 @@ import {
   readCachedRows,
   upsertCachedRows,
 } from '@/lib/offlineStore';
-import { hasArrayChanged } from '@/lib/storeUtils';
+import { fetchAllPages, hasArrayChanged, reconcileList } from '@/lib/storeUtils';
 import { attachProductSummaries, maskSaleItemCosts, saleItemsTable } from '@/lib/dataAccess';
 
 export interface CustomerWithStats extends Customer {
@@ -23,6 +23,10 @@ interface CustomerState {
   selectedCustomer: CustomerWithStats | null;
   customerSales: Sale[];
   customerDebts: CustomerDebt[];
+  /** The customer that customerSales and customerDebts belong to. */
+  customerDetailId: string | null;
+  /** True only while a customer is opened for the first time and nothing is known yet. */
+  isDetailLoading: boolean;
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
@@ -45,11 +49,206 @@ interface CustomerState {
   reset: () => void;
 }
 
+const customerRequests = new Map<string, Promise<void>>();
+const detailRequests = new Map<string, Promise<void>>();
+/** Last sales and debts seen per customer, so reopening a customer is instant. */
+const customerDetailCache = new Map<string, { sales: Sale[]; debts: CustomerDebt[] }>();
+
+type SaleStat = { customer_id: string; total_amount: number; created_at: string };
+type DebtStat = { customer_id: string; balance: number };
+
+async function loadCustomers(businessId: string): Promise<void> {
+  const get = useCustomerStore.getState;
+  const set = useCustomerStore.setState;
+
+  if (get().customers.length === 0) {
+    try {
+      const cached = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
+      if (cached.length > 0 && get().customers.length === 0) set({ customers: cached });
+    } catch {}
+  }
+  if (get().customers.length === 0) set({ isLoading: true });
+  if (get().error) set({ error: null });
+
+  try {
+    // Three queries for the whole business instead of two per customer.
+    const [customerResult, sales, debts] = await Promise.all([
+      supabase
+        .from('customers')
+        .select('*')
+        .eq('business_id', businessId)
+        .eq('is_active', true)
+        .order('name'),
+      fetchAllPages<SaleStat>((from, to) =>
+        supabase
+          .from('sales')
+          .select('customer_id, total_amount, created_at')
+          .eq('business_id', businessId)
+          .not('customer_id', 'is', null)
+          .order('id')
+          .range(from, to),
+      ),
+      fetchAllPages<DebtStat>((from, to) =>
+        supabase
+          .from('customer_debts')
+          .select('customer_id, balance')
+          .eq('business_id', businessId)
+          .not('customer_id', 'is', null)
+          .neq('status', 'settled')
+          .order('id')
+          .range(from, to),
+      ),
+    ]);
+    if (customerResult.error) throw customerResult.error;
+
+    const spent = new Map<string, { total: number; count: number; last?: string; lastTime: number }>();
+    for (const sale of sales) {
+      const entry = spent.get(sale.customer_id) ?? { total: 0, count: 0, lastTime: -Infinity };
+      entry.total += Number(sale.total_amount) || 0;
+      entry.count += 1;
+      const time = Date.parse(sale.created_at);
+      if (time > entry.lastTime) {
+        entry.lastTime = time;
+        entry.last = sale.created_at;
+      }
+      spent.set(sale.customer_id, entry);
+    }
+    const owed = new Map<string, number>();
+    for (const debt of debts) {
+      owed.set(debt.customer_id, (owed.get(debt.customer_id) ?? 0) + (Number(debt.balance) || 0));
+    }
+
+    const customersWithStats: CustomerWithStats[] = (customerResult.data ?? []).map((c) => {
+      const stats = spent.get(c.id);
+      return {
+        ...c,
+        total_spent: stats?.total ?? 0,
+        total_transactions: stats?.count ?? 0,
+        outstanding_debt: owed.get(c.id) ?? 0,
+        last_purchase: stats?.last,
+      };
+    });
+
+    if (hasArrayChanged(get().customers, customersWithStats)) {
+      set({ customers: reconcileList(get().customers, customersWithStats) });
+    }
+    await upsertCachedRows({ businessId }, 'customers', customersWithStats);
+  } catch (err: any) {
+    const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers').catch(
+      () => [] as CustomerWithStats[],
+    );
+    if (cachedCustomers.length > 0) {
+      if (hasArrayChanged(get().customers, cachedCustomers)) {
+        set({ customers: reconcileList(get().customers, cachedCustomers) });
+      }
+    } else {
+      set({ error: err?.message ?? 'Unable to load customers.' });
+    }
+  } finally {
+    if (get().isLoading) set({ isLoading: false });
+  }
+}
+
+const markForgiven = (sales: Sale[], debts: CustomerDebt[], withItems: (sale: Sale) => Sale['items']) => {
+  const activeDebtSaleIds = new Set(
+    debts.filter((d) => d.status !== 'settled').map((d) => d.sale_id).filter(Boolean),
+  );
+  return sales.map((sale) => {
+    const isForgiven =
+      sale.payment_status === 'forgiven' ||
+      sale.notes?.includes('[Debt Forgiven]') ||
+      sale.notes?.includes('[record-am-forgiven]') ||
+      (sale.amount_owed > 0 && !activeDebtSaleIds.has(sale.id));
+
+    return {
+      ...sale,
+      amount_owed: isForgiven ? 0 : sale.amount_owed,
+      payment_status: isForgiven ? ('forgiven' as PaymentStatus) : sale.payment_status,
+      notes: isForgiven && !sale.notes?.includes('[Debt Forgiven]') && !sale.notes?.includes('[record-am-forgiven]')
+        ? (sale.notes ? `${sale.notes} [Debt Forgiven]` : '[Debt Forgiven]')
+        : sale.notes,
+      items: withItems(sale),
+    };
+  });
+};
+
+/** Shows a customer's records if that customer is still open, keeping unchanged rows. */
+function showCustomerDetail(customerId: string, sales: Sale[], debts: CustomerDebt[]) {
+  const state = useCustomerStore.getState();
+  if (state.customerDetailId !== customerId) {
+    customerDetailCache.set(customerId, { sales, debts });
+    return;
+  }
+  const nextSales = reconcileList(state.customerSales, sales);
+  const nextDebts = reconcileList(state.customerDebts, debts);
+  customerDetailCache.set(customerId, { sales: nextSales, debts: nextDebts });
+  if (nextSales !== state.customerSales || nextDebts !== state.customerDebts || state.isDetailLoading) {
+    useCustomerStore.setState({ customerSales: nextSales, customerDebts: nextDebts, isDetailLoading: false });
+  }
+}
+
+async function loadCustomerDetail(customerId: string, businessId: string): Promise<void> {
+  try {
+    const [salesResult, debtsResult] = await Promise.all([
+      supabase
+        .from('sales')
+        .select(`*, items:${saleItemsTable()}(*)`)
+        .eq('customer_id', customerId)
+        .eq('business_id', businessId)
+        .order('created_at', { ascending: false })
+        .limit(20),
+      supabase
+        .from('customer_debts')
+        .select('*')
+        .eq('customer_id', customerId)
+        .order('created_at', { ascending: false }),
+    ]);
+    if (salesResult.error) throw salesResult.error;
+    if (debtsResult.error) throw debtsResult.error;
+
+    const newDebts = (debtsResult.data as CustomerDebt[]) ?? [];
+    const newSales = markForgiven((salesResult.data as Sale[]) ?? [], newDebts, (sale) =>
+      attachProductSummaries(maskSaleItemCosts(sale.items ?? [])),
+    );
+    showCustomerDetail(customerId, newSales, newDebts);
+  } catch (err: any) {
+    // Offline or failed: use what this device already has.
+    try {
+      const [cachedSales, cachedDebts, cachedSaleItems] = await Promise.all([
+        readCachedRows<Sale>({ businessId }, 'sales'),
+        readCachedRows<CustomerDebt>({ businessId }, 'customer_debts'),
+        readCachedRows<SaleItem>({ businessId }, 'sale_items').catch(() => [] as SaleItem[]),
+      ]);
+      const newDebts = cachedDebts.filter((d) => d.customer_id === customerId);
+      const newSales = markForgiven(
+        cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20),
+        newDebts,
+        (sale) =>
+          maskSaleItemCosts(
+            attachProductSummaries(
+              sale.items && sale.items.length > 0 ? sale.items : cachedSaleItems.filter((i) => i.sale_id === sale.id),
+            ),
+          ),
+      );
+      showCustomerDetail(customerId, newSales, newDebts);
+    } catch {
+      useCustomerStore.setState({ error: err?.message ?? 'Unable to load this customer.' });
+    }
+  } finally {
+    const state = useCustomerStore.getState();
+    if (state.customerDetailId === customerId && state.isDetailLoading) {
+      useCustomerStore.setState({ isDetailLoading: false });
+    }
+  }
+}
+
 export const useCustomerStore = create<CustomerState>((set, get) => ({
   customers: [],
   selectedCustomer: null,
   customerSales: [],
   customerDebts: [],
+  customerDetailId: null,
+  isDetailLoading: false,
   isLoading: false,
   isSaving: false,
   error: null,
@@ -59,178 +258,40 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
       const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
       if (cachedCustomers.length > 0) {
         if (hasArrayChanged(get().customers, cachedCustomers)) {
-          set({ customers: cachedCustomers });
+          set({ customers: reconcileList(get().customers, cachedCustomers) });
         }
       }
     } catch {}
   },
 
-  fetchCustomers: async (businessId) => {
-    try {
-      const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
-      if (cachedCustomers.length > 0) {
-        if (hasArrayChanged(get().customers, cachedCustomers)) {
-          set({ customers: cachedCustomers });
-        }
-      }
-    } catch {}
-
-    const currentCustomers = get().customers;
-    if (currentCustomers.length === 0) set({ isLoading: true });
-    set({ error: null });
-
-    try {
-      // Fetch customers
-      const { data: customers, error } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('business_id', businessId)
-        .eq('is_active', true)
-        .order('name');
-
-      if (error) throw error;
-
-      // For each customer, fetch aggregated stats
-      const customersWithStats: CustomerWithStats[] = await Promise.all(
-        (customers ?? []).map(async (c) => {
-          const { data: sales } = await supabase
-            .from('sales')
-            .select('total_amount, created_at')
-            .eq('customer_id', c.id)
-            .order('created_at', { ascending: false });
-
-          const { data: debts } = await supabase
-            .from('customer_debts')
-            .select('balance')
-            .eq('customer_id', c.id)
-            .neq('status', 'settled');
-
-          const totalSpent = sales?.reduce((s, r) => s + r.total_amount, 0) ?? 0;
-          const outstandingDebt = debts?.reduce((s, r) => s + r.balance, 0) ?? 0;
-
-          return {
-            ...c,
-            total_spent: totalSpent,
-            total_transactions: sales?.length ?? 0,
-            outstanding_debt: outstandingDebt,
-            last_purchase: sales?.[0]?.created_at,
-          };
-        })
-      );
-
-      if (hasArrayChanged(get().customers, customersWithStats)) {
-        set({ customers: customersWithStats });
-      }
-      await upsertCachedRows({ businessId }, 'customers', customersWithStats);
-    } catch (err: any) {
-      const cachedCustomers = await readCachedRows<CustomerWithStats>({ businessId }, 'customers');
-      if (cachedCustomers.length > 0) {
-        if (hasArrayChanged(get().customers, cachedCustomers)) {
-          set({ customers: cachedCustomers, error: null });
-        } else {
-          set({ error: null });
-        }
-      } else {
-        set({ error: err.message });
-      }
-    } finally {
-      set({ isLoading: false });
-    }
+  fetchCustomers: (businessId) => {
+    // The boot sequence, the list screen, realtime events and debt changes
+    // often ask at once; they share one request.
+    const existing = customerRequests.get(businessId);
+    if (existing) return existing;
+    const request = loadCustomers(businessId).finally(() => customerRequests.delete(businessId));
+    customerRequests.set(businessId, request);
+    return request;
   },
 
-  fetchCustomerDetail: async (customerId, businessId) => {
-    set({ isLoading: true });
-    try {
-      const { data: sales } = await supabase
-        .from('sales')
-        .select(`*, items:${saleItemsTable()}(*)`)
-        .eq('customer_id', customerId)
-        .eq('business_id', businessId)
-        .order('created_at', { ascending: false })
-        .limit(20);
-
-      const { data: debts } = await supabase
-        .from('customer_debts')
-        .select('*')
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false });
-
-      const newDebts = (debts as CustomerDebt[]) ?? [];
-      const activeDebtSaleIds = new Set(
-        newDebts.filter((d) => d.status !== 'settled').map((d) => d.sale_id).filter(Boolean)
-      );
-
-      const newSales = ((sales as Sale[]) ?? []).map((sale) => {
-        const isForgiven =
-          sale.payment_status === 'forgiven' ||
-          sale.notes?.includes('[Debt Forgiven]') ||
-          sale.notes?.includes('[record-am-forgiven]') ||
-          (sale.amount_owed > 0 && !activeDebtSaleIds.has(sale.id));
-
-        return {
-          ...sale,
-          amount_owed: isForgiven ? 0 : sale.amount_owed,
-          payment_status: isForgiven ? ('forgiven' as PaymentStatus) : sale.payment_status,
-          notes: isForgiven && !sale.notes?.includes('[Debt Forgiven]') && !sale.notes?.includes('[record-am-forgiven]')
-            ? (sale.notes ? `${sale.notes} [Debt Forgiven]` : '[Debt Forgiven]')
-            : sale.notes,
-          items: attachProductSummaries(maskSaleItemCosts(sale.items ?? [])),
-        };
+  fetchCustomerDetail: (customerId, businessId) => {
+    if (get().customerDetailId !== customerId) {
+      // Switch to this customer straight away: what we last saw for them, or
+      // nothing (the screen shows placeholders), never the previous customer.
+      const remembered = customerDetailCache.get(customerId);
+      set({
+        customerDetailId: customerId,
+        customerSales: remembered?.sales ?? [],
+        customerDebts: remembered?.debts ?? [],
+        isDetailLoading: !remembered,
       });
-      
-      if (
-        hasArrayChanged(get().customerSales, newSales) ||
-        hasArrayChanged(get().customerDebts, newDebts)
-      ) {
-        set({ customerSales: newSales, customerDebts: newDebts });
-      }
-    } catch (err: any) {
-      // Try loading from cache if server fails
-      try {
-        const [cachedSales, cachedDebts, cachedSaleItems] = await Promise.all([
-          readCachedRows<Sale>({ businessId }, 'sales'),
-          readCachedRows<CustomerDebt>({ businessId }, 'customer_debts'),
-          readCachedRows<SaleItem>({ businessId }, 'sale_items').catch(() => [] as SaleItem[]),
-        ]);
-        const newDebts = cachedDebts.filter((d) => d.customer_id === customerId);
-        const activeDebtSaleIds = new Set(
-          newDebts.filter((d) => d.status !== 'settled').map((d) => d.sale_id).filter(Boolean)
-        );
-        const filteredSales = cachedSales.filter((s) => s.customer_id === customerId).slice(0, 20);
-        const newSales = filteredSales.map((s) => {
-          const isForgiven =
-            s.payment_status === 'forgiven' ||
-            s.notes?.includes('[Debt Forgiven]') ||
-            s.notes?.includes('[record-am-forgiven]') ||
-            (s.amount_owed > 0 && !activeDebtSaleIds.has(s.id));
-
-          return {
-            ...s,
-            amount_owed: isForgiven ? 0 : s.amount_owed,
-            payment_status: isForgiven ? ('forgiven' as PaymentStatus) : s.payment_status,
-            notes: isForgiven && !s.notes?.includes('[Debt Forgiven]') && !s.notes?.includes('[record-am-forgiven]')
-              ? (s.notes ? `${s.notes} [Debt Forgiven]` : '[Debt Forgiven]')
-              : s.notes,
-            items: maskSaleItemCosts(
-              attachProductSummaries(
-                s.items && s.items.length > 0 ? s.items : cachedSaleItems.filter((i) => i.sale_id === s.id),
-              ),
-            ),
-          };
-        });
-
-        if (
-          hasArrayChanged(get().customerSales, newSales) ||
-          hasArrayChanged(get().customerDebts, newDebts)
-        ) {
-          set({ customerSales: newSales, customerDebts: newDebts });
-        }
-      } catch {
-        set({ error: err.message });
-      }
-    } finally {
-      set({ isLoading: false });
     }
+    const key = `${businessId}:${customerId}`;
+    const existing = detailRequests.get(key);
+    if (existing) return existing;
+    const request = loadCustomerDetail(customerId, businessId).finally(() => detailRequests.delete(key));
+    detailRequests.set(key, request);
+    return request;
   },
 
   createCustomer: async (data) => {
@@ -407,6 +468,10 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
         }
       }
 
+      if (state.customerDetailId) {
+        customerDetailCache.set(state.customerDetailId, { sales: nextCustomerSales, debts: nextCustomerDebts });
+      }
+
       return {
         customerDebts: nextCustomerDebts,
         customerSales: nextCustomerSales,
@@ -438,14 +503,18 @@ export const useCustomerStore = create<CustomerState>((set, get) => ({
 
   setSelectedCustomer: (customer) => set({ selectedCustomer: customer }),
 
-  reset: () =>
+  reset: () => {
+    customerDetailCache.clear();
     set({
       customers: [],
       selectedCustomer: null,
       customerSales: [],
       customerDebts: [],
+      customerDetailId: null,
+      isDetailLoading: false,
       isLoading: false,
       isSaving: false,
       error: null,
-    }),
+    });
+  },
 }));

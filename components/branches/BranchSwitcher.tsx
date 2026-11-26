@@ -15,6 +15,7 @@ import { BranchTodayStats, fetchBranchTodayStats, peekBranchTodayStats } from '@
 import { haptics } from '@/lib/haptics';
 import { useAuthStore } from '@/store/authStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { openBranches } from '@/lib/branches';
 import { Branch } from '@/types';
 
 const money = (v: number) =>
@@ -23,7 +24,7 @@ const money = (v: number) =>
 /** Whether the current user can move between branches. */
 export function useCanSwitchBranch() {
   const role = useAuthStore((s) => s.userRole);
-  const count = useBusinessStore((s) => s.branches.length);
+  const count = useBusinessStore((s) => openBranches(s.branches).length);
   return role === 'owner' && count > 1;
 }
 
@@ -37,8 +38,12 @@ export function BranchSwitcherSheet({ visible, onClose }: { visible: boolean; on
   );
   const [switchingTo, setSwitchingTo] = useState<string | null>(null);
 
+  // Closed branches are reached from the Branches screen, not the quick switcher.
   const ordered = useMemo(
-    () => [...branches].sort((a, b) => Number(b.is_main) - Number(a.is_main) || a.name.localeCompare(b.name)),
+    () =>
+      openBranches(branches).sort(
+        (a, b) => Number(b.is_main) - Number(a.is_main) || a.name.localeCompare(b.name),
+      ),
     [branches],
   );
 
@@ -81,6 +86,7 @@ export function BranchSwitcherSheet({ visible, onClose }: { visible: boolean; on
       title="Branches"
       subtitle={total !== null ? `${money(total)} taken across all branches today` : 'Choose the branch to work in'}
       maxHeight="80%"
+      scroll={false}
     >
       <ScrollView style={{ flexGrow: 0 }} showsVerticalScrollIndicator={false}>
         <View style={styles.group}>

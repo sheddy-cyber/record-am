@@ -6,9 +6,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore } from '@/store/authStore';
 import { useDebtStore } from '@/store/debtStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { openBranches } from '@/lib/branches';
 import { useOfflineStore } from '@/store/offlineStore';
 import { flushOfflineQueue, retryAllSyncConflicts } from '@/lib/offlineStore';
-import { Button, Card, ListRow, SectionHeader } from '@/components/ui';
+import { BottomSheetModal, Button, Card, ListRow, SectionHeader } from '@/components/ui';
 import { BusinessAvatar, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { APP_VERSION, BRAND, COLORS, FONT, RADIUS, SP } from '@/constants';
@@ -29,6 +30,7 @@ type MenuSection = {
 function MoreScreen() {
   const insets = useSafeAreaInsets();
   const [refreshing, setRefreshing] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const initialize = useAuthStore((s) => s.initialize);
   const profileName = useAuthStore((s) => s.profile?.full_name);
   const businessName = useAuthStore((s) => s.currentBusiness?.name);
@@ -76,9 +78,9 @@ function MoreScreen() {
         },
         {
           icon: 'file-text' as IconName,
-          label: 'Import Sales',
-          subtitle: 'Bring in past sales from Excel or CSV',
-          onPress: () => router.push('/(app)/import-sales' as any),
+          label: 'Import from Excel',
+          subtitle: 'Bring in past sales or a stock list',
+          onPress: () => setImportOpen(true),
         },
       ],
     },
@@ -148,7 +150,7 @@ function MoreScreen() {
         ...(userRole === 'owner' ? [{
           icon: 'map-pin' as any,
           label: 'Branches',
-          subtitle: `${branches.length || 1} ${branches.length === 1 ? 'branch' : 'branches'} · Working in ${branchName ?? 'Main branch'}`,
+          subtitle: `${openBranches(branches).length || 1} ${openBranches(branches).length === 1 ? 'branch' : 'branches'} · Working in ${branchName ?? 'Main branch'}`,
           onPress: () => router.push('/(app)/branches' as any),
         }] : []),
         ...(hasPermission(userRole, 'business-settings.manage') ? [{
@@ -295,6 +297,45 @@ function MoreScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <BottomSheetModal
+        visible={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import from Excel"
+        subtitle="Choose what the file contains. CSV files work too."
+      >
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          {[
+            {
+              icon: 'receipt' as IconName,
+              title: 'Sales',
+              subtitle: 'Past sales, with dates, items and amounts paid',
+              route: '/(app)/import-sales',
+            },
+            {
+              icon: 'box' as IconName,
+              title: 'Stock',
+              subtitle: 'Products with prices and quantities',
+              route: '/(app)/import-stock',
+            },
+          ].map((option, index) => (
+            <View key={option.title}>
+              {index > 0 ? (
+                <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 58 }} />
+              ) : null}
+              <ListRow
+                icon={option.icon}
+                title={option.title}
+                subtitle={option.subtitle}
+                onPress={() => {
+                  setImportOpen(false);
+                  router.push(option.route as any);
+                }}
+              />
+            </View>
+          ))}
+        </Card>
+      </BottomSheetModal>
     </ScreenShell>
     </SwipeableTabScreen>
   );

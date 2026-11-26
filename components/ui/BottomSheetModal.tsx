@@ -8,14 +8,14 @@ import {
   LayoutChangeEvent,
   Modal,
   PanResponder,
-  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
   ViewStyle,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { initialWindowMetrics, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { COLORS, FONT, SP } from '@/constants';
 
@@ -25,29 +25,36 @@ export interface BottomSheetModalProps {
   title?: string;
   subtitle?: string;
   children: React.ReactNode;
+  /** Style for the content area (inside the scroll view when `scroll` is on). */
   contentStyle?: ViewStyle;
   showHandle?: boolean;
   showCloseButton?: boolean;
+  /** Tallest the sheet may get, as a number or a share of the screen ('90%'). */
   maxHeight?: number | string;
   /** Optional element shown at the right of the title row instead of the close button. */
   headerRight?: React.ReactNode;
+  /** Pinned below the content and always in view, e.g. the Save and Cancel buttons. */
+  footer?: React.ReactNode;
+  /**
+   * Wraps the content in a scroll view so long content never pushes the bottom
+   * of the sheet off screen. Pass false when the content already scrolls itself.
+   */
+  scroll?: boolean;
+}
+
+/**
+ * A modal opens in its own window, so it reads safe areas (status bar, home
+ * indicator, Android navigation bar) from a provider inside that window rather
+ * than from the screen behind it.
+ */
+export function ModalSafeArea({ children }: { children: React.ReactNode }) {
+  return <SafeAreaProvider initialMetrics={initialWindowMetrics}>{children}</SafeAreaProvider>;
 }
 
 const SCREEN_H = Dimensions.get('window').height;
 
-export function BottomSheetModal({
-  visible,
-  onClose,
-  title,
-  subtitle,
-  children,
-  contentStyle,
-  showHandle = true,
-  showCloseButton = true,
-  maxHeight = '90%',
-  headerRight,
-}: BottomSheetModalProps) {
-  const insets = useSafeAreaInsets();
+export function BottomSheetModal(props: BottomSheetModalProps) {
+  const { visible, onClose } = props;
   const [isClosing, setIsClosing] = useState(false);
   const isMounted = visible || isClosing;
 
@@ -127,64 +134,138 @@ export function BottomSheetModal({
     }),
   ).current;
 
-  const onLayout = (e: LayoutChangeEvent) => {
-    const h = e.nativeEvent.layout.height;
-    if (h > 60) sheetHeightRef.current = h;
-  };
-
   if (!isMounted) return null;
 
   return (
     <Modal transparent visible animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={dismiss}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={styles.root}>
-          <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} accessibilityLabel="Close" />
-          </Animated.View>
-
-          <Animated.View
-            onLayout={onLayout}
-            style={[
-              styles.sheet,
-              { maxHeight: maxHeight as any, paddingBottom: insets.bottom + 16, transform: [{ translateY }] },
-              contentStyle,
-            ]}
-          >
-            <View {...pan.panHandlers}>
-              {showHandle ? (
-                <View style={styles.handleArea}>
-                  <View style={styles.handle} />
-                </View>
-              ) : (
-                <View style={{ height: 14 }} />
-              )}
-
-              {title || showCloseButton || headerRight ? (
-                <View style={styles.header}>
-                  <View style={{ flex: 1, paddingRight: 12 }}>
-                    {title ? <Text style={styles.title}>{title}</Text> : null}
-                    {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
-                  </View>
-                  {headerRight ??
-                    (showCloseButton ? (
-                      <Pressable
-                        onPress={dismiss}
-                        hitSlop={10}
-                        accessibilityLabel="Close"
-                        style={({ pressed }) => [styles.close, pressed && { opacity: 0.6 }]}
-                      >
-                        <Icon name="x" size={15} color={COLORS.text.secondary} strokeWidth={2.2} />
-                      </Pressable>
-                    ) : null)}
-                </View>
-              ) : null}
-            </View>
-
-            {children}
-          </Animated.View>
-        </View>
-      </KeyboardAvoidingView>
+      <ModalSafeArea>
+        <Sheet
+          {...props}
+          dismiss={dismiss}
+          translateY={translateY}
+          backdrop={backdrop}
+          panHandlers={pan.panHandlers}
+          onSheetLayout={(h) => {
+            sheetHeightRef.current = h;
+          }}
+        />
+      </ModalSafeArea>
     </Modal>
+  );
+}
+
+function Sheet({
+  title,
+  subtitle,
+  children,
+  contentStyle,
+  showHandle = true,
+  showCloseButton = true,
+  maxHeight = '90%',
+  headerRight,
+  footer,
+  scroll = true,
+  dismiss,
+  translateY,
+  backdrop,
+  panHandlers,
+  onSheetLayout,
+}: BottomSheetModalProps & {
+  dismiss: () => void;
+  translateY: Animated.Value;
+  backdrop: Animated.Value;
+  panHandlers: ReturnType<typeof PanResponder.create>['panHandlers'];
+  onSheetLayout: (height: number) => void;
+}) {
+  const insets = useSafeAreaInsets();
+  // The real height of this modal's window (it can differ from the screen
+  // behind it on Android), measured once laid out.
+  const [areaHeight, setAreaHeight] = useState(SCREEN_H);
+
+  // Never taller than the space below the status bar, whatever was asked for.
+  const ceiling = areaHeight - insets.top - 12;
+  const requested =
+    typeof maxHeight === 'number'
+      ? maxHeight
+      : maxHeight.endsWith('%')
+        ? (parseFloat(maxHeight) / 100) * areaHeight
+        : ceiling;
+  const sheetMax = Math.max(160, Math.min(requested, ceiling));
+
+  const onLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 60) onSheetLayout(h);
+  };
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      // The modal draws edge to edge, so Android no longer resizes it for the
+      // keyboard; pad on both platforms (it does nothing if already resized).
+      behavior="padding"
+    >
+      <View style={styles.root} onLayout={(e) => setAreaHeight(e.nativeEvent.layout.height)}>
+        <Animated.View style={[styles.backdrop, { opacity: backdrop }]}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={dismiss} accessibilityLabel="Close" />
+        </Animated.View>
+
+        <Animated.View
+          onLayout={onLayout}
+          style={[
+            styles.sheet,
+            { maxHeight: sheetMax, paddingBottom: insets.bottom + 16, transform: [{ translateY }] },
+          ]}
+        >
+          <View style={styles.top} {...panHandlers}>
+            {showHandle ? (
+              <View style={styles.handleArea}>
+                <View style={styles.handle} />
+              </View>
+            ) : (
+              <View style={{ height: 14 }} />
+            )}
+
+            {title || showCloseButton || headerRight ? (
+              <View style={styles.header}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  {title ? <Text style={styles.title}>{title}</Text> : null}
+                  {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+                </View>
+                {headerRight ??
+                  (showCloseButton ? (
+                    <Pressable
+                      onPress={dismiss}
+                      hitSlop={10}
+                      accessibilityLabel="Close"
+                      style={({ pressed }) => [styles.close, pressed && { opacity: 0.6 }]}
+                    >
+                      <Icon name="x" size={15} color={COLORS.text.secondary} strokeWidth={2.2} />
+                    </Pressable>
+                  ) : null)}
+              </View>
+            ) : null}
+          </View>
+
+          {scroll ? (
+            <ScrollView
+              style={styles.body}
+              contentContainerStyle={contentStyle}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
+              {children}
+            </ScrollView>
+          ) : contentStyle ? (
+            <View style={[styles.body, contentStyle]}>{children}</View>
+          ) : (
+            children
+          )}
+
+          {footer ? <View style={styles.footer}>{footer}</View> : null}
+        </Animated.View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -199,6 +280,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: SP.page,
     overflow: 'hidden',
   },
+  // Shrinks to fit when the sheet hits its height limit, so the footer stays in view.
+  body: { flexGrow: 0, flexShrink: 1, minHeight: 0 },
+  // Android squeezes every child of a too-tall column unless told not to, which
+  // is what crushed footers; only the body may give up space.
+  top: { flexShrink: 0 },
+  footer: { paddingTop: 12, flexShrink: 0 },
   handleArea: { alignItems: 'center', paddingTop: 8, paddingBottom: 10 },
   handle: { width: 36, height: 5, borderRadius: 3, backgroundColor: COLORS.borderDark },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 14 },

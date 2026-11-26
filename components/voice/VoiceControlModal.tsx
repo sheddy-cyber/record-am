@@ -105,8 +105,77 @@ export function VoiceControlModal() {
     setTyping(true);
   };
 
+  // Buttons live in the sheet's pinned footer, so they stay above the
+  // navigation bar and keyboard however long the content gets.
+  const controls =
+    previewing && action ? (
+      <View style={styles.footer}>
+        <Button
+          title="Edit"
+          variant="secondary"
+          size="lg"
+          style={{ flex: 1 }}
+          disabled={state === 'executing'}
+          onPress={() => {
+            close();
+            openVoiceActionInForm(action);
+          }}
+        />
+        <Button
+          title={countdown > 0 ? `Save · ${countdown}` : 'Save'}
+          size="lg"
+          style={{ flex: 1.6 }}
+          loading={state === 'executing'}
+          onPress={() => void confirmAction()}
+        />
+      </View>
+    ) : !done && !needsKey ? (
+      <View style={styles.controls}>
+        <Pressable
+          onPress={() => {
+            haptics.selection();
+            if (listening) useVoiceStore.getState().cancelListening();
+            if (listening) useVoiceStore.setState({ state: 'idle' });
+            setTyping((v) => !v);
+          }}
+          style={({ pressed }) => [styles.sideKey, pressed && { opacity: 0.6 }]}
+          accessibilityLabel={typing ? 'Use voice' : 'Type instead'}
+        >
+          <Icon name={typing ? 'mic' : 'keyboard'} size={20} color={COLORS.text.primary} />
+        </Pressable>
+
+        <Pressable
+          disabled={thinking}
+          onPress={() => {
+            if (listening) void stopListening();
+            else {
+              setTyping(false);
+              void startListening();
+            }
+          }}
+          style={({ pressed }) => [
+            styles.mainKey,
+            listening && { backgroundColor: COLORS.accent },
+            thinking && { backgroundColor: COLORS.surface2 },
+            pressed && { transform: [{ scale: 0.94 }] },
+          ]}
+          accessibilityLabel={listening ? 'Finish speaking' : 'Start speaking'}
+        >
+          {thinking ? (
+            <ActivityIndicator color={COLORS.text.secondary} />
+          ) : listening ? (
+            <View style={styles.stopGlyph} />
+          ) : (
+            <Icon name="mic" size={26} color="#FFFFFF" strokeWidth={2} />
+          )}
+        </Pressable>
+
+        <View style={styles.sideKey} />
+      </View>
+    ) : null;
+
   return (
-    <BottomSheetModal visible={isOpen} onClose={close} title={header.title} subtitle={header.subtitle} maxHeight="92%">
+    <BottomSheetModal visible={isOpen} onClose={close} title={header.title} subtitle={header.subtitle} maxHeight="92%" scroll={false} footer={controls}>
       <ScrollView
         style={{ flexGrow: 0 }}
         contentContainerStyle={{ paddingBottom: 8 }}
@@ -250,72 +319,6 @@ export function VoiceControlModal() {
         ) : null}
       </ScrollView>
 
-      {/* ── Controls ───────────────────────────────────────────────── */}
-      {previewing && action ? (
-        <View style={styles.footer}>
-          <Button
-            title="Edit"
-            variant="secondary"
-            size="lg"
-            style={{ flex: 1 }}
-            disabled={state === 'executing'}
-            onPress={() => {
-              close();
-              openVoiceActionInForm(action);
-            }}
-          />
-          <Button
-            title={countdown > 0 ? `Save · ${countdown}` : 'Save'}
-            size="lg"
-            style={{ flex: 1.6 }}
-            loading={state === 'executing'}
-            onPress={() => void confirmAction()}
-          />
-        </View>
-      ) : !done && !needsKey ? (
-        <View style={styles.controls}>
-          <Pressable
-            onPress={() => {
-              haptics.selection();
-              if (listening) useVoiceStore.getState().cancelListening();
-              if (listening) useVoiceStore.setState({ state: 'idle' });
-              setTyping((v) => !v);
-            }}
-            style={({ pressed }) => [styles.sideKey, pressed && { opacity: 0.6 }]}
-            accessibilityLabel={typing ? 'Use voice' : 'Type instead'}
-          >
-            <Icon name={typing ? 'mic' : 'keyboard'} size={20} color={COLORS.text.primary} />
-          </Pressable>
-
-          <Pressable
-            disabled={thinking}
-            onPress={() => {
-              if (listening) void stopListening();
-              else {
-                setTyping(false);
-                void startListening();
-              }
-            }}
-            style={({ pressed }) => [
-              styles.mainKey,
-              listening && { backgroundColor: COLORS.accent },
-              thinking && { backgroundColor: COLORS.surface2 },
-              pressed && { transform: [{ scale: 0.94 }] },
-            ]}
-            accessibilityLabel={listening ? 'Finish speaking' : 'Start speaking'}
-          >
-            {thinking ? (
-              <ActivityIndicator color={COLORS.text.secondary} />
-            ) : listening ? (
-              <View style={styles.stopGlyph} />
-            ) : (
-              <Icon name="mic" size={26} color="#FFFFFF" strokeWidth={2} />
-            )}
-          </Pressable>
-
-          <View style={styles.sideKey} />
-        </View>
-      ) : null}
     </BottomSheetModal>
   );
 }
@@ -402,8 +405,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  footer: { flexDirection: 'row', gap: 10, paddingTop: 14 },
-  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 18, paddingHorizontal: 12 },
+  footer: { flexDirection: 'row', gap: 10, paddingTop: 2 },
+  controls: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, paddingHorizontal: 12 },
   sideKey: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
   mainKey: {
     width: 72,

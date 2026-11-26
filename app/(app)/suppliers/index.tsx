@@ -1,15 +1,16 @@
-import React, { useCallback, useDeferredValue, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
+import React, { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
+import { RefreshControl, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import { useAuthStore } from '@/store/authStore';
-import { useSupplierStore } from '@/store/supplierStore';
-import { EmptyState, PermissionDenied, SmartChip } from '@/components/ui';
+import { SupplierWithStats, useSupplierStore } from '@/store/supplierStore';
+import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
+import { EmptyState, ListSkeleton, PermissionDenied, SmartChip } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { dismissScreen } from '@/lib/navigation';
-import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW } from '@/constants';
+import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { ReconcileWarningBanner } from '@/components/inventory/ReconcileWarningBanner';
 import { canManagePurchases, hasPermission } from '@/lib/permissions';
 
@@ -23,12 +24,108 @@ const formatSummaryCurrency = (value: number) => {
   return formatCurrency(amount);
 };
 
+const SupplierRow = memo(function SupplierRow({
+  item,
+  onOpen,
+}: {
+  item: SupplierWithStats;
+  onOpen: (item: SupplierWithStats) => void;
+}) {
+  const initials = (item.name || 'S').charAt(0).toUpperCase();
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={() => onOpen(item)}
+      style={{
+        backgroundColor: COLORS.card,
+        borderRadius: RADIUS.lg,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: COLORS.border,
+        padding: 15,
+        marginBottom: 8,
+        gap: 10,
+      }}
+    >
+      {/* ── Top Bar: Avatar, Supplier Name & Total Purchased ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+          <View
+            style={{
+              width: 38,
+              height: 38,
+              backgroundColor: COLORS.navyLight,
+              borderRadius: RADIUS.full,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.ink }}>
+              {initials}
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
+              {item.name}
+            </Text>
+            {item.phone ? (
+              <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
+                {item.phone}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={{ fontSize: 15.5, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }}>
+            {formatCurrency(item.total_purchased)}
+          </Text>
+          <Text style={{ fontSize: 10.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
+            total supplied
+          </Text>
+        </View>
+      </View>
+
+      {/* ── Bottom Bar: Smart Micro-Chips & Drill-Down Affordance ── */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, marginRight: 8 }}>
+          <SmartChip
+            label={`${item.total_orders} ${item.total_orders === 1 ? 'order' : 'orders'}`}
+            icon="truck"
+            variant="neutral"
+            size="xs"
+          />
+
+          {item.last_order ? (
+            <SmartChip
+              label={`Last: ${format(new Date(item.last_order), 'MMM d')}`}
+              variant="neutral"
+              size="xs"
+            />
+          ) : null}
+
+          {item.outstanding_debt > 0 ? (
+            <SmartChip
+              label={`Owe ${formatCurrency(item.outstanding_debt)}`}
+              dot
+              variant="danger"
+              size="xs"
+            />
+          ) : null}
+        </View>
+
+        <Icon name="chevron-right" size={15} color={COLORS.text.muted} />
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 export default function SuppliersScreen() {
-  const currentBusiness = useAuthStore((s) => s.currentBusiness);
+  const businessId = useAuthStore((s) => s.currentBusiness?.id);
   const userRole = useAuthStore((s) => s.userRole);
   const suppliers = useSupplierStore((s) => s.suppliers);
+  const loading = useSupplierStore((s) => s.isLoading && s.suppliers.length === 0);
   const fetchSuppliers = useSupplierStore((s) => s.fetchSuppliers);
-  const setSelectedSupplier = useSupplierStore((s) => s.setSelectedSupplier);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [refreshing, setRefreshing] = useState(false);
@@ -36,14 +133,44 @@ export default function SuppliersScreen() {
   const canViewPurchases = hasPermission(userRole, 'purchases.view');
   const canManageSupplierPurchases = canManagePurchases(userRole);
 
-  const onRefresh = useCallback(async () => {
-    if (!currentBusiness?.id || !canViewPurchases) return;
+  // Background refreshes (focus, realtime) are silent; the spinner is only for a pull.
+  const refresh = useCallback(() => {
+    if (businessId && canViewPurchases) void fetchSuppliers(businessId).catch(() => {});
+  }, [businessId, canViewPurchases, fetchSuppliers]);
+
+  const onPull = useCallback(async () => {
+    if (!businessId || !canViewPurchases) return;
     setRefreshing(true);
     try {
-      await fetchSuppliers(currentBusiness.id);
+      await fetchSuppliers(businessId);
     } catch (_) {}
     setRefreshing(false);
-  }, [canViewPurchases, currentBusiness?.id, fetchSuppliers]);
+  }, [businessId, canViewPurchases, fetchSuppliers]);
+
+  useFocusEffect(refresh);
+
+  useRealtimeRefresh({
+    channelName: `suppliers-screen-${businessId ?? 'unknown'}`,
+    enabled: Boolean(businessId && canViewPurchases),
+    watch: [businessId],
+    tables: [
+      { table: 'suppliers', filter: `business_id=eq.${businessId}` },
+      { table: 'supplier_debts', filter: `business_id=eq.${businessId}` },
+      { table: 'purchases', filter: `business_id=eq.${businessId}` },
+    ],
+    onRefresh: refresh,
+  });
+
+  const openSupplier = useCallback(
+    (item: SupplierWithStats) => {
+      const store = useSupplierStore.getState();
+      store.setSelectedSupplier(item);
+      // Start loading their records while the screen slides in.
+      if (businessId) void store.fetchSupplierDetail(item.id, businessId).catch(() => {});
+      router.push({ pathname: '/(app)/supplier-detail', params: { supplierId: item.id } });
+    },
+    [businessId],
+  );
 
   const filtered = useMemo(() => {
     const q = deferredSearch.trim().toLowerCase();
@@ -213,136 +340,35 @@ export default function SuppliersScreen() {
         </View>
 
         <View style={{ paddingHorizontal: 16, paddingBottom: 2 }}>
-          <ReconcileWarningBanner onReconciled={() => { if (currentBusiness) fetchSuppliers(currentBusiness.id); }} />
+          <ReconcileWarningBanner onReconciled={refresh} />
         </View>
 
-        {filtered.length === 0 ? (
-          <ScrollView
-            contentContainerStyle={{ flexGrow: 1 }}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={COLORS.accent}
-                colors={[COLORS.accent]}
-              />
-            }
-          >
-            <EmptyState
-              icon="truck"
-              title={suppliers.length === 0 ? 'No suppliers yet' : 'No matching suppliers'}
-              description={suppliers.length === 0 ? 'Add suppliers to track goods bought from them and what you owe them.' : 'Try another search or return to all suppliers.'}
-              action={suppliers.length === 0 ? { label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') } : { label: 'Clear Filters', onPress: clearFilters }}
+        <FlashList
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onPull}
+              tintColor={COLORS.accent}
+              colors={[COLORS.accent]}
             />
-          </ScrollView>
-        ) : (
-          <FlashList
-            data={filtered}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24, paddingTop: 4 }}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                tintColor={COLORS.accent}
-                colors={[COLORS.accent]}
+          }
+          renderItem={({ item }) => <SupplierRow item={item} onOpen={openSupplier} />}
+          ListEmptyComponent={
+            loading ? (
+              <ListSkeleton rows={6} style={{ paddingHorizontal: 0, paddingTop: 4 }} />
+            ) : (
+              <EmptyState
+                icon="truck"
+                title={suppliers.length === 0 ? 'No suppliers yet' : 'No matching suppliers'}
+                description={suppliers.length === 0 ? 'Add suppliers to track goods bought from them and what you owe them.' : 'Try another search or return to all suppliers.'}
+                action={suppliers.length === 0 ? { label: 'Add Supplier', onPress: () => router.push('/(app)/supplier-create') } : { label: 'Clear Filters', onPress: clearFilters }}
               />
-            }
-            
-            renderItem={({ item }) => {
-              const initials = (item.name || 'S').charAt(0).toUpperCase();
-
-              return (
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    setSelectedSupplier(item);
-                    router.push({ pathname: '/(app)/supplier-detail', params: { supplierId: item.id } });
-                  }}
-                  style={{
-                    backgroundColor: COLORS.card,
-                    borderRadius: RADIUS.lg,
-                    borderWidth: StyleSheet.hairlineWidth,
-                    borderColor: COLORS.border,
-                    padding: 15,
-                    marginBottom: 8,
-                    gap: 10,
-                  }}
-                >
-                  {/* ── Top Bar: Avatar, Supplier Name & Total Purchased ── */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-                      <View
-                        style={{
-                          width: 38,
-                          height: 38,
-                          backgroundColor: COLORS.navyLight,
-                          borderRadius: RADIUS.full,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Text style={{ fontSize: 13, fontFamily: FONT.bold, color: COLORS.ink }}>
-                          {initials}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }} numberOfLines={1}>
-                          {item.name}
-                        </Text>
-                        {item.phone ? (
-                          <Text style={{ fontFamily: FONT.regular, fontSize: 12, color: COLORS.text.muted, marginTop: 1 }}>
-                            {item.phone}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </View>
-
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 15.5, fontFamily: FONT.bold, color: COLORS.text.primary, letterSpacing: -0.2 }}>
-                        {formatCurrency(item.total_purchased)}
-                      </Text>
-                      <Text style={{ fontSize: 10.5, fontFamily: FONT.regular, color: COLORS.text.muted }}>
-                        total supplied
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* ── Bottom Bar: Smart Micro-Chips & Drill-Down Affordance ── */}
-                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 2 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1, marginRight: 8 }}>
-                      <SmartChip
-                        label={`${item.total_orders} ${item.total_orders === 1 ? 'order' : 'orders'}`}
-                        icon="truck"
-                        variant="neutral"
-                        size="xs"
-                      />
-
-                      {item.last_order ? (
-                        <SmartChip
-                          label={`Last: ${format(new Date(item.last_order), 'MMM d')}`}
-                          variant="neutral"
-                          size="xs"
-                        />
-                      ) : null}
-
-                      {item.outstanding_debt > 0 ? (
-                        <SmartChip
-                          label={`Owe ${formatCurrency(item.outstanding_debt)}`}
-                          dot
-                          variant="danger"
-                          size="xs"
-                        />
-                      ) : null}
-                    </View>
-
-                    <Icon name="chevron-right" size={15} color={COLORS.text.muted} />
-                  </View>
-                </TouchableOpacity>
-              );
-            }}
-          />
-        )}
+            )
+          }
+        />
       </View>
     </ScreenShell>
   );

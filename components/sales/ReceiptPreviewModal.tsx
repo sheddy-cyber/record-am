@@ -3,6 +3,7 @@ import { Alert, Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, Vi
 import { Button } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import ViewShot from 'react-native-view-shot';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
 import { format } from 'date-fns';
@@ -101,8 +102,9 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
+      {/* Measures this window's own status and navigation bars, so the buttons never sit under them. */}
+      <SafeAreaView style={styles.backdrop} edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <View style={{ flex: 1 }}>
@@ -114,7 +116,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
             </Pressable>
           </View>
 
-          <ScrollView contentContainerStyle={styles.paperArea} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.paperScroll} contentContainerStyle={styles.paperArea} showsVerticalScrollIndicator={false}>
             {previewSale ? (
               <ViewShot ref={receiptCaptureRef} options={{ format: 'png', quality: 1, result: 'tmpfile' }}>
                 <View collapsable={false}>
@@ -133,7 +135,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
 
           <View style={styles.actions}>
             <Button
-              title="Save to photos"
+              title="Save"
               icon="download"
               variant="secondary"
               onPress={handleDownloadReceipt}
@@ -143,7 +145,7 @@ export const ReceiptPreviewModal: React.FC<ReceiptPreviewModalProps> = ({
             <Button title="Share" icon="share" onPress={handleShareImage} loading={isSharingImage} style={{ flex: 1 }} />
           </View>
         </View>
-      </View>
+      </SafeAreaView>
     </Modal>
   );
 };
@@ -368,22 +370,28 @@ function Row({ label, value, strong, small, color }: { label: string; value: str
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: COLORS.scrim, justifyContent: 'center', alignItems: 'center', paddingVertical: 36, paddingHorizontal: 16 },
+  backdrop: { flex: 1, backgroundColor: COLORS.scrim, justifyContent: 'center', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16 },
   sheet: {
     backgroundColor: COLORS.surface,
     borderRadius: 28,
     borderCurve: 'continuous',
     width: '100%',
     maxWidth: 380,
-    maxHeight: '92%',
+    // Shrink to the space between the system bars. (A percentage maxHeight is
+    // measured against the full window on Android and pushed the buttons off screen.)
+    flexShrink: 1,
+    minHeight: 0,
     overflow: 'hidden',
   },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },
+  // Shrinks to fit so the Save and Share buttons below always stay in view.
+  paperScroll: { flexGrow: 0, flexShrink: 1 },
+  // Android squeezes every child of a too-tall column, buttons included, unless told not to.
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10, flexShrink: 0 },
   headerTitle: { fontSize: 19, fontFamily: FONT.semiBold, color: COLORS.text.primary, letterSpacing: -0.35 },
   headerSub: { fontSize: 13, fontFamily: FONT.regular, color: COLORS.text.muted, marginTop: 1 },
   close: { width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.surface2, alignItems: 'center', justifyContent: 'center' },
   paperArea: { alignItems: 'center', paddingHorizontal: 14, paddingBottom: 14, paddingTop: 4 },
-  actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 18 },
+  actions: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 18, flexShrink: 0 },
 
   paper: { width: 340, backgroundColor: '#FFFFFF', borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.border, overflow: 'hidden' },
   logo: { width: 48, height: 48, borderRadius: 14, marginBottom: 12, overflow: 'hidden' },

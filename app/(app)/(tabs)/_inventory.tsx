@@ -26,7 +26,7 @@ import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { deleteProductRecord } from '@/lib/recordDeletion';
 import { removeCachedProduct } from '@/lib/offlineStore';
 import { printInventoryStock, shareInventoryStockPDF } from '@/lib/reports';
-import { BottomSheetModal, Button, EmptyState, IconButton, Pill, SegmentedControl } from '@/components/ui';
+import { BottomSheetModal, Button, Card, EmptyState, IconButton, ListRow, ListSkeleton, Pill, SegmentedControl } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SHADOW, SP } from '@/constants';
@@ -60,6 +60,7 @@ function InventoryScreen() {
   const userRole = useAuthStore((s) => s.userRole);
   const canViewCosts = canViewFinancialData(userRole);
   const products = useBusinessStore((s) => s.products);
+  const productsLoading = useBusinessStore((s) => s.isLoading && s.products.length === 0);
   const branches = useBusinessStore((s) => s.branches);
   const businessCategories = useBusinessStore((s) => s.categories);
   const fetchProducts = useBusinessStore((s) => s.fetchProducts);
@@ -538,6 +539,9 @@ function InventoryScreen() {
                 </View>
               }
               ListEmptyComponent={
+                productsLoading ? (
+                  <ListSkeleton rows={7} avatar={false} style={{ paddingHorizontal: 0 }} />
+                ) : (
                 <View style={{ paddingVertical: 24, paddingHorizontal: SP.page }}>
                   <EmptyState
                     icon="box"
@@ -573,6 +577,7 @@ function InventoryScreen() {
                     />
                   ) : null}
                 </View>
+                )
               }
               renderItem={({ item, index }) => {
                 const stock = getProductStock(item);
@@ -650,6 +655,29 @@ function InventoryScreen() {
           title="Print Stock Sheet"
           subtitle="Double-column A4 tabular list"
           showCloseButton={!isPrinting && !isSharingPDF}
+          footer={
+            <View style={{ gap: 8 }}>
+              <Button
+                title="Print Stock Sheet"
+                variant="accent"
+                size="md"
+                loading={isPrinting}
+                disabled={isSharingPDF}
+                icon="printer"
+                onPress={() => handlePrintInventory('print')}
+              />
+
+              <Button
+                title="Share as PDF"
+                variant="secondary"
+                size="md"
+                loading={isSharingPDF}
+                disabled={isPrinting}
+                icon="share-2"
+                onPress={() => handlePrintInventory('share')}
+              />
+            </View>
+          }
         >
           <Text
             style={{
@@ -777,29 +805,6 @@ function InventoryScreen() {
               Runs in double columns on A4 paper (~75 items per page) for quick physical stock taking.
             </Text>
           </View>
-
-          {/* Action Buttons */}
-          <View style={{ gap: 8 }}>
-            <Button
-              title="Print Stock Sheet"
-              variant="accent"
-              size="md"
-              loading={isPrinting}
-              disabled={isSharingPDF}
-              icon="printer"
-              onPress={() => handlePrintInventory('print')}
-            />
-
-            <Button
-              title="Share as PDF"
-              variant="secondary"
-              size="md"
-              loading={isSharingPDF}
-              disabled={isPrinting}
-              icon="share-2"
-              onPress={() => handlePrintInventory('share')}
-            />
-          </View>
         </BottomSheetModal>
 
         {/* ── Category Filter Modal ────────────────────────────────────── */}
@@ -809,6 +814,7 @@ function InventoryScreen() {
           title="Filter by Category"
           subtitle="Choose a category to filter your inventory"
           maxHeight="78%"
+          scroll={false}
         >
           {/* Category Options List */}
           <ScrollView
@@ -966,177 +972,56 @@ function InventoryScreen() {
           ) : null}
         </BottomSheetModal>
 
-        {/* ── Add Stock Options Modal ── */}
+        {/* ── Add Stock Options ── */}
         <BottomSheetModal
           visible={addMenuOpen}
           onClose={() => setAddMenuOpen(false)}
-          title="Add Stock"
+          title="Add stock"
           subtitle="Choose how you want to add items"
-          contentStyle={{ gap: 12 }}
         >
-          {/* Option 1: Rapid Entry */}
-          <TouchableOpacity
-            onPress={() => {
-              setAddMenuOpen(false);
-              router.push('/(app)/rapid-add-stock' as any);
-            }}
-            activeOpacity={0.8}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              padding: 14,
-              borderRadius: RADIUS.lg,
-              backgroundColor: '#8A5A12',
-              borderWidth: 1,
-              borderColor: 'rgba(253, 224, 71, 0.4)',
-            }}
-          >
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: RADIUS.md,
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="zap" size={22} color="#FEF08A" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#FFFFFF' }}>
-                Rapid Entry Mode
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(255, 255, 255, 0.9)', marginTop: 2 }}>
-                Continuous high-speed batch addition without leaving screen
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={18} color="rgba(255, 255, 255, 0.75)" />
-          </TouchableOpacity>
-
-          {/* Option 2: Excel / CSV Import */}
-          <TouchableOpacity
-            onPress={() => {
-              setAddMenuOpen(false);
-              router.push('/(app)/import-stock' as any);
-            }}
-            activeOpacity={0.8}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              padding: 14,
-              borderRadius: RADIUS.lg,
-              backgroundColor: '#2E7D4F',
-              borderWidth: 1,
-              borderColor: 'rgba(110, 231, 183, 0.4)',
-            }}
-          >
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: RADIUS.md,
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="file-text" size={22} color="#C5DCCB" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#FFFFFF' }}>
-                Import from Excel / CSV
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(255, 255, 255, 0.9)', marginTop: 2 }}>
-                Upload an Excel spreadsheet with ready-made stock
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={18} color="rgba(255, 255, 255, 0.75)" />
-          </TouchableOpacity>
-
-          {/* Option 3: Scan Barcode */}
-          <TouchableOpacity
-            onPress={() => {
-              setAddMenuOpen(false);
-              setScannerOpen(true);
-            }}
-            activeOpacity={0.8}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              padding: 14,
-              borderRadius: RADIUS.lg,
-              backgroundColor: '#7A5A80',
-              borderWidth: 1,
-              borderColor: 'rgba(196, 181, 253, 0.4)',
-            }}
-          >
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: RADIUS.md,
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="maximize" size={22} color="#DCCCE0" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#FFFFFF' }}>
-                Scan Barcode / QR
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(255, 255, 255, 0.9)', marginTop: 2 }}>
-                Scan packaging to instantly find, restock, or register an item
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={18} color="rgba(255, 255, 255, 0.75)" />
-          </TouchableOpacity>
-
-          {/* Option 4: Single Product Form */}
-          <TouchableOpacity
-            onPress={() => {
-              setAddMenuOpen(false);
-              openCreateProduct();
-            }}
-            activeOpacity={0.8}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 14,
-              padding: 14,
-              borderRadius: RADIUS.lg,
-              backgroundColor: '#3B6B9A',
-              borderWidth: 1,
-              borderColor: 'rgba(147, 197, 253, 0.4)',
-            }}
-          >
-            <View
-              style={{
-                width: 44,
-                height: 44,
-                borderRadius: RADIUS.md,
-                backgroundColor: 'rgba(255, 255, 255, 0.2)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icon name="plus-circle" size={22} color="#C9D7E6" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 15, fontFamily: FONT.bold, color: '#FFFFFF' }}>
-                Single Product Form
-              </Text>
-              <Text style={{ fontSize: 12, fontFamily: FONT.regular, color: 'rgba(255, 255, 255, 0.9)', marginTop: 2 }}>
-                Standard full form with individual custom options
-              </Text>
-            </View>
-            <Icon name="chevron-right" size={18} color="rgba(255, 255, 255, 0.75)" />
-          </TouchableOpacity>
+          <Card style={{ padding: 0, overflow: 'hidden' }}>
+            {[
+              {
+                icon: 'plus' as const,
+                title: 'One item',
+                subtitle: 'Fill in the full details for a single product',
+                onPress: openCreateProduct,
+              },
+              {
+                icon: 'layers' as const,
+                title: 'Several items',
+                subtitle: 'Enter one item after another without leaving the screen',
+                onPress: () => router.push('/(app)/rapid-add-stock' as any),
+              },
+              {
+                icon: 'scan' as const,
+                title: 'Scan a barcode',
+                subtitle: 'Find, restock or add an item from its packaging',
+                onPress: () => setScannerOpen(true),
+              },
+              {
+                icon: 'file-text' as const,
+                title: 'Import from Excel or CSV',
+                subtitle: 'Bring in a ready-made stock list',
+                onPress: () => router.push('/(app)/import-stock' as any),
+              },
+            ].map((option, index) => (
+              <View key={option.title}>
+                {index > 0 ? (
+                  <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: COLORS.border, marginLeft: 58 }} />
+                ) : null}
+                <ListRow
+                  icon={option.icon}
+                  title={option.title}
+                  subtitle={option.subtitle}
+                  onPress={() => {
+                    setAddMenuOpen(false);
+                    option.onPress();
+                  }}
+                />
+              </View>
+            ))}
+          </Card>
         </BottomSheetModal>
 
         {/* ── Global Barcode Scanner Modal ── */}

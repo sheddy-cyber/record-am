@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { Alert, Modal, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { Icon } from '@/components/icons';
@@ -10,7 +10,7 @@ import { useBusinessStore } from '@/store/businessStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
 import { shareDailyReport, shareStaffShiftReport } from '@/lib/reports';
 import { parseLocalDateString } from '@/lib/revenue';
-import { Badge, Button, Card, EmptyState, SectionHeader } from '@/components/ui';
+import { Badge, BottomSheetModal, Button, Card, EmptyState, SectionHeader } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS } from '@/constants';
 import { canViewFinancialData } from '@/lib/permissions';
@@ -34,7 +34,6 @@ export default function DailyBalanceScreen() {
     summary,
     entries,
     digitalInflows,
-    isLoading,
     isSaving,
     selectedDate,
     setSelectedDate,
@@ -42,11 +41,22 @@ export default function DailyBalanceScreen() {
     reopenDay,
   } = useDailyBalanceStore();
 
-  const load = useCallback(() => {
+  const load = useCallback(async () => {
     if (currentBusiness && currentBranch) {
-      fetchDailyBalance(currentBusiness.id, currentBranch.id, selectedDate);
+      await fetchDailyBalance(currentBusiness.id, currentBranch.id, selectedDate);
     }
   }, [currentBranch, currentBusiness, fetchDailyBalance, selectedDate]);
+
+  // The pull-to-refresh spinner reflects only a pull, never background refreshes.
+  const [pulling, setPulling] = useState(false);
+  const onPull = useCallback(async () => {
+    setPulling(true);
+    try {
+      await load();
+    } finally {
+      setPulling(false);
+    }
+  }, [load]);
 
   useEffect(() => {
     load();
@@ -276,7 +286,7 @@ export default function DailyBalanceScreen() {
 
         <ScrollView
           style={{ flex: 1 }}
-          refreshControl={<RefreshControl refreshing={isLoading} onRefresh={load} tintColor={COLORS.text.muted} />}
+          refreshControl={<RefreshControl refreshing={pulling} onRefresh={onPull} tintColor={COLORS.text.muted} />}
           showsVerticalScrollIndicator={false}
         >
           <View style={{ padding: 20, gap: 20 }}>
@@ -927,70 +937,32 @@ export default function DailyBalanceScreen() {
         )}
 
         {Platform.OS === 'ios' && (
-          <Modal
+          <BottomSheetModal
             visible={showPicker}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setShowPicker(false)}
-          >
-            <View
-              style={{
-                flex: 1,
-                backgroundColor: 'rgba(0,0,0,0.45)',
-                justifyContent: 'flex-end',
-              }}
-            >
-              <View
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  borderTopLeftRadius: RADIUS.xl,
-                  borderTopRightRadius: RADIUS.xl,
-                  paddingHorizontal: 20,
-                  paddingTop: 14,
-                  paddingBottom: 28,
+            onClose={() => setShowPicker(false)}
+            title="Jump to date"
+            scroll={false}
+            footer={
+              <Button
+                title="Show this date"
+                onPress={() => {
+                  const pickedStr = format(iosDraftDate, 'yyyy-MM-dd');
+                  setSelectedDate(pickedStr > todayStr ? todayStr : pickedStr);
+                  setShowPicker(false);
                 }}
-              >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: 8,
-                  }}
-                >
-                  <TouchableOpacity onPress={() => setShowPicker(false)}>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text.muted }}>
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                  <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.text.primary }}>
-                    Jump to Date
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const pickedStr = format(iosDraftDate, 'yyyy-MM-dd');
-                      setSelectedDate(pickedStr > todayStr ? todayStr : pickedStr);
-                      setShowPicker(false);
-                    }}
-                  >
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.accent }}>
-                      Done
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <DateTimePicker
-                  value={iosDraftDate}
-                  mode="date"
-                  display="spinner"
-                  maximumDate={new Date()}
-                  onChange={(_event, date) => {
-                    if (date) setIosDraftDate(date);
-                  }}
-                />
-              </View>
-            </View>
-          </Modal>
+              />
+            }
+          >
+            <DateTimePicker
+              value={iosDraftDate}
+              mode="date"
+              display="spinner"
+              maximumDate={new Date()}
+              onChange={(_event, date) => {
+                if (date) setIosDraftDate(date);
+              }}
+            />
+          </BottomSheetModal>
         )}
       </View>
     </ScreenShell>

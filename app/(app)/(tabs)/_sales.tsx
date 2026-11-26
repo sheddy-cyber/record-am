@@ -6,7 +6,6 @@ import {
   BackHandler,
   InteractionManager,
   LayoutAnimation,
-  Modal,
   Platform,
   RefreshControl,
   ScrollView,
@@ -33,7 +32,8 @@ import { useTabStore } from '@/store/tabStore';
 import { useOfflineStore } from '@/store/offlineStore';
 import { supabase } from '@/lib/supabase';
 import { saleItemsTable } from '@/lib/dataAccess';
-import { fetchRevenueActivitiesPage, parseLocalDateString } from '@/lib/revenue';
+import { fetchRevenueActivitiesPage, parseLocalDateString, readCachedRevenuePage } from '@/lib/revenue';
+import { reconcileList } from '@/lib/storeUtils';
 import { cleanSaleNotes } from '@/lib/records';
 import { deleteDebtRepaymentRecord, deleteSaleRecord } from '@/lib/recordDeletion';
 import {
@@ -44,10 +44,11 @@ import {
   retryAllSyncConflicts,
 } from '@/lib/offlineStore';
 import { useRealtimeRefresh } from '@/hooks/useRealtimeRefresh';
-import { EmptyState, IconButton } from '@/components/ui';
+import { BottomSheetModal, Button, EmptyState, IconButton, ListSkeleton } from '@/components/ui';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
 import { SwipeableTabScreen } from '@/components/navigation/SwipeableTabScreen';
 import { ReceiptPreviewModal, SaleActivityCard } from '@/components/sales';
+import { useSaleSelection } from '@/store/saleSelectionStore';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP } from '@/constants';
 import { PaymentMethod, Product, RevenueActivity, Sale } from '@/types';
 
@@ -61,6 +62,16 @@ if (
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+const PAGE_SIZE = 50;
+const activityKey = (a: RevenueActivity) => `${a.kind}-${a.id}`;
+
+// The last list shown for each branch and date range. Outlives the screen, so
+// returning to Sales (or switching filters back) paints instantly.
+type FeedEntry = { activities: RevenueActivity[]; hasMore: boolean; pages: number };
+const feedCache = new Map<string, FeedEntry>();
+const feedKey = (businessId?: string, branchId?: string, fromDate?: string, toDate?: string) =>
+  `${businessId ?? ''}:${branchId ?? ''}:${fromDate ?? ''}:${toDate ?? ''}`;
+
 function SalesScreen() {
   const insets = useSafeAreaInsets();
   const businessId = useAuthStore((s) => s.currentBusiness?.id);
@@ -71,12 +82,17 @@ function SalesScreen() {
   const businessPhone = useAuthStore((s) => s.currentBusiness?.phone);
   const branchName = useAuthStore((s) => s.currentBranch?.name);
 
-  const [activities, setActivities] = useState<RevenueActivity[]>([]);
-  const [loading, setLoading] = useState(false);
+  const initialEntry = feedCache.get(feedKey(businessId, branchId));
+  const [activities, setActivities] = useState<RevenueActivity[]>(() => initialEntry?.activities ?? []);
+  // True until the current branch and range has something real to show (from
+  // memory, the device cache or the server); drives the placeholder rows.
+  const [loading, setLoading] = useState(() => !initialEntry);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(false);
-  const pageRef = useRef(0);
+  const [hasMore, setHasMore] = useState(() => initialEntry?.hasMore ?? false);
+  const pageRef = useRef(Math.max(0, (initialEntry?.pages ?? 1) - 1));
+  const shownKeyRef = useRef(initialEntry ? feedKey(businessId, branchId) : '');
+  const inFlightRef = useRef<string | null>(null);
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month' | 'custom'>('all');
   const [customDate, setCustomDate] = useState<string>(() => format(new Date(), 'yyyy-MM-dd'));
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -85,7 +101,6 @@ function SalesScreen() {
   const [previewSale, setPreviewSale] = useState<Sale | null>(null);
   const [generatingReceiptId, setGeneratingReceiptId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isMergingReceipts, setIsMergingReceipts] = useState(false);
   const pendingCount = useOfflineStore((s) => s.pendingCount);
   const conflictCount = useOfflineStore((s) => s.conflictCount);
@@ -112,31 +127,8 @@ function SalesScreen() {
     return { fromDate: undefined, toDate: undefined };
   }, [dateFilter, customDate]);
 
-  const isSelectionMode = selectedIds.size > 0;
-
-  const selectedSales = useMemo(() => {
-    return activities.filter((a) => selectedIds.has(a.id) && a.kind === 'sale');
-  }, [activities, selectedIds]);
-
-  const selectedTotalAmount = useMemo(() => {
-    return selectedSales.reduce((sum, item) => sum + (Number(item.total_amount) || 0), 0);
-  }, [selectedSales]);
-
-  const saleActivities = useMemo(() => {
-    return activities.filter((a) => a.kind === 'sale');
-  }, [activities]);
-
-  const allSalesSelected =
-    saleActivities.length > 0 && selectedSales.length === saleActivities.length;
-
-  useEffect(() => {
-    if (selectedIds.size === 0) return;
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      setSelectedIds(new Set());
-      return true;
-    });
-    return () => backHandler.remove();
-  }, [selectedIds.size]);
+  // Leaving the Sales tab drops any selection.
+  useEffect(() => () => useSaleSelection.getState().clear(), []);
 
   const handleToggleSelect = useCallback((item: RevenueActivity) => {
     if (item.kind !== 'sale') {
@@ -147,37 +139,13 @@ function SalesScreen() {
       });
       return;
     }
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(item.id)) {
-        next.delete(item.id);
-      } else {
-        next.add(item.id);
-      }
-      return next;
-    });
+    useSaleSelection.getState().toggle(item.id);
   }, []);
 
   const handleLongPressSelect = useCallback((item: RevenueActivity) => {
     if (item.kind !== 'sale') return;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      next.add(item.id);
-      return next;
-    });
+    useSaleSelection.getState().add(item.id);
   }, []);
-
-  const handleExitSelectionMode = useCallback(() => {
-    setSelectedIds(new Set());
-  }, []);
-
-  const handleToggleSelectAll = useCallback(() => {
-    if (allSalesSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(saleActivities.map((a) => a.id)));
-    }
-  }, [allSalesSelected, saleActivities]);
 
   const openRecordSale = () => router.push('/(app)/record-sale');
 
@@ -187,32 +155,63 @@ function SalesScreen() {
       setRefreshing(false);
       return;
     }
+    const { fromDate, toDate } = dateRange;
+    const key = feedKey(businessId, branchId, fromDate, toDate);
+    if (isRefreshing) setRefreshing(true);
+    if (inFlightRef.current === key && !isRefreshing) return;
 
-    if (isRefreshing) {
-      setRefreshing(true);
-    } else if (pageRef.current === 0) {
-      setLoading(true);
+    // Show whatever we already have for this range before asking the server.
+    if (shownKeyRef.current !== key) {
+      const remembered = feedCache.get(key);
+      if (remembered) {
+        setActivities(remembered.activities);
+        setHasMore(remembered.hasMore);
+        pageRef.current = remembered.pages - 1;
+        shownKeyRef.current = key;
+        setLoading(false);
+      } else {
+        pageRef.current = 0;
+        setHasMore(false);
+        const cached = await readCachedRevenuePage(businessId, branchId, fromDate, toDate, PAGE_SIZE);
+        if (cached.length > 0) {
+          setActivities(cached);
+          shownKeyRef.current = key;
+          setLoading(false);
+        } else {
+          setActivities([]);
+          setLoading(true);
+        }
+      }
     }
 
+    inFlightRef.current = key;
+    // Refresh every page already on screen in one request, so a refresh never
+    // shortens the list under the user's thumb.
+    const pages = pageRef.current + 1;
     try {
       const result = await fetchRevenueActivitiesPage({
         businessId,
         branchId,
         page: 0,
-        pageSize: 50,
-        fromDate: dateRange.fromDate,
-        toDate: dateRange.toDate,
+        pageSize: PAGE_SIZE * pages,
+        fromDate,
+        toDate,
       });
-      pageRef.current = 0;
-      setActivities(result.activities);
+      setActivities((prev) => {
+        const next = reconcileList(shownKeyRef.current === key ? prev : [], result.activities, activityKey);
+        feedCache.set(key, { activities: next, hasMore: result.hasMore, pages });
+        return next;
+      });
       setHasMore(result.hasMore);
+      shownKeyRef.current = key;
     } catch (err) {
       console.error(err);
     } finally {
+      if (inFlightRef.current === key) inFlightRef.current = null;
       setLoading(false);
       setRefreshing(false);
     }
-  }, [businessId, branchId, dateRange.fromDate, dateRange.toDate]);
+  }, [businessId, branchId, dateRange]);
 
   const loadMoreActivities = useCallback(async () => {
     if (!businessId || !branchId || !hasMore || loadingMore || loading) return;
@@ -223,16 +222,22 @@ function SalesScreen() {
         businessId,
         branchId,
         page: nextPage,
-        pageSize: 50,
+        pageSize: PAGE_SIZE,
         fromDate: dateRange.fromDate,
         toDate: dateRange.toDate,
       });
       pageRef.current = nextPage;
       setHasMore(result.hasMore);
       setActivities((prev) => {
-        const seen = new Set(prev.map((a) => `${a.kind}-${a.id}`));
-        const appended = result.activities.filter((a) => !seen.has(`${a.kind}-${a.id}`));
-        return [...prev, ...appended];
+        const seen = new Set(prev.map(activityKey));
+        const appended = result.activities.filter((a) => !seen.has(activityKey(a)));
+        const next = appended.length > 0 ? [...prev, ...appended] : prev;
+        feedCache.set(feedKey(businessId, branchId, dateRange.fromDate, dateRange.toDate), {
+          activities: next,
+          hasMore: result.hasMore,
+          pages: nextPage + 1,
+        });
+        return next;
       });
     } catch (err) {
       console.error('[sales] loadMore error:', err);
@@ -240,10 +245,6 @@ function SalesScreen() {
       setLoadingMore(false);
     }
   }, [businessId, branchId, hasMore, loadingMore, loading, dateRange.fromDate, dateRange.toDate]);
-
-  useEffect(() => {
-    loadActivities();
-  }, [loadActivities]);
 
   useFocusEffect(
     useCallback(() => {
@@ -524,6 +525,7 @@ function SalesScreen() {
   }, [businessId, branchId, loadActivities]);
 
   const handleDeleteSelected = useCallback(() => {
+    const selectedIds = useSaleSelection.getState().ids;
     const count = selectedIds.size;
     if (count === 0) return;
 
@@ -590,7 +592,7 @@ function SalesScreen() {
                 void useAnalyticsStore.getState().refreshFromCache(businessId, branchId);
               }
 
-              setSelectedIds(new Set());
+              useSaleSelection.getState().clear();
               await loadActivities();
               Toast.show({ type: 'success', text1: `${count} records deleted` });
             } catch (err: any) {
@@ -600,9 +602,10 @@ function SalesScreen() {
         },
       ]
     );
-  }, [selectedIds, activities, businessId, branchId, loadActivities]);
+  }, [activities, businessId, branchId, loadActivities]);
 
   const handleMergeReceipts = useCallback(async () => {
+    const selectedIds = useSaleSelection.getState().ids;
     const selectedSaleActivities = activities.filter(
       (a) => selectedIds.has(a.id) && a.kind === 'sale'
     );
@@ -914,7 +917,7 @@ function SalesScreen() {
       };
 
       setPreviewSale(mergedSale);
-      setSelectedIds(new Set());
+      useSaleSelection.getState().clear();
       Toast.show({
         type: 'success',
         text1: 'Receipts Merged Successfully',
@@ -926,7 +929,7 @@ function SalesScreen() {
     } finally {
       setIsMergingReceipts(false);
     }
-  }, [activities, selectedIds, businessId, branchId]);
+  }, [activities, businessId, branchId]);
 
   const handleToggleExpand = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id));
@@ -1020,8 +1023,6 @@ function SalesScreen() {
           onDelete={handleDeleteActivity}
           generatingReceiptId={generatingReceiptId}
           onGenerateReceipt={handleGenerateReceipt}
-          isSelectionMode={isSelectionMode}
-          isSelected={selectedIds.has(item.id)}
           onToggleSelect={handleToggleSelect}
           onLongPressSelect={handleLongPressSelect}
         />
@@ -1033,8 +1034,6 @@ function SalesScreen() {
     handleDeleteActivity,
     generatingReceiptId,
     handleGenerateReceipt,
-    isSelectionMode,
-    selectedIds,
     handleToggleSelect,
     handleLongPressSelect,
   ]);
@@ -1042,48 +1041,11 @@ function SalesScreen() {
   return (
     <SwipeableTabScreen name="sales">
       <ScreenShell backgroundColor={COLORS.surface}>
-        {isSelectionMode ? (
-          <ScreenHeader
-            title={`${selectedIds.size} Selected`}
-            subtitle={
-              selectedSales.length < 2
-                ? 'Select at least 2 sales to merge'
-                : `${formatCurrency(selectedTotalAmount)} combined`
-            }
-           
-            left={
-              <HeaderAction
-                icon="x"
-                label="Cancel"
-                onPress={handleExitSelectionMode}
-              />
-            }
-            right={
-              <HeaderAction
-                icon={allSalesSelected ? 'check-square' : 'check'}
-                label={allSalesSelected ? 'Deselect' : 'Select All'}
-                onPress={handleToggleSelectAll}
-              />
-            }
-          />
-        ) : (
-          <ScreenHeader
-            title="Sales"
-            subtitle={`${filteredActivities.length}${hasMore ? '+' : ''} ${filteredActivities.length === 1 ? 'record' : 'records'}${branchName ? ` · ${branchName}` : ''}`}
-           
-            right={
-              <>
-                <IconButton
-                  icon="scan"
-                  variant="outline"
-                  accessibilityLabel="Scan to sell"
-                  onPress={() => router.push('/(app)/record-sale?scan=1')}
-                />
-                <IconButton icon="plus" variant="filled" accessibilityLabel="Record a sale" onPress={openRecordSale} />
-              </>
-            }
-          />
-        )}
+        <SalesHeader
+          activities={activities}
+          subtitle={`${filteredActivities.length}${hasMore ? '+' : ''} ${filteredActivities.length === 1 ? 'record' : 'records'}${branchName ? ` · ${branchName}` : ''}`}
+          onRecordSale={openRecordSale}
+        />
 
         {/* Filter & Search Bar */}
         <View
@@ -1254,7 +1216,7 @@ function SalesScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ 
             paddingTop: 6,
-            paddingBottom: insets.bottom + (isSelectionMode ? 140 : 92),
+            paddingBottom: insets.bottom + 92,
             flexGrow: 1,
           }}
           onEndReached={() => {
@@ -1264,7 +1226,8 @@ function SalesScreen() {
           }}
           onEndReachedThreshold={0.4}
           ListFooterComponent={
-            activities.length > 0 ? (
+            <>
+            {activities.length > 0 ? (
               <View style={{ paddingHorizontal: SP.page, paddingTop: 14, paddingBottom: 18, alignItems: 'center' }}>
                 {loadingMore ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -1299,9 +1262,14 @@ function SalesScreen() {
                   </Text>
                 )}
               </View>
-            ) : null
+            ) : null}
+            <SelectionSpacer />
+            </>
           }
           ListEmptyComponent={
+            loading ? (
+              <ListSkeleton rows={6} />
+            ) : (
             <View style={{ paddingHorizontal: SP.page, paddingTop: 20 }}>
               <EmptyState
                 icon="shopping-cart"
@@ -1324,6 +1292,7 @@ function SalesScreen() {
                 }
               />
             </View>
+            )
           }
           initialNumToRender={10}
           maxToRenderPerBatch={10}
@@ -1388,60 +1357,13 @@ function SalesScreen() {
           renderSectionFooter={() => <View style={{ height: 14 }} />}
         />
 
-        {isSelectionMode && (
-          <View
-            style={[
-              styles.floatingDock,
-              { bottom: 74 + Math.max(insets.bottom, 8) },
-            ]}
-          >
-            <View style={styles.dockInfo}>
-              <View style={styles.dockCountBadge}>
-                <Text style={styles.dockCountText}>{selectedIds.size}</Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.dockTitle} numberOfLines={1}>
-                  {selectedIds.size === 1 ? '1 sale selected' : `${selectedIds.size} sales selected`}
-                </Text>
-                <Text style={styles.dockSubtitle} numberOfLines={1}>
-                  {formatCurrency(selectedTotalAmount)}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.dockActions}>
-              <TouchableOpacity
-                style={styles.dockDeleteButton}
-                onPress={handleDeleteSelected}
-                activeOpacity={0.7}
-                accessibilityLabel="Delete selected sales"
-              >
-                <Icon name="trash-2" size={17} color="#C2412D" />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.dockMergeButton,
-                  selectedSales.length < 2 && styles.dockMergeButtonDisabled,
-                ]}
-                onPress={handleMergeReceipts}
-                activeOpacity={0.8}
-                disabled={isMergingReceipts}
-              >
-                {isMergingReceipts ? (
-                  <ActivityIndicator size="small" color={COLORS.onAccent} />
-                ) : (
-                  <>
-                    <Icon name="layers" size={15} color={COLORS.onAccent} style={{ marginRight: 6 }} />
-                    <Text style={styles.dockMergeText}>
-                      {selectedSales.length < 2 ? 'Select 2+ to Merge' : `Merge Receipt (${selectedSales.length})`}
-                    </Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
+        <SelectionDock
+          activities={activities}
+          bottom={74 + Math.max(insets.bottom, 8)}
+          isMerging={isMergingReceipts}
+          onDelete={handleDeleteSelected}
+          onMerge={handleMergeReceipts}
+        />
 
         <ReceiptPreviewModal
           visible={previewSale !== null}
@@ -1472,63 +1394,189 @@ function SalesScreen() {
         )}
 
         {Platform.OS === 'ios' && (
-          <Modal
+          <BottomSheetModal
             visible={showDatePicker}
-            transparent
-            animationType="slide"
-            onRequestClose={() => setShowDatePicker(false)}
-          >
-            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
-              <View
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  borderTopLeftRadius: RADIUS.xl,
-                  borderTopRightRadius: RADIUS.xl,
-                  paddingHorizontal: 20,
-                  paddingTop: 14,
-                  paddingBottom: 28,
+            onClose={() => setShowDatePicker(false)}
+            title="Filter sales by date"
+            scroll={false}
+            footer={
+              <Button
+                title="Show this date"
+                onPress={() => {
+                  const todayStr = format(new Date(), 'yyyy-MM-dd');
+                  const pickedStr = format(iosDraftDate, 'yyyy-MM-dd');
+                  setCustomDate(pickedStr > todayStr ? todayStr : pickedStr);
+                  setDateFilter('custom');
+                  setShowDatePicker(false);
                 }}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                    <Text style={{ fontFamily: FONT.medium, fontSize: 15, color: COLORS.text.muted }}>
-                      Cancel
-                    </Text>
-                  </TouchableOpacity>
-                  <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.text.primary }}>
-                    Filter Sales by Date
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const todayStr = format(new Date(), 'yyyy-MM-dd');
-                      const pickedStr = format(iosDraftDate, 'yyyy-MM-dd');
-                      setCustomDate(pickedStr > todayStr ? todayStr : pickedStr);
-                      setDateFilter('custom');
-                      setShowDatePicker(false);
-                    }}
-                  >
-                    <Text style={{ fontFamily: FONT.bold, fontSize: 15, color: COLORS.accent }}>
-                      Apply
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <DateTimePicker
-                  value={iosDraftDate}
-                  mode="date"
-                  display="spinner"
-                  maximumDate={new Date()}
-                  onChange={(_event, date) => {
-                    if (date) setIosDraftDate(date);
-                  }}
-                />
-              </View>
-            </View>
-          </Modal>
+              />
+            }
+          >
+            <DateTimePicker
+              value={iosDraftDate}
+              mode="date"
+              display="spinner"
+              maximumDate={new Date()}
+              onChange={(_event, date) => {
+                if (date) setIosDraftDate(date);
+              }}
+            />
+          </BottomSheetModal>
         )}
       </ScreenShell>
     </SwipeableTabScreen>
   );
+}
+
+// ─── Selection (merge receipts / bulk delete) ───────────────────────────────
+// These read the selection store directly, so they update in the same frame as
+// the cards without re-rendering the whole Sales screen.
+
+function useSelectedSales(activities: RevenueActivity[]) {
+  const ids = useSaleSelection((s) => s.ids);
+  return useMemo(() => {
+    const sales = ids.size ? activities.filter((a) => ids.has(a.id) && a.kind === 'sale') : [];
+    const total = sales.reduce((sum, a) => sum + (Number(a.total_amount) || 0), 0);
+    return { ids, sales, total };
+  }, [activities, ids]);
+}
+
+const SalesHeader = React.memo(function SalesHeader({
+  activities,
+  subtitle,
+  onRecordSale,
+}: {
+  activities: RevenueActivity[];
+  subtitle: string;
+  onRecordSale: () => void;
+}) {
+  const { ids, sales, total } = useSelectedSales(activities);
+  const selecting = ids.size > 0;
+
+  // Android back leaves selection mode first.
+  useEffect(() => {
+    if (!selecting) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      useSaleSelection.getState().clear();
+      return true;
+    });
+    return () => sub.remove();
+  }, [selecting]);
+
+  if (selecting) {
+    const saleIds = activities.filter((a) => a.kind === 'sale').map((a) => a.id);
+    const allSelected = saleIds.length > 0 && sales.length === saleIds.length;
+    return (
+      <ScreenHeader
+        title={`${ids.size} Selected`}
+        subtitle={sales.length < 2 ? 'Select at least 2 sales to merge' : `${formatCurrency(total)} combined`}
+        left={<HeaderAction icon="x" label="Cancel" onPress={() => useSaleSelection.getState().clear()} />}
+        right={
+          <HeaderAction
+            icon={allSelected ? 'check-square' : 'check'}
+            label={allSelected ? 'Deselect' : 'Select All'}
+            onPress={() =>
+              allSelected ? useSaleSelection.getState().clear() : useSaleSelection.getState().setAll(saleIds)
+            }
+          />
+        }
+      />
+    );
+  }
+
+  return (
+    <ScreenHeader
+      title="Sales"
+      subtitle={subtitle}
+      right={
+        <>
+          <IconButton
+            icon="file-text"
+            variant="outline"
+            accessibilityLabel="Import sales from Excel or CSV"
+            onPress={() => router.push('/(app)/import-sales' as any)}
+          />
+          <IconButton
+            icon="scan"
+            variant="outline"
+            accessibilityLabel="Scan to sell"
+            onPress={() => router.push('/(app)/record-sale?scan=1')}
+          />
+          <IconButton icon="plus" variant="filled" accessibilityLabel="Record a sale" onPress={onRecordSale} />
+        </>
+      }
+    />
+  );
+});
+
+const SelectionDock = React.memo(function SelectionDock({
+  activities,
+  bottom,
+  isMerging,
+  onDelete,
+  onMerge,
+}: {
+  activities: RevenueActivity[];
+  bottom: number;
+  isMerging: boolean;
+  onDelete: () => void;
+  onMerge: () => void;
+}) {
+  const { ids, sales, total } = useSelectedSales(activities);
+  if (ids.size === 0) return null;
+
+  return (
+    <View style={[styles.floatingDock, { bottom }]}>
+      <View style={styles.dockInfo}>
+        <View style={styles.dockCountBadge}>
+          <Text style={styles.dockCountText}>{ids.size}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.dockTitle} numberOfLines={1}>
+            {ids.size === 1 ? '1 sale selected' : `${ids.size} sales selected`}
+          </Text>
+          <Text style={styles.dockSubtitle} numberOfLines={1}>
+            {formatCurrency(total)}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.dockActions}>
+        <TouchableOpacity
+          style={styles.dockDeleteButton}
+          onPress={onDelete}
+          activeOpacity={0.7}
+          accessibilityLabel="Delete selected sales"
+        >
+          <Icon name="trash-2" size={17} color="#C2412D" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.dockMergeButton, sales.length < 2 && styles.dockMergeButtonDisabled]}
+          onPress={onMerge}
+          activeOpacity={0.8}
+          disabled={isMerging}
+        >
+          {isMerging ? (
+            <ActivityIndicator size="small" color={COLORS.onAccent} />
+          ) : (
+            <>
+              <Icon name="layers" size={15} color={COLORS.onAccent} style={{ marginRight: 6 }} />
+              <Text style={styles.dockMergeText}>
+                {sales.length < 2 ? 'Select 2+ to Merge' : `Merge Receipt (${sales.length})`}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+});
+
+/** Extra room at the end of the list so the action bar never covers the last sale. */
+function SelectionSpacer() {
+  const selecting = useSaleSelection((s) => s.ids.size > 0);
+  return selecting ? <View style={{ height: 48 }} /> : null;
 }
 
 const styles = StyleSheet.create({

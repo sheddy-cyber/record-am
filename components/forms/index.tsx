@@ -233,7 +233,7 @@ export const SelectField: React.FC<SelectFieldProps> = ({
         <Icon name="chevron-down" size={17} color={COLORS.text.muted} />
       </Pressable>
 
-      <BottomSheetModal visible={open} onClose={() => setOpen(false)} title={label} maxHeight="75%">
+      <BottomSheetModal visible={open} onClose={() => setOpen(false)} title={label} maxHeight="75%" scroll={false}>
         <ScrollView style={{ flexGrow: 0 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
           <View
             style={{

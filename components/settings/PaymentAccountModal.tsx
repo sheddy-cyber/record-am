@@ -86,6 +86,16 @@ export const PaymentAccountModal: React.FC<PaymentAccountModalProps> = ({
       title={title}
       subtitle="Save for quick selection during checkout and reconciliation."
       maxHeight="88%"
+      footer={
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          <View style={{ flex: 1 }}>
+            <Button title="Cancel" variant="secondary" onPress={handleClose} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button title="Save Account" variant="accent" onPress={handleSave} loading={saving} />
+          </View>
+        </View>
+      }
     >
       <View style={{ gap: 14 }}>
         <InputField
@@ -164,20 +174,6 @@ export const PaymentAccountModal: React.FC<PaymentAccountModalProps> = ({
                 </TouchableOpacity>
               );
             })}
-          </View>
-        </View>
-
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 4 }}>
-          <View style={{ flex: 1 }}>
-            <Button title="Cancel" variant="secondary" onPress={handleClose} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              title="Save Account"
-              variant="accent"
-              onPress={handleSave}
-              loading={saving}
-            />
           </View>
         </View>
       </View>
