@@ -811,3 +811,22 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.adjust_inventory_quantity(UUID, UUID, NUMERIC) TO authenticated;
+
+-- ----------------------------------------------------------------------------
+-- 8. Live updates for the Market List
+-- ----------------------------------------------------------------------------
+-- The 20261125 migration adds tables to the realtime feed only if they exist;
+-- on databases where customer_requests was created afterwards it was skipped.
+DO $$
+BEGIN
+  IF to_regclass('public.customer_requests') IS NOT NULL THEN
+    EXECUTE 'ALTER TABLE public.customer_requests REPLICA IDENTITY FULL';
+    BEGIN
+      EXECUTE 'ALTER PUBLICATION supabase_realtime ADD TABLE public.customer_requests';
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+      WHEN undefined_object THEN NULL;
+    END;
+  END IF;
+END;
+$$;
