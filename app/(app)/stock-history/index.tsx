@@ -4,15 +4,14 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
-  Pressable,
   View,
   Text,
-  TouchableOpacity,
   RefreshControl,
   TextInput,
   ScrollView,
   StyleSheet,
 } from 'react-native';
+import { Pressable, TouchableOpacity } from '@/components/ui/touchables';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect } from 'expo-router';
 import { Icon, IconName } from '@/components/icons';

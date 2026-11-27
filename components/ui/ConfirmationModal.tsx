@@ -4,12 +4,12 @@ import {
   Animated,
   Easing,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { Pressable } from './touchables';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Icon, IconName } from '@/components/icons';
 import { COLORS, FONT, SP } from '@/constants';

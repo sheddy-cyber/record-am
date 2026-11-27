@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
 import {
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
   ViewStyle,
 } from 'react-native';
+import { Pressable, TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import Toast from 'react-native-toast-message';
 

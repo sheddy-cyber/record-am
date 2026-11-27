@@ -5,13 +5,12 @@ import {
   Text,
   ScrollView,
   SectionList,
-  TouchableOpacity,
   RefreshControl,
   TextInput,
   Modal,
-  Pressable,
   StyleSheet,
 } from 'react-native';
+import { Pressable, TouchableOpacity } from '@/components/ui/touchables';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';

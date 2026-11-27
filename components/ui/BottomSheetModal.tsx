@@ -8,13 +8,13 @@ import {
   LayoutChangeEvent,
   Modal,
   PanResponder,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
   ViewStyle,
 } from 'react-native';
+import { Pressable } from './touchables';
 import { initialWindowMetrics, SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { COLORS, FONT, SP } from '@/constants';

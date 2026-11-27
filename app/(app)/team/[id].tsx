@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Alert, ScrollView, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Alert, ScrollView, StyleSheet } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { useLocalSearchParams } from 'expo-router';
 import { Icon, IconName } from '@/components/icons';
 import { useAuthStore } from '@/store/authStore';

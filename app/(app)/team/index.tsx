@@ -4,7 +4,6 @@ import {
   Text,
   ScrollView,
   RefreshControl,
-  Pressable,
   Share,
   Alert,
   StyleSheet,
@@ -12,6 +11,7 @@ import {
   Platform,
   UIManager,
 } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { router, useFocusEffect } from 'expo-router';
 import { Icon } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

@@ -5,7 +5,8 @@
 // ============================================================
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import Toast from 'react-native-toast-message';
 import { Icon } from '@/components/icons';
 import { BottomSheetModal, Button, IconButton, PermissionDenied, Pill, PressableScale } from '@/components/ui';

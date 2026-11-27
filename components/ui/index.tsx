@@ -3,7 +3,6 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
-  Pressable,
   StyleProp,
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
   View,
   ViewStyle,
 } from 'react-native';
+import { Pressable } from './touchables';
 import { Icon, IconName } from '@/components/icons';
 import { COLORS, CURRENCY_SYMBOL, FONT, RADIUS, SP, TYPE } from '@/constants';
 import { haptics } from '@/lib/haptics';

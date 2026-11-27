@@ -5,7 +5,8 @@
 // ============================================================
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { router } from 'expo-router';
 import Toast from 'react-native-toast-message';
 import { Icon } from '@/components/icons';

@@ -8,8 +8,8 @@ import {
   StyleSheet,
   View,
   Text,
-  TouchableOpacity,
 } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

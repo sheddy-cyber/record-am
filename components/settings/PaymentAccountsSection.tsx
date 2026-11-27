@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Alert, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Text, View } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { Badge, Button, Card, SectionHeader } from '@/components/ui';
 import { COLORS, FONT, RADIUS } from '@/constants';

@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { Alert, Image, Modal, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Modal, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { Button } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import ViewShot from 'react-native-view-shot';

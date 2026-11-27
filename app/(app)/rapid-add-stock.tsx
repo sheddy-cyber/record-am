@@ -5,10 +5,10 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
   Vibration,
 } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';

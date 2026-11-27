@@ -13,10 +13,10 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   UIManager,
   View,
 } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Icon } from '@/components/icons';
 import { router, useFocusEffect } from 'expo-router';

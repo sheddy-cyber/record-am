@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Animated, Pressable, Text, View } from 'react-native';
+import { Animated, Text, View } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { Icon, IconName } from '@/components/icons';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';

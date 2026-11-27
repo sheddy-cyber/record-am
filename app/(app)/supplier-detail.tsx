@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Icon } from '@/components/icons';
 import { format } from 'date-fns';

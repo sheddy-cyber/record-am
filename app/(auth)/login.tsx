@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, Text } from 'react-native';
+import { Text } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/store/authStore';

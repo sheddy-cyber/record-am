@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, View, Text, TextInput, ScrollView, ViewStyle, TextInputProps, StyleSheet, Pressable } from 'react-native';
+import { Animated, View, Text, TextInput, ScrollView, ViewStyle, TextInputProps, StyleSheet } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { haptics } from '@/lib/haptics';
 import { Icon } from '@/components/icons';
 import { COLORS, FONT, RADIUS, SP, TYPE } from '@/constants';

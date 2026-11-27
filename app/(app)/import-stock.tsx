@@ -4,11 +4,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
   ActivityIndicator,
   Platform,
 } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { FilePickerBox, ImportStep, importStyles } from '@/components/import';
 import { Toggle } from '@/components/forms';

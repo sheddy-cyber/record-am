@@ -1,5 +1,6 @@
 import React from 'react';
-import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { Text, View, StyleSheet } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { Button, Card, Divider, SectionHeader } from '@/components/ui';
 import { InputField, SelectField } from '@/components/forms';

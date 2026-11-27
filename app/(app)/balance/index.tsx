@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState, useRef } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View, Platform } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View, Platform } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { Icon } from '@/components/icons';

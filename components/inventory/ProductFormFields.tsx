@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { InputField, SelectField, Toggle } from '@/components/forms';
 import { Card, RoleGate, SectionHeader } from '@/components/ui';

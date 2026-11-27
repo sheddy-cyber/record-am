@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { ScrollView, Text, View, TouchableOpacity, Linking, Alert, RefreshControl, StyleSheet } from 'react-native';
+import { ScrollView, Text, View, Linking, Alert, RefreshControl, StyleSheet } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { router } from 'expo-router';
 import { IconName } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

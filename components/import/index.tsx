@@ -3,7 +3,8 @@
 // ============================================================
 
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { COLORS, FONT } from '@/constants';
 

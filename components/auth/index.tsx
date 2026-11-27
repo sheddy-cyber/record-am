@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Pressable, Text, View, ViewStyle } from 'react-native';
+import { Animated, Text, View, ViewStyle } from 'react-native';
+import { Pressable } from '@/components/ui/touchables';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';
 import { KeyboardAwareScrollView } from '@/components/forms';

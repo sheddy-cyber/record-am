@@ -3,15 +3,14 @@ import {
   Alert,
   LayoutAnimation,
   Platform,
-  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   UIManager,
   View,
 } from 'react-native';
+import { Pressable, TouchableOpacity } from '@/components/ui/touchables';
 import { FlashList } from '@shopify/flash-list';
 import { Icon } from '@/components/icons';
 import { router, useFocusEffect } from 'expo-router';

@@ -6,7 +6,8 @@
 // ============================================================
 
 import React, { memo, useCallback, useRef, useState } from 'react';
-import { ActivityIndicator, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect } from 'expo-router';
 import { format } from 'date-fns';

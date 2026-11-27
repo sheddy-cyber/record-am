@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, View, Text } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { COLORS, FONT, RADIUS, CURRENCY_SYMBOL } from '@/constants';
 import { calculateWeightedAverageCost } from '@/lib/costing';

@@ -3,11 +3,11 @@ import {
   Alert,
   View,
   Text,
-  TouchableOpacity,
   TextInput,
   ScrollView,
   StyleSheet,
 } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';

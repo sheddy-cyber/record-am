@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import {
   Modal,
   Text,
-  TouchableOpacity,
   View,
   Alert,
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
 } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { Icon, IconName } from '@/components/icons';
 import { BottomSheetModal, Button } from '@/components/ui';
 import { InputField } from '@/components/forms';

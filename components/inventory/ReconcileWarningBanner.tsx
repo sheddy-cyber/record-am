@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { View, Text, Alert, StyleSheet } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { Icon } from '@/components/icons';

@@ -3,11 +3,10 @@ import {
   View,
   Text,
   ScrollView,
-  TouchableOpacity,
-  Pressable,
   RefreshControl,
   StyleSheet,
 } from 'react-native';
+import { Pressable, TouchableOpacity } from '@/components/ui/touchables';
 import { router } from 'expo-router';
 import { Icon, IconName } from '@/components/icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

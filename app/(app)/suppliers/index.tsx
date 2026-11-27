@@ -1,5 +1,6 @@
 import React, { memo, useCallback, useDeferredValue, useMemo, useState } from 'react';
-import { RefreshControl, Text, TextInput, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { RefreshControl, Text, TextInput, View, StyleSheet } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { FlashList } from '@shopify/flash-list';
 import { router, useFocusEffect } from 'expo-router';
 import { Icon } from '@/components/icons';

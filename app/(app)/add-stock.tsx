@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, Text, TouchableOpacity, RefreshControl, StyleSheet } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, InteractionManager, View, Text, RefreshControl, StyleSheet } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { router, useLocalSearchParams } from 'expo-router';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

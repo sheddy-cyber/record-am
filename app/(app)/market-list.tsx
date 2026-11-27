@@ -3,17 +3,16 @@ import {
   Alert,
   View,
   Text,
-  TouchableOpacity,
   TextInput,
   ScrollView,
   StyleSheet,
   RefreshControl,
   Modal,
-  Pressable,
   Linking,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { Pressable, TouchableOpacity } from '@/components/ui/touchables';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/icons';

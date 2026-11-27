@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, Alert, KeyboardAvoidingView, Platform, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, Alert, KeyboardAvoidingView, Platform, RefreshControl } from 'react-native';
+import { TouchableOpacity } from '@/components/ui/touchables';
 import { router } from 'expo-router';
 import { Icon } from '@/components/icons';
 import { useAuthStore } from '@/store/authStore';

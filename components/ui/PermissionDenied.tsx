@@ -1,5 +1,6 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { Text, View } from 'react-native';
+import { TouchableOpacity } from './touchables';
 import { Icon } from '@/components/icons';
 import type { Href } from 'expo-router';
 import { COLORS, FONT, RADIUS } from '@/constants';

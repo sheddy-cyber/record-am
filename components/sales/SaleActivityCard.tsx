@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, TouchableOpacity } from '@/components/ui/touchables';
 import { Icon } from '@/components/icons';
 import { format } from 'date-fns';
 import { router } from 'expo-router';
@@ -242,7 +243,6 @@ const CardBody = React.memo(function CardBody({ item, onToggleExpand, onDelete, 
     <TouchableOpacity
       style={styles.cardBody}
       activeOpacity={0.7}
-      delayPressIn={0}
       onPress={() => {
         if (useSaleSelection.getState().ids.size > 0) {
           onToggleSelect?.(item);
