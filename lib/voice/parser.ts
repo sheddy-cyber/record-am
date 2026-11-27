@@ -26,7 +26,7 @@ import {
 } from './fuzzyMatcher';
 import { getSaleUnitOption } from '@/lib/records';
 import { supabase } from '@/lib/supabase';
-import { fetchWithTimeout, GEMINI_MODEL, VoiceProxyUnavailableError, VoiceTimeoutError } from './audioService';
+import { VoiceProxyUnavailableError, VoiceTimeoutError } from './audioService';
 
 /**
  * Normalizes number phrases like "2k" -> 2000, "two" -> 2, "15,000" -> 15000
@@ -691,15 +691,10 @@ export function parseLocalVoiceCommand(
 }
 
 /**
- * AI NLU Parser with JSON Schema (Groq / Gemini / OpenAI)
+ * AI NLU Parser with JSON Schema, run by the `voice-command` server function
+ * (which holds the provider key; the app never does).
  */
-export async function parseWithAI(
-  transcription: string,
-  apiKey: string | undefined,
-  apiProvider: 'gemini' | 'groq' | 'openai' | 'proxy' = 'groq',
-  catalogProductNames?: string[],
-  signal?: AbortSignal,
-): Promise<any> {
+export async function parseWithAI(transcription: string, catalogProductNames?: string[]): Promise<any> {
   const productListPrompt =
     catalogProductNames && catalogProductNames.length > 0
       ? `\nAvailable Products in Store Catalog:\n[${catalogProductNames.join(', ')}]\nIMPORTANT: Match product names strictly or closely to one of the catalog products above.`
@@ -790,73 +785,19 @@ Rules:
 
   const PARSE_TIMEOUT_MS = 9000;
 
-  if (apiProvider === 'proxy') {
-    const invoke = supabase.functions.invoke('voice-command', {
-      body: { task: 'parse', system: systemPrompt, text: transcription },
-    });
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new VoiceTimeoutError('Understanding the command')), PARSE_TIMEOUT_MS + 3000),
-    );
-    const { data, error } = (await Promise.race([invoke, timeout])) as { data: any; error: any };
-    if (error) {
-      const status = error?.context?.status ?? error?.status;
-      if (status === 404) throw new VoiceProxyUnavailableError();
-      throw new Error(error.message || 'Could not understand the command.');
-    }
-    return typeof data?.result === 'string' ? JSON.parse(data.result) : data?.result;
-  }
-
-  if (apiProvider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-    const response = await fetchWithTimeout(
-      url,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemPrompt }] },
-          contents: [{ role: 'user', parts: [{ text: transcription }] }],
-          generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-        }),
-      },
-      PARSE_TIMEOUT_MS,
-      'Understanding the command',
-      signal,
-    );
-    if (!response.ok) throw new Error(`Gemini API error: ${response.status}`);
-    const data = await response.json();
-    return JSON.parse(data.candidates?.[0]?.content?.parts?.[0]?.text);
-  }
-
-  // OpenAI-compatible (Groq / OpenAI)
-  const endpoint =
-    apiProvider === 'groq'
-      ? 'https://api.groq.com/openai/v1/chat/completions'
-      : 'https://api.openai.com/v1/chat/completions';
-  const model = apiProvider === 'groq' ? 'openai/gpt-oss-20b' : 'gpt-4o-mini';
-
-  const response = await fetchWithTimeout(
-    endpoint,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: transcription },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-      }),
-    },
-    PARSE_TIMEOUT_MS,
-    'Understanding the command',
-    signal,
+  const invoke = supabase.functions.invoke('voice-command', {
+    body: { task: 'parse', system: systemPrompt, text: transcription },
+  });
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new VoiceTimeoutError('Understanding the command')), PARSE_TIMEOUT_MS + 3000),
   );
-  if (!response.ok) throw new Error(`${apiProvider} API error: ${response.status}`);
-  const data = await response.json();
-  return JSON.parse(data.choices?.[0]?.message?.content);
+  const { data, error } = (await Promise.race([invoke, timeout])) as { data: any; error: any };
+  if (error) {
+    const status = error?.context?.status ?? error?.status;
+    if (status === 404) throw new VoiceProxyUnavailableError();
+    throw new Error(error.message || 'Could not understand the command.');
+  }
+  return typeof data?.result === 'string' ? JSON.parse(data.result) : data?.result;
 }
 
 /**
@@ -889,8 +830,6 @@ export async function parseVoiceCommand(
   catalogProducts: Product[],
   catalogCustomers: Customer[],
   options?: {
-    apiKey?: string;
-    apiProvider?: 'gemini' | 'groq' | 'openai' | 'proxy';
     branchId?: string;
     signal?: AbortSignal;
   },
@@ -904,16 +843,10 @@ export async function parseVoiceCommand(
     };
   }
 
-  // If AI API key is configured and online, attempt AI parsing
-  if (options?.apiKey || options?.apiProvider === 'proxy') {
+  // Understand the command with the server's AI; the local engine below takes over if that fails.
+  {
     try {
-      const aiResult = await parseWithAI(
-        trimmed,
-        options.apiKey,
-        options.apiProvider || 'groq',
-        rankProductNamesForPrompt(trimmed, catalogProducts),
-        options.signal,
-      );
+      const aiResult = await parseWithAI(trimmed, rankProductNamesForPrompt(trimmed, catalogProducts));
 
       // 1. RECORD_SALE
       if (aiResult.action === 'RECORD_SALE' && aiResult.sale?.items?.length) {

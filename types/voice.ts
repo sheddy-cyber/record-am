@@ -177,5 +177,4 @@ export type VoiceAssistantState =
   | 'preview'
   | 'executing'
   | 'completed'
-  | 'error'
-  | 'needs_key';
+  | 'error';

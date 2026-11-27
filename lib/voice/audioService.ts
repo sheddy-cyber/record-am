@@ -23,19 +23,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 
-export const GEMINI_MODEL = 'gemini-2.5-flash';
-export const GROQ_STT_MODEL = 'whisper-large-v3-turbo';
-
 export interface RecordingSession {
   recorder: AudioRecorder;
   stop: () => Promise<string | null>;
   cancel: () => Promise<void>;
-}
-
-export interface SpeechKeys {
-  groqKey?: string;
-  geminiKey?: string;
-  openaiKey?: string;
 }
 
 export class VoiceTimeoutError extends Error {
@@ -47,7 +38,7 @@ export class VoiceTimeoutError extends Error {
 
 export class VoiceProxyUnavailableError extends Error {
   constructor() {
-    super('Voice service is not set up yet.');
+    super("Voice isn't available right now. Tap the keyboard button to type it instead.");
     this.name = 'VoiceProxyUnavailableError';
   }
 }
@@ -198,74 +189,6 @@ export function buildTranscriptionPrompt(productNames: string[], customerNames: 
   return prompt.replace(/,$/, '.');
 }
 
-async function transcribeWithWhisper(
-  fileUri: string,
-  apiKey: string,
-  provider: 'groq' | 'openai',
-  prompt: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  const endpoint =
-    provider === 'groq'
-      ? 'https://api.groq.com/openai/v1/audio/transcriptions'
-      : 'https://api.openai.com/v1/audio/transcriptions';
-  const form = new FormData();
-  // @ts-ignore React Native FormData file descriptor
-  form.append('file', {
-    uri: Platform.OS === 'android' ? fileUri : fileUri.replace('file://', ''),
-    name: fileUri.split('/').pop() || 'speech.m4a',
-    type: 'audio/m4a',
-  });
-  form.append('model', provider === 'groq' ? GROQ_STT_MODEL : 'whisper-1');
-  form.append('language', 'en');
-  form.append('temperature', '0');
-  form.append('response_format', 'json');
-  form.append('prompt', prompt);
-
-  const res = await fetchWithTimeout(
-    endpoint,
-    { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form },
-    15000,
-    'Transcription',
-    signal,
-  );
-  if (!res.ok) throw new Error(`Transcription failed (${res.status}). ${await res.text().catch(() => '')}`.trim());
-  const json = await res.json();
-  return String(json.text || '').trim();
-}
-
-async function transcribeWithGemini(fileUri: string, apiKey: string, prompt: string, signal?: AbortSignal): Promise<string> {
-  const audio = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-  const res = await fetchWithTimeout(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { inlineData: { mimeType: 'audio/mp4', data: audio } },
-              {
-                text: `Transcribe this shopkeeper's spoken command exactly, word for word. ${prompt} Return only the transcript.`,
-              },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0 },
-      }),
-    },
-    15000,
-    'Transcription',
-    signal,
-  );
-  if (!res.ok) throw new Error(`Transcription failed (${res.status}).`);
-  const json = await res.json();
-  const text = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  return String(text).trim().replace(/^["']|["']$/g, '');
-}
-
 /** Transcription through the `voice-command` Supabase Edge Function (keys stay on the server). */
 async function transcribeWithProxy(fileUri: string, prompt: string, signal?: AbortSignal): Promise<string> {
   const audio = await FileSystem.readAsStringAsync(fileUri, { encoding: 'base64' });
@@ -285,29 +208,16 @@ async function transcribeWithProxy(fileUri: string, prompt: string, signal?: Abo
   return String(data?.text || '').trim();
 }
 
-export function hasDirectSpeechKey(keys: SpeechKeys) {
-  return Boolean(keys.groqKey || keys.geminiKey || keys.openaiKey);
-}
-
 /**
- * Transcribes a recording. With a key on the device it calls the provider
- * directly; without one it goes through the server-side proxy.
+ * Transcribes a recording through the `voice-command` server function, which
+ * holds the speech provider's key. The app never holds a provider key.
  */
-export async function transcribeAudioFile(
-  fileUri: string,
-  keys: SpeechKeys,
-  prompt: string,
-  signal?: AbortSignal,
-): Promise<string> {
+export async function transcribeAudioFile(fileUri: string, prompt: string, signal?: AbortSignal): Promise<string> {
   if (!fileUri) return '';
   try {
     const info = await FileSystem.getInfoAsync(fileUri);
     if (!info.exists || ('size' in info && (info.size ?? 0) < 600)) return '';
   } catch {}
-
-  if (keys.groqKey) return transcribeWithWhisper(fileUri, keys.groqKey, 'groq', prompt, signal);
-  if (keys.geminiKey) return transcribeWithGemini(fileUri, keys.geminiKey, prompt, signal);
-  if (keys.openaiKey) return transcribeWithWhisper(fileUri, keys.openaiKey, 'openai', prompt, signal);
   return transcribeWithProxy(fileUri, prompt, signal);
 }
 

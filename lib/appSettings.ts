@@ -12,10 +12,10 @@ export interface AppSettings {
   voiceAssistantEnabled: boolean;
   voiceAutoConfirmSeconds: number;
   voiceTtsEnabled: boolean;
-  groqApiKey?: string;
-  geminiApiKey?: string;
-  openaiApiKey?: string;
 }
+
+/** Provider keys older versions kept on the phone. Voice now runs through the server. */
+const RETIRED_KEYS = ['groqApiKey', 'geminiApiKey', 'openaiApiKey'];
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   dailySummaryEnabled: true,
@@ -56,8 +56,8 @@ export async function getAppSettings(): Promise<AppSettings> {
     const raw = await AsyncStorage.getItem(APP_SETTINGS_STORAGE_KEY);
     if (!raw) return DEFAULT_APP_SETTINGS;
 
-    const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    return {
+    const parsed = JSON.parse(raw) as Partial<AppSettings> & Record<string, unknown>;
+    const settings: AppSettings = {
       dailySummaryEnabled: parsed.dailySummaryEnabled ?? DEFAULT_APP_SETTINGS.dailySummaryEnabled,
       dailySummaryTime: normalizeTimeInput(parsed.dailySummaryTime ?? DEFAULT_APP_SETTINGS.dailySummaryTime, DEFAULT_APP_SETTINGS.dailySummaryTime),
       autoCloseEnabled: parsed.autoCloseEnabled ?? DEFAULT_APP_SETTINGS.autoCloseEnabled,
@@ -67,10 +67,12 @@ export async function getAppSettings(): Promise<AppSettings> {
       voiceAssistantEnabled: parsed.voiceAssistantEnabled ?? DEFAULT_APP_SETTINGS.voiceAssistantEnabled,
       voiceAutoConfirmSeconds: parsed.voiceAutoConfirmSeconds ?? DEFAULT_APP_SETTINGS.voiceAutoConfirmSeconds,
       voiceTtsEnabled: parsed.voiceTtsEnabled ?? DEFAULT_APP_SETTINGS.voiceTtsEnabled,
-      groqApiKey: parsed.groqApiKey || DEFAULT_APP_SETTINGS.groqApiKey,
-      geminiApiKey: parsed.geminiApiKey,
-      openaiApiKey: parsed.openaiApiKey,
     };
+    // Wipe any provider key an older version saved on this phone.
+    if (RETIRED_KEYS.some((key) => key in parsed)) {
+      await AsyncStorage.setItem(APP_SETTINGS_STORAGE_KEY, JSON.stringify(settings)).catch(() => {});
+    }
+    return settings;
   } catch (err) {
     console.log('[appSettings] load failed:', err);
     return DEFAULT_APP_SETTINGS;

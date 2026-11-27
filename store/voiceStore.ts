@@ -12,17 +12,14 @@ import Toast from 'react-native-toast-message';
 import { VoiceAction, VoiceAssistantState } from '@/types/voice';
 import {
   buildTranscriptionPrompt,
-  hasDirectSpeechKey,
   RecordingSession,
-  SpeechKeys,
   startAudioRecording,
   stopSpeech,
   transcribeAudioFile,
-  VoiceProxyUnavailableError,
 } from '@/lib/voice/audioService';
 import { parseVoiceCommand } from '@/lib/voice/parser';
 import { executeVoiceAction } from '@/lib/voice/actionExecutor';
-import { getAppSettings, saveAppSettings } from '@/lib/appSettings';
+import { getAppSettings } from '@/lib/appSettings';
 import { haptics } from '@/lib/haptics';
 import { useBusinessStore } from './businessStore';
 import { useCustomerStore } from './customerStore';
@@ -56,7 +53,6 @@ interface VoiceStoreState {
   startListening: () => Promise<void>;
   stopListening: () => Promise<void>;
   cancelListening: () => void;
-  saveApiKeyAndTranscribe: (provider: 'groq' | 'gemini', key: string) => Promise<void>;
   processText: (text: string) => Promise<void>;
   confirmAction: () => Promise<void>;
   pauseAutoConfirm: () => void;
@@ -88,25 +84,6 @@ function abortInflight() {
   inflight = null;
 }
 
-async function readKeys(): Promise<{ keys: SpeechKeys; settings: any }> {
-  const settings: any = await getAppSettings();
-  return {
-    settings,
-    keys: {
-      groqKey: process.env.EXPO_PUBLIC_GROQ_API_KEY || settings.groqApiKey || undefined,
-      geminiKey: process.env.EXPO_PUBLIC_GEMINI_API_KEY || settings.geminiApiKey || undefined,
-      openaiKey: process.env.EXPO_PUBLIC_OPENAI_API_KEY || settings.openaiApiKey || undefined,
-    },
-  };
-}
-
-function parseProvider(keys: SpeechKeys): { apiKey?: string; apiProvider: 'gemini' | 'groq' | 'openai' | 'proxy' } {
-  if (keys.groqKey) return { apiKey: keys.groqKey, apiProvider: 'groq' };
-  if (keys.geminiKey) return { apiKey: keys.geminiKey, apiProvider: 'gemini' };
-  if (keys.openaiKey) return { apiKey: keys.openaiKey, apiProvider: 'openai' };
-  return { apiProvider: 'proxy' };
-}
-
 function vocabulary() {
   const products = useBusinessStore.getState().products;
   const customers = useCustomerStore.getState().customers;
@@ -130,7 +107,7 @@ const IDLE = {
 export const useVoiceStore = create<VoiceStoreState>((set, get) => {
   /** Turns text into a previewable action (shared by speech and typing). */
   const understand = async (text: string, mySession: number) => {
-    const { keys, settings } = await readKeys();
+    const settings = await getAppSettings();
     if (mySession !== session) return;
     const controller = new AbortController();
     inflight = controller;
@@ -139,7 +116,7 @@ export const useVoiceStore = create<VoiceStoreState>((set, get) => {
         text,
         useBusinessStore.getState().products,
         useCustomerStore.getState().customers,
-        { ...parseProvider(keys), branchId: useAuthStore.getState().currentBranch?.id, signal: controller.signal },
+        { branchId: useAuthStore.getState().currentBranch?.id, signal: controller.signal },
       );
       if (mySession !== session) return;
       if (action.type === 'UNKNOWN') {
@@ -274,22 +251,13 @@ export const useVoiceStore = create<VoiceStoreState>((set, get) => {
           return;
         }
 
-        const { keys } = await readKeys();
-        if (mySession !== session) return;
-
+        // Speech goes through the voice-command server function, which holds
+        // the provider key; no key is ever kept in the app.
         const controller = new AbortController();
         inflight = controller;
         let text = '';
         try {
-          text = await transcribeAudioFile(uri, keys, vocabulary(), controller.signal);
-        } catch (err) {
-          if (err instanceof VoiceProxyUnavailableError && !hasDirectSpeechKey(keys)) {
-            if (mySession === session) {
-              set({ state: 'needs_key', lastAudioUri: uri, error: null });
-            }
-            return;
-          }
-          throw err;
+          text = await transcribeAudioFile(uri, vocabulary(), controller.signal);
         } finally {
           if (inflight === controller) inflight = null;
         }
@@ -305,34 +273,6 @@ export const useVoiceStore = create<VoiceStoreState>((set, get) => {
         if (mySession !== session) return;
         haptics.error();
         set({ state: 'error', error: err?.message || 'Something went wrong while processing your voice.' });
-      }
-    },
-
-    saveApiKeyAndTranscribe: async (provider, key) => {
-      const trimmed = key.trim();
-      if (!trimmed) return;
-      await saveAppSettings(provider === 'groq' ? { groqApiKey: trimmed } : { geminiApiKey: trimmed });
-
-      const uri = get().lastAudioUri;
-      const mySession = session;
-      if (!uri) {
-        set({ state: 'idle', error: null });
-        return;
-      }
-      set({ state: 'processing', error: null });
-      try {
-        const keys: SpeechKeys = provider === 'groq' ? { groqKey: trimmed } : { geminiKey: trimmed };
-        const text = await transcribeAudioFile(uri, keys, vocabulary());
-        if (mySession !== session) return;
-        if (!text) {
-          set({ state: 'error', error: "I couldn't hear any words in that recording. Tap the mic to try again." });
-          return;
-        }
-        set({ transcription: text, lastAudioUri: null });
-        await understand(text, mySession);
-      } catch (err: any) {
-        if (mySession !== session) return;
-        set({ state: 'error', error: err?.message || 'That key did not work. Check it and try again.' });
       }
     },
 
@@ -357,7 +297,7 @@ export const useVoiceStore = create<VoiceStoreState>((set, get) => {
       const mySession = session;
       set({ state: 'executing', isAutoConfirmPaused: true });
       try {
-        const { settings } = await readKeys();
+        const settings = await getAppSettings();
         const result = await executeVoiceAction(action, settings.voiceTtsEnabled ?? true);
         if (mySession !== session) return;
         haptics.success();

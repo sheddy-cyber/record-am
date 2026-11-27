@@ -51,9 +51,7 @@ export default function SettingsScreen() {
   // Voice Assistant Settings
   const [voiceAssistantEnabled, setVoiceAssistantEnabled] = useState(true);
   const [voiceTtsEnabled, setVoiceTtsEnabled] = useState(true);
-  const [voiceAutoConfirmSeconds, setVoiceAutoConfirmSeconds] = useState('5');
-  const [groqApiKey, setGroqApiKey] = useState('');
-  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [voiceAutoConfirmSeconds, setVoiceAutoConfirmSeconds] = useState('0');
   const [voiceSaving, setVoiceSaving] = useState(false);
 
   const onRefresh = useCallback(async () => {
@@ -67,9 +65,7 @@ export default function SettingsScreen() {
       setInventoryPurchaseSyncEnabled(settings.inventoryPurchaseSyncEnabled);
       setVoiceAssistantEnabled(settings.voiceAssistantEnabled ?? true);
       setVoiceTtsEnabled(settings.voiceTtsEnabled ?? true);
-      setVoiceAutoConfirmSeconds(String(settings.voiceAutoConfirmSeconds ?? 5));
-      setGroqApiKey(settings.groqApiKey ?? '');
-      setGeminiApiKey(settings.geminiApiKey ?? '');
+      setVoiceAutoConfirmSeconds(String(settings.voiceAutoConfirmSeconds ?? 0));
       if (currentBusiness) {
         await usePaymentAccountStore.getState().fetchAccounts(currentBusiness.id);
       }
@@ -97,9 +93,7 @@ export default function SettingsScreen() {
       setInventoryPurchaseSyncEnabled(settings.inventoryPurchaseSyncEnabled);
       setVoiceAssistantEnabled(settings.voiceAssistantEnabled ?? true);
       setVoiceTtsEnabled(settings.voiceTtsEnabled ?? true);
-      setVoiceAutoConfirmSeconds(String(settings.voiceAutoConfirmSeconds ?? 5));
-      setGroqApiKey(settings.groqApiKey ?? '');
-      setGeminiApiKey(settings.geminiApiKey ?? '');
+      setVoiceAutoConfirmSeconds(String(settings.voiceAutoConfirmSeconds ?? 0));
     };
 
     loadSettings();
@@ -232,9 +226,8 @@ export default function SettingsScreen() {
       await saveAppSettings({
         voiceAssistantEnabled,
         voiceTtsEnabled,
-        voiceAutoConfirmSeconds: parseInt(voiceAutoConfirmSeconds, 10) || 5,
-        groqApiKey: groqApiKey.trim() || undefined,
-        geminiApiKey: geminiApiKey.trim() || undefined,
+        // 0 means "always tap Save"; an empty or invalid entry counts as 0 too.
+        voiceAutoConfirmSeconds: Math.max(0, parseInt(voiceAutoConfirmSeconds, 10) || 0),
       });
 
       Toast.show({
@@ -535,7 +528,7 @@ export default function SettingsScreen() {
           </Card>
 
           <Card>
-            <SectionHeader title="Voice Control (Siri / Alexa)" />
+            <SectionHeader title="Voice Control" />
             <Toggle
               label="Enable Voice Assistant"
               description="Show voice control button to record sales, stock, debt, and expenses by voice."
@@ -552,25 +545,9 @@ export default function SettingsScreen() {
               label="Auto-Save Countdown (seconds)"
               value={voiceAutoConfirmSeconds}
               onChangeText={setVoiceAutoConfirmSeconds}
-              placeholder="5"
+              placeholder="0"
               keyboardType="numeric"
               hint="Seconds to wait before automatically saving a parsed voice command (0 for manual only)."
-            />
-            <InputField
-              label="Groq Whisper API Key (Optional)"
-              value={groqApiKey}
-              onChangeText={setGroqApiKey}
-              placeholder="gsk_..."
-              hint="Free, ultra-fast cloud speech-to-text. Leave blank to use local typing/commands."
-              secureTextEntry
-            />
-            <InputField
-              label="Gemini API Key (Optional)"
-              value={geminiApiKey}
-              onChangeText={setGeminiApiKey}
-              placeholder="AIza..."
-              hint="Advanced natural language parsing for Nigerian English & Pidgin slang."
-              secureTextEntry
             />
             <Button
               title="Save Voice Settings"

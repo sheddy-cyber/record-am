@@ -8,7 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Icon } from '@/components/icons';
 import { BottomSheetModal } from '@/components/ui/BottomSheetModal';
-import { Button, SegmentedControl } from '@/components/ui';
+import { Button } from '@/components/ui';
 import { COLORS, FONT, TYPE } from '@/constants';
 import { openVoiceActionInForm } from '@/lib/voice/handoff';
 import { haptics } from '@/lib/haptics';
@@ -35,14 +35,10 @@ export function VoiceControlModal() {
   const autoConfirmSeconds = useVoiceStore((s) => s.autoConfirmSeconds);
   const autoPaused = useVoiceStore((s) => s.isAutoConfirmPaused);
 
-  const { close, startListening, stopListening, processText, confirmAction, pauseAutoConfirm, saveApiKeyAndTranscribe } =
-    useVoiceStore.getState();
+  const { close, startListening, stopListening, processText, confirmAction, pauseAutoConfirm } = useVoiceStore.getState();
 
   const [typing, setTyping] = useState(false);
   const [text, setText] = useState('');
-  const [provider, setProvider] = useState<'groq' | 'gemini'>('groq');
-  const [apiKey, setApiKey] = useState('');
-  const [savingKey, setSavingKey] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const exampleIndex = useRef(Math.floor(Math.random() * EXAMPLES.length));
 
@@ -80,7 +76,6 @@ export function VoiceControlModal() {
   const previewing = (state === 'preview' || state === 'executing') && action && action.type !== 'UNKNOWN';
   const done = state === 'completed';
   const failed = state === 'error';
-  const needsKey = state === 'needs_key';
 
   const header = (() => {
     if (listening) return { title: 'Listening', subtitle: heardSpeech ? 'Pause when you’re done. I’ll stop on my own.' : 'Say what happened, in your own words.' };
@@ -88,7 +83,6 @@ export function VoiceControlModal() {
     if (previewing) return { title: 'Check, then save', subtitle: 'Nothing is recorded until you tap Save.' };
     if (done) return { title: 'Saved', subtitle: undefined };
     if (failed) return { title: 'Let’s try that again', subtitle: undefined };
-    if (needsKey) return { title: 'Set up voice', subtitle: 'A one-time step before your first command.' };
     return { title: 'Voice', subtitle: 'Tap the mic and speak.' };
   })();
 
@@ -129,7 +123,7 @@ export function VoiceControlModal() {
           onPress={() => void confirmAction()}
         />
       </View>
-    ) : !done && !needsKey ? (
+    ) : !done ? (
       <View style={styles.controls}>
         <Pressable
           onPress={() => {
@@ -248,48 +242,6 @@ export function VoiceControlModal() {
           </View>
         ) : null}
 
-        {/* ── One-time setup ───────────────────────────────────────── */}
-        {needsKey ? (
-          <View style={{ gap: 14 }}>
-            <Text style={styles.body}>
-              Voice turns speech into text with a speech service. Ask whoever manages Record Am for your business to switch on the
-              voice service, or paste your own free key below.
-            </Text>
-            <SegmentedControl
-              value={provider}
-              onChange={setProvider}
-              options={[
-                { value: 'groq', label: 'Groq (recommended)' },
-                { value: 'gemini', label: 'Google Gemini' },
-              ]}
-            />
-            <TextInput
-              value={apiKey}
-              onChangeText={setApiKey}
-              placeholder={provider === 'groq' ? 'gsk_…' : 'AIza…'}
-              placeholderTextColor={COLORS.text.faint}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              style={styles.keyInput}
-            />
-            <Button
-              title="Save and continue"
-              loading={savingKey}
-              disabled={!apiKey.trim()}
-              onPress={async () => {
-                setSavingKey(true);
-                try {
-                  await saveApiKeyAndTranscribe(provider, apiKey);
-                  setApiKey('');
-                } finally {
-                  setSavingKey(false);
-                }
-              }}
-            />
-          </View>
-        ) : null}
-
         {/* ── Typed command ────────────────────────────────────────── */}
         {typing ? (
           <View style={{ marginTop: previewing || failed ? 14 : 0, gap: 10 }}>
@@ -364,17 +316,6 @@ const styles = StyleSheet.create({
   examplesTitle: { fontSize: 12.5, fontFamily: FONT.medium, color: COLORS.text.muted, marginBottom: 4 },
   example: { paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.border },
   exampleText: { fontSize: 15, fontFamily: FONT.regular, color: COLORS.text.primary },
-  keyInput: {
-    height: 50,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    backgroundColor: COLORS.card,
-    paddingHorizontal: 14,
-    fontSize: 15,
-    fontFamily: FONT.regular,
-    color: COLORS.text.primary,
-  },
   typeRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
