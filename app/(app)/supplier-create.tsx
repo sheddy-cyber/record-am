@@ -4,7 +4,8 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useAuthStore } from '@/store/authStore';
-import { useSupplierStore } from '@/store/supplierStore';
+import { findExistingSupplier, useSupplierStore } from '@/store/supplierStore';
+import { duplicateSupplierMessage } from '@/lib/supplierNames';
 import { Button, PermissionDenied } from '@/components/ui';
 import { InputField, KeyboardAwareScrollView } from '@/components/forms';
 import { HeaderAction, ScreenHeader, ScreenShell } from '@/components/layout';
@@ -44,6 +45,19 @@ export default function SupplierCreateScreen() {
       return;
     }
 
+    const existing = await findExistingSupplier(currentBusiness.id, name);
+    if (existing) {
+      Alert.alert('Supplier already exists', duplicateSupplierMessage(existing.name), [
+        { text: 'Change name', style: 'cancel' },
+        {
+          text: `Open ${existing.name}`,
+          onPress: () =>
+            router.replace({ pathname: '/(app)/supplier-detail', params: { supplierId: existing.id } }),
+        },
+      ]);
+      return;
+    }
+
     const supplier = await createSupplier({
       business_id: currentBusiness.id,
       name: name.trim(),
@@ -54,7 +68,7 @@ export default function SupplierCreateScreen() {
     });
 
     if (!supplier) {
-      Alert.alert('Error', 'Failed to add supplier.');
+      Alert.alert('Could not add supplier', useSupplierStore.getState().error || 'Failed to add supplier.');
       return;
     }
 

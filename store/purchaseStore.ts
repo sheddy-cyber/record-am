@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { supabase } from '@/lib/supabase';
 import { PaymentStatus, Product, Purchase, PurchaseItem, StockMovement, Supplier, SupplierDebt } from '@/types';
 import { useBusinessStore } from '@/store/businessStore';
+import { useSupplierStore } from '@/store/supplierStore';
+import { cleanSupplierName, resolvePurchaseSupplier } from '@/lib/supplierNames';
 import { calculateWeightedAverageCost } from '@/lib/costing';
 import { getAppSettings } from '@/lib/appSettings';
 import {
@@ -17,6 +19,14 @@ import {
 } from '@/lib/offlineStore';
 
 export const roundAmount = (value: number) => Number(value.toFixed(2));
+
+/** Suppliers this device knows for the business: the loaded list plus the offline cache. */
+async function knownSuppliersFor(businessId: string): Promise<Supplier[]> {
+  const loaded = useSupplierStore.getState().suppliers.filter((s) => s.business_id === businessId);
+  const cached = await readCachedRows<Supplier>({ businessId }, 'suppliers').catch(() => [] as Supplier[]);
+  const seen = new Set(loaded.map((s) => s.id));
+  return [...loaded, ...cached.filter((s) => !seen.has(s.id))];
+}
 
 const normalizeProductName = (value: string) =>
   value.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -764,12 +774,25 @@ async function writePurchaseRecordOffline(
     existingPurchase = usePurchaseStore.getState().purchases.find((p) => p.id === params.purchaseId) ?? null;
   }
 
-  const supplierName = params.supplierName.trim();
-  const hasSupplier = supplierName.length > 0;
+  const typedSupplierName = cleanSupplierName(params.supplierName);
+  const hasSupplier = typedSupplierName.length > 0;
   if (!hasSupplier && totals.amountOwed > 0) {
     throw new Error('Add the supplier you owe, or mark the purchase as paid in full.');
   }
-  const supplierId = hasSupplier ? params.supplierId || existingPurchase?.supplier_id || createLocalId() : undefined;
+  // Reuse the supplier that already has this name (any case or spacing) instead of making a copy.
+  const resolvedSupplier = hasSupplier
+    ? resolvePurchaseSupplier({
+        known: await knownSuppliersFor(params.businessId),
+        typedName: typedSupplierName,
+        businessId: params.businessId,
+        requestedId: params.supplierId,
+        previousId: existingPurchase?.supplier_id,
+        createId: createLocalId,
+      })
+    : null;
+  const supplierId = resolvedSupplier?.id;
+  const supplierName = resolvedSupplier?.name ?? typedSupplierName;
+  const knownSupplier = resolvedSupplier?.existing;
   const purchaseNumber =
     existingPurchase?.purchase_number || params.purchaseNumber || newPurchaseLink().purchaseNumber;
 
@@ -779,7 +802,7 @@ async function writePurchaseRecordOffline(
         business_id: params.businessId,
         name: supplierName,
         is_active: true,
-        created_at: existingPurchase?.supplier?.created_at || timestamp,
+        created_at: knownSupplier?.created_at || existingPurchase?.supplier?.created_at || timestamp,
         updated_at: timestamp,
       }
     : null;

@@ -74,13 +74,17 @@ export default function SupplierEditScreen() {
       return;
     }
 
-    await updateSupplier(supplier.id, {
+    const saved = await updateSupplier(supplier.id, {
       name: name.trim(),
       phone: phone.trim() || undefined,
       email: email.trim() || undefined,
       address: address.trim() || undefined,
       notes: notes.trim() || undefined,
     });
+    if (!saved) {
+      Alert.alert('Could not update supplier', useSupplierStore.getState().error || 'Please try again.');
+      return;
+    }
 
     Toast.show({ type: 'success', text1: 'Supplier updated' });
     closeScreen();

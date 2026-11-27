@@ -169,6 +169,8 @@ export interface Supplier {
   address?: string;
   notes?: string;
   is_active: boolean;
+  /** Set when this was a duplicate folded into another supplier (it is then inactive). */
+  merged_into_id?: string | null;
   created_at: string;
   updated_at: string;
 }

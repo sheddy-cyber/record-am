@@ -9,6 +9,28 @@ import {
   upsertCachedRows,
 } from '@/lib/offlineStore';
 import { fetchAllPages, hasArrayChanged, reconcileList } from '@/lib/storeUtils';
+import { cleanSupplierName, duplicateSupplierMessage, findSupplierByName } from '@/lib/supplierNames';
+
+/**
+ * The live supplier in this business with the same name (case and spacing
+ * ignored), looking at the loaded list and this device's cache. The database
+ * enforces the same rule, so suppliers made on another device are caught there.
+ */
+export async function findExistingSupplier(
+  businessId: string,
+  name: string,
+  excludeId?: string,
+): Promise<Supplier | undefined> {
+  const options = { businessId, excludeId };
+  const inMemory = findSupplierByName(useSupplierStore.getState().suppliers, name, options);
+  if (inMemory) return inMemory;
+  try {
+    const cached = await readCachedRows<Supplier>({ businessId }, 'suppliers');
+    return findSupplierByName(cached, name, options);
+  } catch {
+    return undefined;
+  }
+}
 
 export interface SupplierWithStats extends Supplier {
   total_purchased: number;
@@ -34,7 +56,8 @@ interface SupplierState {
   hydrateCache: (businessId: string) => Promise<void>;
   fetchSupplierDetail: (supplierId: string, businessId: string) => Promise<void>;
   createSupplier: (data: Partial<Supplier>) => Promise<Supplier | null>;
-  updateSupplier: (id: string, data: Partial<Supplier>) => Promise<void>;
+  /** False when the change was refused (e.g. the new name is another supplier's); see `error`. */
+  updateSupplier: (id: string, data: Partial<Supplier>) => Promise<boolean>;
   deleteSupplier: (id: string) => Promise<void>;
   setSelectedSupplier: (supplier: SupplierWithStats | null) => void;
   reset: () => void;
@@ -257,15 +280,20 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
   createSupplier: async (data) => {
     set({ isSaving: true, error: null });
     try {
-      if (!data.business_id || !data.name) {
+      const name = cleanSupplierName(data.name);
+      if (!data.business_id || !name) {
         throw new Error('Supplier business and name are required.');
+      }
+      const existing = await findExistingSupplier(data.business_id, name);
+      if (existing) {
+        throw new Error(duplicateSupplierMessage(existing.name));
       }
 
       const timestamp = nowIso();
       const supplier: Supplier = {
         id: data.id ?? createLocalId(),
         business_id: data.business_id,
-        name: data.name,
+        name,
         phone: data.phone,
         email: data.email,
         address: data.address,
@@ -313,6 +341,13 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
       const targetSupplier = get().suppliers.find((s) => s.id === id);
       const businessId = targetSupplier?.business_id;
 
+      if (data.name !== undefined) {
+        patch.name = cleanSupplierName(data.name);
+        if (!patch.name) throw new Error('Supplier name is required.');
+        const clash = businessId ? await findExistingSupplier(businessId, patch.name, id) : undefined;
+        if (clash) throw new Error(duplicateSupplierMessage(clash.name));
+      }
+
       set((state) => ({
         suppliers: state.suppliers.map((s) =>
           s.id === id ? { ...s, ...patch } : s
@@ -338,8 +373,10 @@ export const useSupplierStore = create<SupplierState>((set, get) => ({
           description: `Sync supplier update`,
         },
       ]);
+      return true;
     } catch (err: any) {
       set({ error: err.message });
+      return false;
     } finally {
       set({ isSaving: false });
     }
