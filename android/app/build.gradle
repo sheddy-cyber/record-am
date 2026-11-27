@@ -81,6 +81,20 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+/**
+ * Release signing details, read from Gradle properties (for example
+ * ~/.gradle/gradle.properties) or environment variables. Never commit them.
+ */
+def signingValue = { String name -> findProperty(name) ?: System.getenv(name) }
+def releaseSigning = [
+    storeFile    : signingValue('RECORDAM_UPLOAD_STORE_FILE') ?: 'release.keystore',
+    storePassword: signingValue('RECORDAM_UPLOAD_STORE_PASSWORD'),
+    keyAlias     : signingValue('RECORDAM_UPLOAD_KEY_ALIAS'),
+    keyPassword  : signingValue('RECORDAM_UPLOAD_KEY_PASSWORD'),
+]
+releaseSigning.complete = releaseSigning.storePassword && releaseSigning.keyAlias &&
+    releaseSigning.keyPassword && file(releaseSigning.storeFile).exists()
+
 android {
     ndkVersion rootProject.ext.ndkVersion
 
@@ -108,11 +122,20 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        release {
-            storeFile file('release.keystore')
-            storePassword 'recordam123'
-            keyAlias 'recordam'
-            keyPassword 'recordam123'
+        // Release signing details are never kept in the repo. Put them in
+        // ~/.gradle/gradle.properties (outside the project) or set them as
+        // environment variables with the same names:
+        //   RECORDAM_UPLOAD_STORE_FILE      (path, relative to android/app)
+        //   RECORDAM_UPLOAD_STORE_PASSWORD
+        //   RECORDAM_UPLOAD_KEY_ALIAS
+        //   RECORDAM_UPLOAD_KEY_PASSWORD
+        if (releaseSigning.complete) {
+            release {
+                storeFile file(releaseSigning.storeFile)
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
         }
     }
     buildTypes {
@@ -122,7 +145,15 @@ android {
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.release
+            if (releaseSigning.complete) {
+                signingConfig signingConfigs.release
+            } else {
+                // No release key on this machine: sign with the debug key so
+                // local release builds still install. Such a build cannot be
+                // published.
+                logger.warn("Record Am: release signing details not found, signing the release build with the debug key.")
+                signingConfig signingConfigs.debug
+            }
             def enableShrinkResources = findProperty('android.enableShrinkResourcesInReleaseBuilds') ?: 'false'
             shrinkResources enableShrinkResources.toBoolean()
             minifyEnabled enableMinifyInReleaseBuilds

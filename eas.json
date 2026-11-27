@@ -7,11 +7,7 @@
       "android": {
         "buildType": "apk",
         "architecture": "armeabi-v7a",
-        "autoIncrement": true,
-        "keystorePath": "android/app/release.keystore",
-        "keystorePassword": "recordam123",
-        "keyAlias": "recordam",
-        "keyPassword": "recordam123"
+        "autoIncrement": true
       }
     },
     "preview": {
