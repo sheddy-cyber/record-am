@@ -8,6 +8,7 @@ import { supabase } from './supabase';
 
 import { useNotificationStore, NotificationType } from '@/store/notificationStore';
 import { useBusinessStore } from '@/store/businessStore';
+import { describeStockBaseline, planStockAlerts, StockAlertMap } from '@/lib/stockAlerts';
 
 // ─────────────────────────────────────────────────────────────────
 // EXPO GO GUARD
@@ -167,6 +168,33 @@ export async function scheduleLowStockNotification(
   } catch (err) {}
 }
 
+/** One stock message for a whole branch, used instead of a burst of per-product alerts. */
+export async function scheduleStockSummaryNotification(title: string, body: string, branchId: string) {
+  try {
+    await useNotificationStore.getState().addNotification({
+      title,
+      body,
+      type: 'low_stock',
+      actionRoute: '/(app)/(tabs)/_inventory',
+      data: { summary: true, branchId },
+    });
+  } catch (_) {}
+
+  if (isExpoGo()) return;
+  try {
+    await ensureNotificationChannel();
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+        data: { type: 'low_stock', summary: true, branchId, actionRoute: '/(app)/(tabs)/_inventory' },
+        sound: true,
+      },
+      trigger: Platform.OS === 'android' ? { channelId: 'record-am' } : null,
+    });
+  } catch (err) {}
+}
+
 export async function scheduleDebtReminderNotification(
   customerName: string,
   balance: number,
@@ -306,14 +334,16 @@ export async function checkAndNotifyLowStock(businessId: string, branchId: strin
 async function performLowStockCheck(businessId: string, branchId: string) {
   try {
     const storageKey = `record-am:last-low-stock-alert:${businessId}:${branchId}`;
-    let alertMap: Record<string, number> = {};
+    // null = this device has never checked this branch (first check is a silent baseline)
+    let alertMap: StockAlertMap | null = null;
     try {
       const raw = await AsyncStorage.getItem(storageKey);
       if (raw) {
-        alertMap = JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') alertMap = parsed;
       }
     } catch (_) {
-      alertMap = {};
+      alertMap = null;
     }
 
     // Inspect memory store first, fallback to Supabase query, fallback to offline cache
@@ -360,55 +390,28 @@ async function performLowStockCheck(businessId: string, branchId: string) {
 
     if (!products || products.length === 0) return;
 
-    let hasChanged = false;
+    // Products with no stock record at this branch (e.g. a branch that was
+    // just added) are "not stocked yet", not out of stock, and the first check
+    // of a branch on this device is summarised in one message instead of one
+    // alert per product. See lib/stockAlerts.ts.
+    const plan = planStockAlerts(products, branchId, alertMap);
 
-    for (const product of products) {
-      if (product.is_service || product.is_active === false) {
-        if (alertMap[product.id] !== undefined) {
-          delete alertMap[product.id];
-          hasChanged = true;
-        }
-        continue;
-      }
-
-      const inv = (product.inventory as any[])?.find(
-        (i: any) => i.branch_id === branchId,
-      );
-      const qty = inv?.quantity ?? 0;
-      const reorderLevel = typeof product.reorder_level === 'number' ? product.reorder_level : 5;
-      const lastAlertedQty = alertMap[product.id];
-
-      if (qty <= reorderLevel) {
-        if (lastAlertedQty === undefined) {
-          // Initial alert: hits low or out of stock for the first time
-          await scheduleLowStockNotification(product.name, qty, product.unit, product.id);
-          alertMap[product.id] = qty;
-          hasChanged = true;
-        } else if (qty < lastAlertedQty) {
-          // Stock has further depleted!
-          await scheduleLowStockNotification(product.name, qty, product.unit, product.id);
-          alertMap[product.id] = qty;
-          hasChanged = true;
-        } else if (qty > lastAlertedQty) {
-          // Partially restocked, but still <= reorderLevel
-          // Update tracking silently without chiming
-          alertMap[product.id] = qty;
-          hasChanged = true;
-        }
-        // If qty === lastAlertedQty: do nothing (SILENT, no chime)
-      } else {
-        // Healthy stock (above reorder level). Reset alert state
-        if (lastAlertedQty !== undefined) {
-          delete alertMap[product.id];
-          hasChanged = true;
-        }
-        // Action taken to restock or resolve low stock: mark notification as read
-        await useNotificationStore.getState().markLowStockAsRead(product.id, product.name);
-      }
+    for (const { product, quantity } of plan.alerts) {
+      await scheduleLowStockNotification(product.name, quantity, product.unit, product.id);
+    }
+    for (const product of plan.restocked) {
+      // Back above the reorder level: mark its old alerts as read
+      await useNotificationStore.getState().markLowStockAsRead(product.id, product.name);
     }
 
-    if (hasChanged) {
-      await AsyncStorage.setItem(storageKey, JSON.stringify(alertMap));
+    if (plan.changed) {
+      await AsyncStorage.setItem(storageKey, JSON.stringify(plan.nextMap));
+    }
+
+    if (plan.baseline) {
+      const branchName = useBusinessStore.getState().branches.find((b) => b.id === branchId)?.name;
+      const summary = describeStockBaseline(plan.baseline, branchName);
+      if (summary) await scheduleStockSummaryNotification(summary.title, summary.body, branchId);
     }
   } catch (err) {
     console.log('[notifications] checkAndNotifyLowStock error:', err);
