@@ -62,9 +62,12 @@ export function BrandGlyph({ size = 24, color = PALETTE.clay }: { size?: number;
 export function BrandMark({
   size = 48,
   tone = 'clay',
+  hideDot = false,
 }: {
   size?: number;
   tone?: 'clay' | 'ink' | 'paper';
+  /** Leave out the full stop (the launch splash animates it separately). */
+  hideDot?: boolean;
   /** @deprecated */
   style?: unknown;
   /** @deprecated */
@@ -85,7 +88,9 @@ export function BrandMark({
         strokeWidth={11}
         strokeLinecap="round"
       />
-      <Circle cx={62.5} cy={64.5} r={6.8} fill={fg} transform="translate(50 52) scale(1.18) translate(-50 -52)" />
+      {hideDot ? null : (
+        <Circle cx={62.5} cy={64.5} r={6.8} fill={fg} transform="translate(50 52) scale(1.18) translate(-50 -52)" />
+      )}
     </Svg>
   );
 }

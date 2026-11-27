@@ -3,6 +3,7 @@
  * splash mark, notification icon, favicon) from the vector mark defined below.
  *
  *   npm i --no-save @resvg/resvg-js sharp && node scripts/generate-brand-assets.js
+ *   node scripts/generate-brand-assets.js --splash   # splash images only
  *
  * The same geometry is used by <BrandMark /> in components/brand.
  */
@@ -54,9 +55,48 @@ async function write(file, buffer) {
   console.log('wrote', path.relative(process.cwd(), file));
 }
 
+// The splash tile is shown at this size (dp/pt) on every platform; the in-app
+// splash (components/brand/BrandSplash.tsx) draws it at the same size.
+const SPLASH_TILE_DP = 112;
+
+// A transparent canvas with the tile centred on it.
+const centredTile = (tileBody, canvasW, canvasH, tileSize) => {
+  const k = tileSize / 100;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${canvasW}" height="${canvasH}" viewBox="0 0 ${canvasW} ${canvasH}">` +
+    `<g transform="translate(${(canvasW - tileSize) / 2} ${(canvasH - tileSize) / 2}) scale(${k})">${tileBody}</g></svg>`;
+};
+
+async function writeSplash(root, assets, tile) {
+  // expo-splash-screen "image": the tile alone; app.json imageWidth sets its size.
+  await write(path.join(assets, 'splash-icon.png'), png(svg(tile, 1024), 1024));
+  // Legacy "splash.image" (Expo Go), drawn "contain" over the whole screen:
+  // the tile small in the middle of a phone-shaped canvas.
+  await write(path.join(assets, 'splash.png'), png(centredTile(tile, 1284, 2778, 380), 1284));
+
+  // Android 12+ scales the splash drawable to its 288dp icon slot and shows only
+  // the centre circle (192dp across). So the drawable is a 288dp canvas with the
+  // tile small in the middle; nothing is enlarged or cropped.
+  const res = path.join(root, 'android/app/src/main/res');
+  if (!fs.existsSync(res)) return;
+  const densities = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
+  for (const [d, k] of Object.entries(densities)) {
+    const canvas = Math.round(288 * k);
+    const tilePx = Math.round(SPLASH_TILE_DP * k);
+    await write(
+      path.join(res, `drawable-${d}/splashscreen_logo.png`),
+      png(centredTile(tile, canvas, canvas, tilePx), canvas),
+    );
+  }
+}
+
 async function main() {
   const root = path.resolve(__dirname, '..');
   const assets = path.join(root, 'assets');
+  if (process.argv.includes('--splash')) {
+    const tile = `<path d="${squirclePath(100)}" fill="${CLAY}"/>${glyph(PAPER, 1.18)}`;
+    await writeSplash(root, assets, tile);
+    return;
+  }
 
   // Vector sources (kept for design hand-off).
   const tile = `<path d="${squirclePath(100)}" fill="${CLAY}"/>${glyph(PAPER, 1.18)}`;
@@ -71,16 +111,13 @@ async function main() {
   await write(path.join(assets, 'adaptive-icon.png'), png(adaptive, 1024));
   // Notification icon: white silhouette on transparent.
   await write(path.join(assets, 'notification-icon.png'), png(svg(glyph('#FFFFFF', 1.25), 96), 96));
-  // Splash: the tile, centred by the native splash screen.
-  await write(path.join(assets, 'splash.png'), png(svg(tile, 1024), 512));
+  await writeSplash(root, assets, tile);
 
   // Native Android resources (the project is prebuilt, so update them directly).
   const res = path.join(root, 'android/app/src/main/res');
   if (fs.existsSync(res)) {
     const densities = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
     for (const [d, k] of Object.entries(densities)) {
-      const splash = png(svg(tile, 1024), Math.round(96 * k)); // shown inside the 240dp splash icon circle
-      await write(path.join(res, `drawable-${d}/splashscreen_logo.png`), splash);
       if (sharp) {
         const legacy = png(svg(`<path d="${squirclePath(100)}" fill="${CLAY}"/>${glyph(PAPER, 1.18)}`, 1024), Math.round(48 * k));
         const round = png(svg(`<circle cx="50" cy="50" r="50" fill="${CLAY}"/>${glyph(PAPER, 1.05)}`, 1024), Math.round(48 * k));

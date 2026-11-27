@@ -38,6 +38,15 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 112,
+          "resizeMode": "contain",
+          "backgroundColor": "#F5F3EE"
+        }
+      ],
       "expo-font",
       "expo-secure-store",
       "@react-native-community/datetimepicker",

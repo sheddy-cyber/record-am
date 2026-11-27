@@ -12,6 +12,7 @@ import { useDebtStore } from '@/store/debtStore';
 import { useSaleStore } from '@/store/saleStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useNotificationStore } from '@/store/notificationStore';
+import { useSplashStore } from '@/store/splashStore';
 import { canViewFinancialData, hasPermission } from '@/lib/permissions';
 import { readCachedRows, replaceCachedRows } from '@/lib/offlineStore';
 
@@ -103,8 +104,12 @@ function Bootloader({ children }: { children: React.ReactNode }) {
     };
   }, [canViewCosts, canViewPurchases, businessId, branchId, userId]);
 
+  useEffect(() => {
+    if (isBooted) useSplashStore.getState().markBooted();
+  }, [isBooted]);
+
   if (!isBooted) {
-    // Show nothing or a splash screen equivalent while cache reads (should be imperceptible)
+    // Covered by the launch splash on first open; only seen when re-booting.
     return <LoadingScreen />;
   }
 

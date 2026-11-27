@@ -19,10 +19,13 @@ import { COLORS, FONT, FONT_ASSETS } from '@/constants';
 import { GlobalDialog } from '@/components/ui';
 import { Icon } from '@/components/icons';
 import { VoiceControlModal } from '@/components/voice';
+import { BrandSplash } from '@/components/brand/BrandSplash';
+import { useSplashStore } from '@/store/splashStore';
 import '@/lib/alertBridge';
 import '@/lib/devTools';
 
-// Keep the native splash screen visible until our JS AnimatedSplashScreen renders
+// Keep the native splash up until the in-app splash (BrandSplash) is on screen;
+// it hides the native one and takes over seamlessly.
 SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 const isExpoGo = Constants.executionEnvironment === 'storeClient';
@@ -142,16 +145,19 @@ const toastConfig = {
 
 export default function RootLayout() {
   const { setSession, initialize, currentBusiness, currentBranch, user } = useAuthStore();
+  const hasSession = useAuthStore((s) => Boolean(s.session));
+  const authLoading = useAuthStore((s) => !s.isInitialized || s.isLoading);
+  const booted = useSplashStore((s) => s.booted);
+  const [splashDone, setSplashDone] = useState(false);
   const pathname = usePathname();
   const [appInitialized, setAppInitialized] = useState(false);
   const [fontsLoaded, fontError] = useFonts(FONT_ASSETS);
   const isAppReady = appInitialized && (fontsLoaded || fontError);
 
-  useEffect(() => {
-    if (isAppReady) {
-      SplashScreen.hideAsync().catch(() => undefined);
-    }
-  }, [isAppReady]);
+  // The splash fades out once the first real screen can show: sign-in for a
+  // signed-out phone, otherwise Home after the device cache has been read.
+  const splashReady =
+    Boolean(isAppReady) && !authLoading && (!hasSession || !currentBusiness || booted);
 
   useOfflineSync(Boolean(user));
 
@@ -431,6 +437,7 @@ export default function RootLayout() {
         <GlobalDialog />
         <VoiceControlModal />
         <Toast config={toastConfig} />
+        {splashDone ? null : <BrandSplash ready={splashReady} onDone={() => setSplashDone(true)} />}
       </GestureHandlerRootView>
     </SafeAreaProvider>
   );
